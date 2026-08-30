@@ -1,0 +1,27 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Dependencies and generated output
+node_modules/
+dist/
+.wrangler/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local scratch files
+tmp/
+artifacts/local/
+

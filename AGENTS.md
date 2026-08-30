@@ -1,0 +1,79 @@
+# Mail Flow agent guide
+
+Read this file before changing the repository. Then read the documents named under "Required context". The repository is designed so an agent can join a workstream without receiving the full conversation history.
+
+## Required context
+
+Read these files in order:
+
+1. `docs/CONTEXT.md`
+2. `docs/USE_CASES.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/DESIGN.md`
+5. `docs/IMPLEMENTATION_PLAN.md`
+6. `docs/PROGRESS.md`
+7. `docs/OPERATIONS.md` when your task touches OAuth, Cloudflare, deployment, or real-mail testing
+8. The files owned by your assigned workstream
+
+Use `docs/DECISIONS.md` when a design or architecture choice is unclear. Use `docs/TESTING.md` before declaring a task complete.
+
+## Authority order
+
+When sources conflict, use this order:
+
+1. The user's latest explicit instruction.
+2. Security and privacy constraints in this file and `docs/ARCHITECTURE.md`.
+3. Approved PNG references in `mock-images/` for visible layout and style.
+4. Accepted behavior in `docs/USE_CASES.md`.
+5. Architecture decisions in `docs/DECISIONS.md`.
+6. Implementation details in the current code.
+
+## Project boundaries
+
+- Cloudflare is the only application hosting platform.
+- Microsoft Entra ID is the only user identity provider.
+- Microsoft Graph delegated `Mail.Send` is the only mail transport.
+- The first release accepts `.csv` and `.xlsx` uploads. It does not connect directly to Google Sheets.
+- Every spreadsheet row produces a separate message.
+- The sender is always the authenticated USM mailbox.
+- Shared mailboxes, attachments, arbitrary From addresses, and application-level Graph permissions are out of scope for the prototype.
+
+## Architecture boundaries
+
+- Domain modules must not import Cloudflare runtime types.
+- Database access goes through repository functions or interfaces.
+- Queue publishing goes through a campaign queue adapter.
+- Microsoft Graph calls go through a mail provider adapter.
+- Parsing workbooks happens in the browser, not in a Worker request.
+- Database migrations, bindings, and operational configuration live in Git.
+- Use conditional state transitions for recipient jobs. Queue delivery is at least once.
+- A Graph request with an ambiguous network outcome becomes `unknown`; it is not retried automatically.
+
+## Frontend rules
+
+- Match the approved mock for each route before inventing a new layout.
+- The landing page uses the locally installed `design-taste-frontend` skill sourced from `github.com/leonxlnx/taste-skill`.
+- Product screens follow the approved mocks and the Product Design image-to-code workflow.
+- Design tokens are centralized. Do not scatter literal colors, radii, spacing, or z-index values.
+- Use one icon family. Do not hand-draw SVG icons or substitute emoji.
+- Implement keyboard access, visible focus, reduced-motion handling, loading, empty, error, disabled, and success states.
+- Do not put an em dash or en dash in user-visible copy.
+
+## Secret handling
+
+- Do not print or copy values from `.env` or `.dev.vars` into logs, documentation, prompts, tests, or source files.
+- The root `.env` is local test-only and currently uses colon-separated labels. Do not assume it is a deployable dotenv file.
+- Student account passwords are for local interactive test support only. They must never enter Cloudflare, D1, browser bundles, fixtures, screenshots, or Git history.
+- OAuth secrets belong in Worker secrets. Encrypted refresh tokens belong in D1 only when server-side encryption and key rotation notes are present.
+
+## Shared-worktree etiquette
+
+- Other agents may edit the repository at the same time. Do not revert their changes.
+- Own only the files or modules assigned to your workstream.
+- Before editing a shared file, inspect the latest version and preserve unrelated changes.
+- Add a dated entry to `docs/PROGRESS.md` when your workstream reaches a meaningful checkpoint.
+- If a cross-workstream contract changes, update `docs/ARCHITECTURE.md` or `docs/DECISIONS.md` first and notify the coordinating agent.
+
+## Completion standard
+
+A task is complete only when relevant type checks, tests, build checks, and visual or integration checks pass. Record commands and results in `docs/PROGRESS.md`. Do not claim real mail delivery from Graph acceptance alone.

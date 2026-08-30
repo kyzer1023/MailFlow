@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mailflow",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mailflow-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CAMPAIGN_QUEUE",
+        "queue": "mailflow-campaign-ticks"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "mailflow-campaign-ticks",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3
+      }
+    ]
+  },
+  "vars": {
+    "PUBLIC_ORIGIN": "http://localhost:5173",
+    "DEFAULT_CAMPAIGN_PACE": "12",
+    "MAX_CAMPAIGN_RECIPIENTS": "300"
+  }
+}

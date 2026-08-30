@@ -1,0 +1,47 @@
+{
+  "name": "mailflow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "build:client": "vite build",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false",
+    "test:unit": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply mailflow-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mailflow-db --remote",
+    "deploy": "vite build && wrangler deploy",
+    "test": "npm run typecheck && npm run build && npm run test:unit"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "dompurify": "^3.4.14",
+    "entities": "^8.0.0",
+    "exceljs": "^4.4.0",
+    "hono": "^4.13.5",
+    "motion": "^13.1.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-router-dom": "^7.18.3",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.2",
+    "@cloudflare/workers-types": "^5.20260830.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "5.0.4",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "6.4.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.1"
+  }
+}
