@@ -102,6 +102,8 @@ describe("authenticated information architecture", () => {
     expect(screen.getByRole("link", { name: "Flows" })).toHaveAttribute("href", "/flows");
     expect(screen.getByRole("link", { name: "Campaigns" })).toHaveAttribute("href", "/campaigns");
     expect(screen.queryByRole("link", { name: "Recipients" })).not.toBeInTheDocument();
+    expect(screen.getByText("For student societies")).toBeInTheDocument();
+    expect(screen.queryByText("USM Debate Society")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
     expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
     expect(screen.getByText("No flows yet")).toBeInTheDocument();

@@ -68,7 +68,7 @@ User reference, encrypted refresh token, access-token expiry metadata, granted s
 
 ### flows
 
-Owner, society, name, current template version, lifecycle state, and timestamps.
+Owner, optional society label, name, current template version, lifecycle state, and timestamps. The application does not inject a specific society identity when the member creates a flow.
 
 ### template_versions
 

@@ -30,6 +30,8 @@ Use semantic tokens in code rather than direct color literals. Status colors may
 
 Mail Flow is a trust-first student-society service with a tactile editorial product language. Paper, envelope, route, and checkpoint imagery reinforce the workflow without making operational screens decorative. The interface should feel calm, accountable, and human rather than like a generic SaaS dashboard.
 
+The product serves members of USM student societies generally. Organization names and event copy visible in the approved mocks are sample content, not product identity. The live interface must not present Mail Flow as belonging to USM Debate Society or any other single society.
+
 Landing-page dials:
 
 - `DESIGN_VARIANCE: 6`
@@ -77,4 +79,3 @@ For the main path, implement:
 - Mobile: 390 x 844.
 
 Design QA is complete only after reference and implementation screenshots are compared at the same viewport and visible state.
-

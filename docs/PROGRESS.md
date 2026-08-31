@@ -209,3 +209,11 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added a mobile presentation that retains all four checkpoints while showing only the active label, with the count kept inside the same progress header.
 - Playwright captures at 1440 x 900, 1024 x 768, and 390 x 844 show no horizontal overflow or console errors. Data and Template states were both checked, including the completed route segment.
 - `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.
+
+### 2026-09-01 - General student-society positioning
+
+- Removed the hard-coded USM Debate Society label from the product shell and stopped injecting that organization name into newly created flows.
+- Reframed Mail Flow as a general tool for USM student society members who send personalized campaign email through their own student Outlook mailbox.
+- Replaced debate-specific fixture and screen-spec content with a general annual-event invitation while retaining neutral test aliases and the approved mock layouts.
+- Added durable guidance that organization names in the mock images are sample copy rather than product identity, plus a component assertion that the general audience label is rendered.
+- `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.

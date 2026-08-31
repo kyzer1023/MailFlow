@@ -10,4 +10,6 @@ When implementing from a selected generated mock, treat that image as the source
 
 Build app UI in `src/`. Mail Flow is deployed only to Cloudflare. The production Worker API and Queue consumer live in `worker/index.ts`; static client output must remain reproducible and unknown API or write requests must never fall through to the app shell.
 
+Mail Flow is a general tool for USM student society members who send personalized campaign email from their own student mailbox. Do not hard-code the name or identity of USM Debate Society, or any other individual society, in UI copy, defaults, fixtures, tests, or flow creation. Organization-specific names in approved mock images are layout references only.
+
 Do not edit files owned by another active workstream. Check `../../docs/PROGRESS.md` for current ownership and record meaningful checkpoints there.

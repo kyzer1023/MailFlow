@@ -237,7 +237,7 @@ function LandingPage() {
   return <div className="landing">
     <header className="marketing-header"><Brand /><LandingAction compact allowSignOut /></header>
     <main className="landing-hero">
-      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized email through your USM Outlook, checked, paced, and easy to resume.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Mail.Send</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
+      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Mail.Send</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
     </main>
   </div>;
 }
@@ -247,7 +247,7 @@ function Sidebar() {
   const { signOut, signingOut, signOutError } = useSignOut();
   const navItems = [["/dashboard", "Overview", House], ["/flows", "Flows", FlowArrow], ["/campaigns", "Campaigns", PaperPlaneTilt]];
   const initials = user?.displayName?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "US";
-  return <aside className="sidebar"><div className="sidebar-brand"><Brand /></div><p className="society-name">USM Debate Society</p><nav aria-label="Product navigation">{navItems.map(([to, label, Icon]) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon weight="bold" /><span>{label}</span></NavLink>)}</nav><div className="sidebar-bottom">{signOutError && <p className="sidebar-error" role="alert">{signOutError}</p>}<div className="member-card"><span className="avatar">{initials}</span><span><strong>{user?.displayName || "USM member"}</strong><small>{user?.mailboxAddress || user?.principalName || "Signed in with Microsoft"}</small></span><button type="button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />}</button></div></div></aside>;
+  return <aside className="sidebar"><div className="sidebar-brand"><Brand /></div><p className="society-name">For student societies</p><nav aria-label="Product navigation">{navItems.map(([to, label, Icon]) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon weight="bold" /><span>{label}</span></NavLink>)}</nav><div className="sidebar-bottom">{signOutError && <p className="sidebar-error" role="alert">{signOutError}</p>}<div className="member-card"><span className="avatar">{initials}</span><span><strong>{user?.displayName || "USM member"}</strong><small>{user?.mailboxAddress || user?.principalName || "Signed in with Microsoft"}</small></span><button type="button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />}</button></div></div></aside>;
 }
 
 function SupportFooter() {
@@ -468,7 +468,7 @@ function TemplatePage() {
       const recipientConfiguration = mappingToRecipientConfiguration(mapping);
       const templatePayload = { subjectTemplate: draft.subject, bodyHtml, placeholderManifest: extractPlaceholders(draft.subject, bodyHtml), recipientConfiguration };
       if (!flowId) {
-        const response = await createFlowRequest({ name: draft.name, societyName: "USM Debate Society", ...templatePayload }, csrfToken);
+        const response = await createFlowRequest({ name: draft.name, ...templatePayload }, csrfToken);
         setFlowId(response.flow.id);
         setTemplateVersionId(response.templateVersion?.id || null);
       } else {
@@ -579,7 +579,7 @@ function useEnsureCampaign() {
     if (!draftState.campaignValidation.ok) throw new Error("Review and fix the flagged rows before starting the campaign.");
     let currentFlowId = draftState.flowId;
     if (!currentFlowId) {
-      const flowResponse = await createFlowRequest({ name: draftState.draft.name, societyName: "USM Debate Society" }, api.csrfToken);
+      const flowResponse = await createFlowRequest({ name: draftState.draft.name }, api.csrfToken);
       currentFlowId = flowResponse.flow.id;
       draftState.setFlowId(currentFlowId);
     }

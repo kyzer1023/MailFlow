@@ -2,17 +2,17 @@
 
 ## Product
 
-Mail Flow replaces an unreliable Power Automate mail-merge process used by USM student societies. It is not an SMTP server. It is a narrow web application that prepares personalized email and asks Microsoft Graph to send it from the signed-in member's Outlook mailbox.
+Mail Flow replaces unreliable Power Automate mail-merge processes used by USM student society members. It is not an SMTP server and is not tied to one society. It is a narrow web application that prepares personalized campaign email and asks Microsoft Graph to send it from the signed-in member's student Outlook mailbox.
 
 ## Intended users
 
-- USM student society committee members who are not expected to diagnose automation platforms.
+- Committee members across USM student societies who are not expected to diagnose automation platforms.
 - Society administrators who need campaign visibility and safe defaults.
 - Future technical custodians who need a reproducible, documented Cloudflare deployment.
 
 ## User outcome
 
-A member can safely turn a spreadsheet and reusable HTML message into individually addressed emails. The member can see what will be sent, correct bad rows, test the result, start a paced campaign, close the browser, and later understand every accepted, failed, skipped, pending, or unknown row without blind reruns.
+A society member can safely turn a spreadsheet and reusable HTML message into individually addressed emails from their own student account. The member can see what will be sent, correct bad rows, test the result, start a paced campaign, close the browser, and later understand every accepted, failed, skipped, pending, or unknown row without blind reruns.
 
 ## Confirmed platform direction
 

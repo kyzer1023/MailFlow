@@ -45,11 +45,11 @@ Use semantic CSS variables for all tokens. Do not scatter literal colors, radii,
 
 The visual language is tactile editorial product UI: large geometric headings, generous whitespace, paper-like surfaces, thin lines, and route/checkpoint graphics only where they explain workflow progress. Use motion for feedback and progress transitions. Every motion must have a reduced-motion fallback.
 
-The source screenshots contain example people, mailboxes, and organization addresses. This specification uses neutral aliases only:
+The source screenshots contain example people, mailboxes, organization names, and event content. Layout and hierarchy remain authoritative, but the organization-specific copy does not. Mail Flow serves USM student society members generally and sends through each authenticated member's own student mailbox. This specification uses neutral aliases only:
 
 - Alex Tan, Jordan Lee, Sam Lee, Taylor Noor, and Morgan Ali are display-only test aliases.
 - student@example.com, society@example.org, events@example.org, and support@example.org are display-only example addresses.
-- Replace all examples with authenticated user and society data at runtime.
+- Replace identity examples with the authenticated member and mailbox at runtime. Flow names, recipient data, and message content come from the member's own campaign.
 
 No password, token, account identifier, or private screenshot value belongs in the client bundle, fixtures, tests, docs, or screenshots.
 
@@ -70,7 +70,7 @@ The generated references show apparent desktop rail widths from about 164 px to 
 | Mapping | 207 px | 12.4% |
 | Campaign | 230 px | 13.8% |
 
-The rail contains the prepared MailFlow logo, active navigation, society identity, and member identity where the reference shows them. A narrow viewport changes the rail into a compact header or drawer. It does not remove navigation or identity access.
+The rail contains the prepared MailFlow logo, active navigation, general student-society context, and member identity where the reference shows them. A narrow viewport changes the rail into a compact header or drawer. It does not remove navigation or identity access.
 
 ### State and accessibility contract
 
@@ -216,11 +216,11 @@ The reference uses a sample recipient count and receipt time. Render neutral exa
 
 ### Sidebar
 
-The rail is Deep Ink with a centered logo lockup and society identity. It contains:
+The rail is Deep Ink with a centered logo lockup and general audience context. It contains:
 
 ~~~text
 MailFlow
-{Society name}
+For student societies
 Overview
 Flows
 Campaigns
@@ -250,10 +250,10 @@ Good afternoon, {firstName}.
 Your society mail, in one clear view.
 New flow
 
-PIXEL Judge Invitation
+Annual Dinner Invitation
 Template fields
-{{judge_name}}
-{{project_title}}
+{{recipient_name}}
+{{event_name}}
 Last used 28 Aug
 Ready
 
@@ -367,9 +367,9 @@ Save draft
 Continue to data
 
 Flow name
-PIXEL Judge Invitation
+Annual Dinner Invitation
 Subject
-Invitation to evaluate {{project_title}}
+Invitation to {{event_name}}
 CC
 events@example.org
 
@@ -378,27 +378,26 @@ HTML
 System Sans
 14
 
-Hello {{judge_name}},
+Hello {{recipient_name}},
 
-You are invited to be a judge for PIXEL, a celebration of purposeful ideas and impactful solutions by university students.
+You are invited to {{event_name}}, an event organized for members of your student society.
 
-The event will take place on {{event_date}}, and your evaluation will help us recognise the strongest work and provide meaningful feedback.
+The event will take place on {{event_date}}. We would be glad to have you join us.
 
-Please review the submissions at your convenience and share your feedback by {{reply_deadline}}.
+Please confirm your attendance by {{reply_deadline}}.
 
-Thank you for supporting excellence and advancing the next generation of leaders.
-We truly appreciate your time and expertise.
+Thank you for being part of the society community.
 
 Warm regards,
-USM Debate Society
+Your Society Committee
 
 BCC (optional)
 Reply-to (optional)
 Dynamic fields
 From this flow
-{{judge_name}}
-{{judge_email}}
-{{project_title}}
+{{recipient_name}}
+{{recipient_email}}
+{{event_name}}
 {{event_date}}
 {{reply_deadline}}
 More fields appear after you import a spreadsheet.
@@ -479,7 +478,7 @@ The values above are example content. In a live flow, the body is sanitized HTML
 ### Functionally important visible copy
 
 ~~~text
-PIXEL Judge Invitation
+Annual Dinner Invitation
 Draft
 Section 4 of 6
 Details
@@ -491,21 +490,21 @@ Connect the rows to the message.
 We found 148 rows in recipients.xlsx.
 Replace file
 Continue to recipients
-Judges
+Members
 Row 1
-Judge Name
+Recipient Name
 Email
-Project Title
+Event Name
 Event Date
 Reply Deadline
 
 Column mapping
-{{judge_name}}
-Judge Name
-{{judge_email}}
+{{recipient_name}}
+Recipient Name
+{{recipient_email}}
 Email
-{{project_title}}
-Project Title
+{{event_name}}
+Event Name
 {{event_date}}
 Event Date
 {{reply_deadline}}
@@ -531,13 +530,13 @@ Contact support
 
 Use neutral display rows in fixtures and screenshots:
 
-| Row | Judge Name | Email | Project Title | Event Date | Reply Deadline |
+| Row | Recipient Name | Email | Event Name | Event Date | Reply Deadline |
 | ---: | --- | --- | --- | --- | --- |
-| 1 | Alex Tan | alex@example.com | PIXEL Debate 2026 | 2026-08-15 | 2026-07-31 |
-| 2 | Jordan Lee | jordan@example.com | PIXEL Debate 2026 | 2026-08-15 | 2026-07-31 |
-| 3 | Sam Lee | sam@example.com | PIXEL Debate 2026 | 2026-08-15 | 2026-07-31 |
-| 87 | Taylor Noor | invalid@ | PIXEL Debate 2026 | 2026-08-15 | 2026-07-31 |
-| 88 | Morgan Ali | morgan@example.com | PIXEL Debate 2026 | 2026-08-15 | 2026-07-31 |
+| 1 | Alex Tan | alex@example.com | Student Leadership Night 2026 | 2026-08-15 | 2026-07-31 |
+| 2 | Jordan Lee | jordan@example.com | Student Leadership Night 2026 | 2026-08-15 | 2026-07-31 |
+| 3 | Sam Lee | sam@example.com | Student Leadership Night 2026 | 2026-08-15 | 2026-07-31 |
+| 87 | Taylor Noor | invalid@ | Student Leadership Night 2026 | 2026-08-15 | 2026-07-31 |
+| 88 | Morgan Ali | morgan@example.com | Student Leadership Night 2026 | 2026-08-15 | 2026-07-31 |
 
 The exact counts above are illustrative and should come from parsed data. Every source row still produces one recipient job and one separate message.
 
@@ -630,9 +629,9 @@ Last · Row 148
 Previous
 Next
 
-Society <society@example.org>
+Sender <student@example.com>
 To: Alex Tan <alex@example.com>
-Subject: Invitation to evaluate PIXEL Debate 2026
+Subject: Invitation to Student Leadership Night 2026
 
 Sender
 student@example.com
@@ -655,11 +654,11 @@ Test accepted by Microsoft · 10:42 AM
 The message preview may use a representative branded body such as:
 
 ~~~text
-You're invited to judge
-PIXEL Debate 2026
+You're invited
+Student Leadership Night 2026
 Dear Alex Tan,
-You're invited to serve as a judge for PIXEL Debate 2026.
-View judging details
+You're invited to Student Leadership Night 2026.
+View event details
 Reply to this email if you have questions.
 ~~~
 
@@ -737,7 +736,7 @@ The campaign can leave without you.
 MailFlow will keep pacing, retrying temporary issues, and recording each row.
 Pause campaign
 Close dashboard
-PIXEL Judges · 31 Aug 2026
+Annual Dinner Guests - 31 Aug 2026
 student@example.com
 Sending safely
 ~~~
@@ -945,4 +944,3 @@ Before a route is considered visually ready:
 - Confirm accepted status says Accepted by Microsoft and never Delivered.
 - Confirm the final review acknowledgement is required before campaign start.
 - Confirm the campaign monitor preserves the no-blind-resend rule, including unknown outcomes.
-

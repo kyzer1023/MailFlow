@@ -46,15 +46,15 @@ export const memberFixture = {
   firstName: "Alex",
   name: "Alex Tan",
   email: "student@example.com",
-  society: "USM Debate Society",
+  society: "Student Society",
   role: "Admin",
 } as const;
 
 export const flowFixtures: FlowFixture[] = [
   {
-    id: "pixel-judges",
-    name: "PIXEL Judge Invitation",
-    fields: ["{{judge_name}}", "{{project_title}}"],
+    id: "annual-dinner",
+    name: "Annual Dinner Invitation",
+    fields: ["{{recipient_name}}", "{{event_name}}"],
     metaLabel: "Last used 28 Aug",
     status: "ready",
   },
@@ -70,7 +70,7 @@ export const flowFixtures: FlowFixture[] = [
 export const campaignFixtures: CampaignFixture[] = [
   {
     id: "CMP-2026-08-31-DEMO",
-    name: "PIXEL Judges",
+    name: "Annual Dinner Guests",
     date: "31 Aug 2026",
     updated: "31 Aug, 10:32 AM",
     status: "completed",
@@ -104,16 +104,16 @@ export const campaignFixtures: CampaignFixture[] = [
 ];
 
 export const dataRows: DataRow[] = [
-  { row: 1, name: "Alex Tan", email: "alex@example.com", project: "PIXEL Debate 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
-  { row: 2, name: "Jordan Lee", email: "jordan@example.com", project: "PIXEL Debate 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
-  { row: 3, name: "Sam Lee", email: "sam@example.com", project: "PIXEL Debate 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
-  { row: 87, name: "Taylor Noor", email: "invalid@", project: "PIXEL Debate 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
-  { row: 88, name: "Morgan Ali", email: "morgan@example.com", project: "PIXEL Debate 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
+  { row: 1, name: "Alex Tan", email: "alex@example.com", project: "Student Leadership Night 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
+  { row: 2, name: "Jordan Lee", email: "jordan@example.com", project: "Student Leadership Night 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
+  { row: 3, name: "Sam Lee", email: "sam@example.com", project: "Student Leadership Night 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
+  { row: 87, name: "Taylor Noor", email: "invalid@", project: "Student Leadership Night 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
+  { row: 88, name: "Morgan Ali", email: "morgan@example.com", project: "Student Leadership Night 2026", eventDate: "2026-08-15", deadline: "2026-07-31" },
 ];
 
-export const columnFixtures = ["Judge Name", "Email", "Project Title", "Event Date", "Reply Deadline"] as const;
+export const columnFixtures = ["Recipient Name", "Email", "Event Name", "Event Date", "Reply Deadline"] as const;
 
-export const placeholderFixtures = ["judge_name", "judge_email", "project_title", "event_date", "reply_deadline"] as const;
+export const placeholderFixtures = ["recipient_name", "recipient_email", "event_name", "event_date", "reply_deadline"] as const;
 
 export type PlaceholderKey = (typeof placeholderFixtures)[number];
 
@@ -125,22 +125,22 @@ export const jobFixtures: JobFixture[] = [
   { recipient: "Morgan Ali", row: 88, status: "pending", attempts: 0, update: "Not available", note: "Queued" },
 ];
 
-export const bodyTemplate = `Hello {{judge_name}},
+export const bodyTemplate = `Hello {{recipient_name}},
 
-You are invited to be a judge for PIXEL, a celebration of purposeful ideas and impactful solutions by university students.
+You are invited to {{event_name}}, an event organized for members of your student society.
 
-The event will take place on {{event_date}}, and your evaluation will help us recognise the strongest work and provide meaningful feedback.
+The event will take place on {{event_date}}. We would be glad to have you join us.
 
-Please review the submissions at your convenience and share your feedback by {{reply_deadline}}.
+Please confirm your attendance by {{reply_deadline}}.
 
-Thank you for supporting excellence and advancing the next generation of leaders.\nWe truly appreciate your time and expertise.
+Thank you for being part of the society community.
 
 Warm regards,
-USM Debate Society`;
+Your Society Committee`;
 
 export const initialDraft = {
-  name: "PIXEL Judge Invitation",
-  subject: "Invitation to evaluate {{project_title}}",
+  name: "Annual Dinner Invitation",
+  subject: "Invitation to {{event_name}}",
   cc: "events@example.org",
   bcc: "",
   replyTo: "",
@@ -148,13 +148,13 @@ export const initialDraft = {
   fileName: "recipients.xlsx",
   fileSize: "312 KB",
   rowCount: 148,
-  worksheet: "Judges",
+  worksheet: "Members",
   headerRow: "Row 1",
   pace: 12,
   mappings: {
-    judge_name: "Judge Name",
-    judge_email: "Email",
-    project_title: "Project Title",
+    recipient_name: "Recipient Name",
+    recipient_email: "Email",
+    event_name: "Event Name",
     event_date: "Event Date",
     reply_deadline: "Reply Deadline",
   },

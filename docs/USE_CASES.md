@@ -4,7 +4,7 @@ This document converts the approved discussion into testable product behavior. I
 
 ## Actors
 
-- Member: an authenticated USM tenant user who creates flows and sends campaigns from their own mailbox.
+- Member: an authenticated USM student society member who creates flows and sends campaigns from their own student mailbox.
 - Administrator: a member with additional society configuration visibility. The prototype may seed this role rather than expose full role management.
 - Microsoft Graph: accepts send requests and returns success or error responses.
 - Queue worker: advances campaigns independently of the browser.
@@ -26,7 +26,7 @@ Acceptance:
 
 ## UC-02 View the dashboard
 
-The dashboard shows reusable flows, recent campaigns, actionable failures, and the signed-in society identity. Empty, loading, and failure states remain useful.
+The dashboard shows reusable flows, recent campaigns, actionable failures, and the signed-in member's mailbox identity. Empty, loading, and failure states remain useful.
 
 ## UC-03 Create or reuse a flow
 
