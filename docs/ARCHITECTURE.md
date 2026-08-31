@@ -68,7 +68,7 @@ User reference, encrypted refresh token, access-token expiry metadata, granted s
 
 ### flows
 
-Owner, optional society label, name, current template version, lifecycle state, and timestamps. The application does not inject a specific society identity when the member creates a flow.
+Owner, optional society label, name, current template version, lifecycle state, and timestamps. Active flow names are unique per owner using case-insensitive comparison so campaign history can use the flow name as a stable human-readable label. Removing a flow archives it so existing campaigns and template references remain auditable. The application does not inject a specific society identity when the member creates a flow.
 
 ### template_versions
 

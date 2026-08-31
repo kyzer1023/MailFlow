@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isCampaignTickMessage } from "./contracts";
 import { safeSourceFilename, validateTemplateHtml, validateTemplateSubject } from "./security";
-import { campaignCreateSchema, recipientConfigurationSchema } from "./schemas";
+import { campaignCreateSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
 
 describe("Worker API security boundaries", () => {
   it("rejects active HTML and accepts a simple email template", () => {
@@ -107,5 +107,22 @@ describe("Worker API security boundaries", () => {
       rows: [{ sourceRow: 2, to: "member@example.test", cc: [], bcc: [], replyTo: [], mergeData: {}, renderedSubject: "Subject", renderedBodyHtml: "<p>Hello</p>" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts bounded recipient metadata for test sends", () => {
+    const result = testSendSchema.safeParse({
+      subject: "Subject",
+      bodyHtml: "<p>Hello</p>",
+      cc: ["copy@example.test"],
+      bcc: ["audit@example.test"],
+      replyTo: ["replies@example.test"],
+      importance: "high",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.cc).toEqual(["copy@example.test"]);
+      expect(result.data.bcc).toEqual(["audit@example.test"]);
+      expect(result.data.replyTo).toEqual(["replies@example.test"]);
+    }
   });
 });

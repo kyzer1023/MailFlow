@@ -95,9 +95,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const headers = new Headers(options.headers);
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
+  const method = options.method?.toUpperCase() ?? "GET";
   const response = await fetch(path, {
     ...options,
     credentials: "same-origin",
+    cache: options.cache ?? (method === "GET" ? "no-store" : undefined),
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -151,6 +153,14 @@ export function createTemplateVersion(
   });
 }
 
+export function archiveFlow(flowId: string, csrfToken: string): Promise<{ flow: FlowRecord }> {
+  return apiRequest<{ flow: FlowRecord }>(`/api/flows/${encodeURIComponent(flowId)}`, {
+    method: "PATCH",
+    body: { state: "archived" },
+    csrfToken,
+  });
+}
+
 export function getCampaigns(): Promise<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }> {
   return apiRequest<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }>("/api/campaigns");
 }
@@ -169,7 +179,14 @@ export function getCampaignJobs(campaignId: string, limit = 100, offset = 0): Pr
 
 export function sendCampaignTest(
   campaignId: string,
-  payload: { readonly subject: string; readonly bodyHtml: string; readonly importance: "low" | "normal" | "high" },
+  payload: {
+    readonly subject: string;
+    readonly bodyHtml: string;
+    readonly cc: readonly string[];
+    readonly bcc: readonly string[];
+    readonly replyTo: readonly string[];
+    readonly importance: "low" | "normal" | "high";
+  },
   csrfToken: string,
 ): Promise<TestSendResponse> {
   return apiRequest<TestSendResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}/test-send`, { method: "POST", body: payload, csrfToken });
@@ -199,7 +216,7 @@ export function resumeCampaign(campaignId: string, csrfToken: string): Promise<{
 }
 
 export async function downloadCampaignExport(campaignId: string): Promise<Blob> {
-  const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/export.csv`, { credentials: "same-origin" });
+  const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/export.csv`, { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
   return response.blob();
 }

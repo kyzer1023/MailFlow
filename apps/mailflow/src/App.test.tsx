@@ -1,24 +1,28 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { ApiRequestError, getCampaigns, getFlows, getMe, logout } from "./app/api";
+import { ApiRequestError, archiveFlow, getCampaign, getCampaigns, getFlows, getMe, logout } from "./app/api";
 
 vi.mock("./app/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./app/api")>();
   return {
     ...actual,
+    archiveFlow: vi.fn(),
     getMe: vi.fn(),
     getFlows: vi.fn(),
     getCampaigns: vi.fn(),
+    getCampaign: vi.fn(),
     logout: vi.fn(),
   };
 });
 
 const mockedGetMe = vi.mocked(getMe);
+const mockedArchiveFlow = vi.mocked(archiveFlow);
 const mockedGetFlows = vi.mocked(getFlows);
 const mockedGetCampaigns = vi.mocked(getCampaigns);
+const mockedGetCampaign = vi.mocked(getCampaign);
 const mockedLogout = vi.mocked(logout);
 
 describe("landing actions", () => {
@@ -28,6 +32,18 @@ describe("landing actions", () => {
     mockedGetFlows.mockResolvedValue({ flows: [] });
     mockedGetCampaigns.mockResolvedValue({ campaigns: [] });
     mockedLogout.mockResolvedValue({ ok: true });
+    mockedArchiveFlow.mockResolvedValue({
+      flow: {
+        id: "flow-archive",
+        ownerUserId: "user-1",
+        societyName: null,
+        name: "Archived flow",
+        currentTemplateVersionId: null,
+        state: "archived",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
   });
 
   afterEach(() => {
@@ -84,6 +100,18 @@ describe("authenticated information architecture", () => {
     mockedGetFlows.mockResolvedValue({ flows: [] });
     mockedGetCampaigns.mockResolvedValue({ campaigns: [] });
     mockedLogout.mockResolvedValue({ ok: true });
+    mockedArchiveFlow.mockResolvedValue({
+      flow: {
+        id: "flow-archive",
+        ownerUserId: "user-1",
+        societyName: null,
+        name: "Archived flow",
+        currentTemplateVersionId: null,
+        state: "archived",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
   });
 
   afterEach(() => {
@@ -122,5 +150,75 @@ describe("authenticated information architecture", () => {
     expect(screen.getByRole("button", { name: /Continue to template/ })).toBeDisabled();
     expect(screen.queryByText("recipients.xlsx")).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Tan")).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation before removing a flow and then archives it", async () => {
+    window.history.replaceState({}, "", "/flows");
+    const activeFlow = {
+      id: "flow-archive",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Annual invitation",
+      currentTemplateVersionId: "template-1",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlows.mockResolvedValueOnce({ flows: [activeFlow] }).mockResolvedValue({ flows: [] });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Annual invitation" }));
+    expect(mockedArchiveFlow).not.toHaveBeenCalled();
+    expect(screen.getByText("Campaign history stays available.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm remove Annual invitation" }));
+
+    await waitFor(() => expect(mockedArchiveFlow).toHaveBeenCalledWith("flow-archive", "test-csrf-token"));
+    expect(await screen.findByText("No flows yet")).toBeInTheDocument();
+  });
+
+  it("labels campaign history with the reusable flow name", async () => {
+    window.history.replaceState({}, "", "/campaigns");
+    const campaign = {
+      id: "campaign_2ed31a40",
+      flowId: "flow_y2_talent",
+      templateVersionId: "template_1",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Y2 Student Email.xlsx",
+      totalRecipients: 5,
+      validRecipients: 5,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "paused" as const,
+      pauseReason: "Paused by member",
+      createdAt: "2026-09-01T01:00:00.000Z",
+      queuedAt: "2026-09-01T01:00:01.000Z",
+      startedAt: "2026-09-01T01:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-01T01:00:20.000Z",
+    };
+    const counts = { pending: 1, claimed: 0, sending: 0, accepted: 4, failed: 0, skipped: 0, unknown: 0 };
+    mockedGetFlows.mockResolvedValue({
+      flows: [{
+        id: "flow_y2_talent",
+        ownerUserId: "user-1",
+        societyName: null,
+        name: "Y2 Talent Recruitment",
+        currentTemplateVersionId: "template_1",
+        state: "active",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:30:00.000Z",
+      }],
+    });
+    mockedGetCampaigns.mockResolvedValue({ campaigns: [campaign] });
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+
+    render(<App />);
+
+    expect(await screen.findByText("Y2 Talent Recruitment")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.queryByText(/Campaign campaign_/)).not.toBeInTheDocument();
   });
 });

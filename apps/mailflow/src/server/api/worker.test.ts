@@ -28,6 +28,7 @@ describe("Cloudflare Worker static routing", () => {
     const apiCalls: string[] = [];
     const apiResponse = await worker.fetch(new Request("https://mailflow.example/api/missing", { headers: { accept: "text/html" } }), bindings(apiCalls), { waitUntil() {} });
     expect(apiResponse.status).toBe(404);
+    expect(apiResponse.headers.get("Cache-Control")).toBe("private, no-store, max-age=0");
     expect(apiCalls).toEqual([]);
 
     const writeCalls: string[] = [];

@@ -58,6 +58,15 @@ export type MailFlowContext = Context<MailFlowAppEnv>;
 
 const app = new Hono<MailFlowAppEnv>();
 
+// API responses are personalized and campaign state changes in the
+// background. Prevent browsers and intermediary caches from replaying the
+// initial validated/queued snapshot when a member revisits a campaign.
+app.use("/api/*", async (context, next) => {
+  await next();
+  context.header("Cache-Control", "private, no-store, max-age=0");
+  context.header("Pragma", "no-cache");
+});
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -457,6 +466,9 @@ app.post("/api/flows", async (context) => {
   if (input instanceof Response) return input;
   if ((input.subjectTemplate === undefined) !== (input.bodyHtml === undefined)) return responseError(context, 422, "invalid_input", "A subject and message body must be provided together.");
   const repo = repositories(context);
+  if (await repo.flows.getByNameForOwner(authenticated.user.id, input.name)) {
+    return responseError(context, 409, "flow_name_conflict", "Choose a different flow name. Flow names must be unique.");
+  }
   const createdAt = nowIso();
   const flow: FlowRecord = {
     id: id("flow"),
@@ -468,7 +480,14 @@ app.post("/api/flows", async (context) => {
     createdAt,
     updatedAt: createdAt,
   };
-  await repo.flows.create(flow);
+  try {
+    await repo.flows.create(flow);
+  } catch (errorValue) {
+    if (await repo.flows.getByNameForOwner(authenticated.user.id, input.name)) {
+      return responseError(context, 409, "flow_name_conflict", "Choose a different flow name. Flow names must be unique.");
+    }
+    throw errorValue;
+  }
   let version: TemplateVersionRecord | null = null;
   if (input.subjectTemplate !== undefined && input.bodyHtml !== undefined) {
     version = await createTemplateVersion(repo, flow, {
@@ -500,8 +519,24 @@ async function updateFlow(context: MailFlowContext): Promise<Response> {
   const repo = repositories(context);
   const flow = await repo.flows.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
   if (!flow) return responseError(context, 404, "flow_not_found", "That flow is not available.");
+  if (input.name !== undefined) {
+    const sameName = await repo.flows.getByNameForOwner(authenticated.user.id, input.name);
+    if (sameName && sameName.id !== flow.id) {
+      return responseError(context, 409, "flow_name_conflict", "Choose a different flow name. Flow names must be unique.");
+    }
+  }
   const updated: FlowRecord = { ...flow, ...(input.name !== undefined ? { name: input.name } : {}), ...(input.societyName !== undefined ? { societyName: input.societyName } : {}), ...(input.state !== undefined ? { state: input.state } : {}), updatedAt: nowIso() };
-  if (!(await repo.flows.update(updated))) return responseError(context, 409, "flow_changed", "The flow changed in another session. Refresh and try again.");
+  try {
+    if (!(await repo.flows.update(updated))) return responseError(context, 409, "flow_changed", "The flow changed in another session. Refresh and try again.");
+  } catch (errorValue) {
+    if (input.name !== undefined) {
+      const sameName = await repo.flows.getByNameForOwner(authenticated.user.id, input.name);
+      if (sameName && sameName.id !== flow.id) {
+        return responseError(context, 409, "flow_name_conflict", "Choose a different flow name. Flow names must be unique.");
+      }
+    }
+    throw errorValue;
+  }
   return context.json({ flow: publicFlow(updated) });
 }
 
@@ -747,7 +782,14 @@ app.post("/api/campaigns/:id/test-send", async (context) => {
   try {
     const { auth, graph } = configFor(context);
     const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
-    const result = await sendTestToSelf(graph, tokens.accessToken, { subject: subject.subject, bodyHtml: body.html, importance: input.importance });
+    const result = await sendTestToSelf(graph, tokens.accessToken, {
+      subject: subject.subject,
+      bodyHtml: body.html,
+      cc: input.cc,
+      bcc: input.bcc,
+      replyTo: input.replyTo,
+      importance: input.importance,
+    });
     return context.json({ result });
   } catch (errorValue) {
     const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError

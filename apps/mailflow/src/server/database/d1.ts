@@ -146,6 +146,14 @@ export class D1FlowRepository implements FlowRepository {
     return row ? toFlow(row) : null;
   }
 
+  async getByNameForOwner(ownerUserId: string, name: string): Promise<FlowRecord | null> {
+    const row = await bind(
+      this.db.prepare("SELECT * FROM flows WHERE owner_user_id = ?1 AND state = 'active' AND name = ?2 COLLATE NOCASE"),
+      [ownerUserId, name.trim()],
+    ).first<FlowRow>();
+    return row ? toFlow(row) : null;
+  }
+
   async listByOwner(ownerUserId: string): Promise<FlowRecord[]> {
     const result = await bind(
       this.db.prepare("SELECT * FROM flows WHERE owner_user_id = ?1 AND state = 'active' ORDER BY updated_at DESC"),

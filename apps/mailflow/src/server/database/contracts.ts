@@ -55,6 +55,7 @@ export interface UserRepository {
 export interface FlowRepository {
   getById(id: string): Promise<FlowRecord | null>;
   getByIdForOwner(id: string, ownerUserId: string): Promise<FlowRecord | null>;
+  getByNameForOwner(ownerUserId: string, name: string): Promise<FlowRecord | null>;
   listByOwner(ownerUserId: string): Promise<FlowRecord[]>;
   create(flow: FlowRecord): Promise<void>;
   update(flow: FlowRecord): Promise<boolean>;

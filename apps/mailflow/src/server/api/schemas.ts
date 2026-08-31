@@ -76,6 +76,9 @@ export const templateVersionSchema = z.object({
 export const testSendSchema = z.object({
   subject: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
+  cc: z.array(nonEmpty(320)).max(50).default([]),
+  bcc: z.array(nonEmpty(320)).max(50).default([]),
+  replyTo: z.array(nonEmpty(320)).max(50).default([]),
   importance: z.enum(["low", "normal", "high"]).default("normal"),
 }).strict();
 

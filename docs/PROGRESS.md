@@ -242,3 +242,29 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Preserved the existing address chips, dynamic-value controls, helper text, and Importance behavior.
 - Verified the populated Recipients step in Chromium at 1440 x 1000 and confirmed no horizontal overflow at 390 x 844.
 - `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.
+
+### 2026-09-01 - Test-send recipient metadata fix
+
+- Fixed the Review test-send path so the selected personalized preview's CC, BCC, and Reply-to values are carried from the browser request through Worker validation into the Microsoft Graph message.
+- Kept the authenticated member's mailbox as the test message's primary recipient and sender identity.
+- Added API serialization, schema, service, and provider-boundary regression coverage. `npm test` passes: TypeScript, production build, and all 69 unit and integration tests; `npx wrangler deploy --dry-run` also passes.
+- No real message was sent and no production deployment was changed during this checkpoint.
+
+### 2026-09-01 - Campaign revisit integrity and flow naming
+
+- Prevented personalized API GET responses from being cached by the browser or an intermediary, so revisiting Campaign history or an exact campaign ID cannot replay the campaign's initial validated or queued snapshot.
+- Made campaign polling discard out-of-order responses. Pause and resume now apply the mutation response immediately and reload authoritative state even when a concurrent lifecycle change rejects the action.
+- Replaced generated campaign-ID labels in Campaign history with the reusable flow name, using the source filename only as a fallback.
+- Added case-insensitive, owner-scoped flow-name uniqueness in the API and D1 migration `0003_unique_flow_names.sql`. Existing duplicates keep the oldest name and receive friendly numbered suffixes such as `(2)`.
+- Verified the migration against a temporary local D1 containing case-only duplicates and confirmed that a later case-insensitive duplicate insert is rejected.
+- `npm test` passes: TypeScript, production build, and all 71 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
+- A read-only production D1 inspection could not run because the current Wrangler session was not authorized for that Cloudflare account. No production data, deployment, or real mail was changed.
+
+### 2026-09-01 - Safe flow removal
+
+- Added a Remove action to reusable-flow cards with an inline confirmation that explains campaign history remains available.
+- Removing a flow archives it through the existing owner-scoped API instead of deleting its D1 row, preserving campaign and template audit references while removing it from the active flow library.
+- Changed flow-name uniqueness to apply to active flows. An archived flow's name can therefore be reused without weakening uniqueness in the visible library.
+- Added API serialization and component interaction coverage. A temporary D1 check confirmed active duplicates are rejected and an archived name can be reused.
+- `npm test` passes: TypeScript, production build, and all 73 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
+- No production data, deployment, or real mail was changed.

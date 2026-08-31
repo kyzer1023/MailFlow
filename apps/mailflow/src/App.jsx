@@ -4,10 +4,11 @@ import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge, House, Info,
   MicrosoftOutlookLogo, MinusCircle, PaperPlaneTilt, Pause, Play, Plus,
-  Rows, SignOut, SpinnerGap, Users, WarningCircle, X,
+  Rows, SignOut, SpinnerGap, Trash, Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
   ApiRequestError,
+  archiveFlow,
   createCampaign as createCampaignRequest,
   createFlow as createFlowRequest,
   createTemplateVersion as createTemplateVersionRequest,
@@ -118,11 +119,11 @@ function displayFlow(flow) {
   };
 }
 
-function displayCampaign(campaign, counts) {
+function displayCampaign(campaign, counts, flowName = "") {
   const status = campaign.state === "completed" ? "completed" : campaign.state === "paused" ? "paused" : campaign.state === "failed" ? "failed" : campaign.state;
   return {
     id: campaign.id,
-    name: `Campaign ${campaign.id.slice(0, 12)}`,
+    name: flowName.trim() || campaign.sourceFilename || "Campaign",
     date: formatDate(campaign.createdAt),
     updated: formatDate(campaign.updatedAt),
     status: ["completed", "paused", "running", "queued", "failed"].includes(status) ? status : "queued",
@@ -142,12 +143,13 @@ function AppDataProvider({ children }) {
     setDashboard((current) => ({ ...current, status: "loading", error: "" }));
     try {
       const [flowsResponse, campaignsResponse] = await Promise.all([getFlows(), getCampaigns()]);
+      const flowNames = new Map(flowsResponse.flows.map((flow) => [flow.id, flow.name]));
       // The list endpoint intentionally returns only campaign records. Fetch
       // each owner-scoped detail to obtain authoritative result counts for the
       // dashboard rather than displaying guessed or fixture totals.
       const campaigns = await Promise.all(campaignsResponse.campaigns.map(async (campaign) => {
         const detail = await getCampaign(campaign.id);
-        return { campaign, counts: detail.counts };
+        return { campaign, counts: detail.counts, flowName: flowNames.get(campaign.flowId) || "" };
       }));
       setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, error: "" });
     } catch (error) {
@@ -261,8 +263,21 @@ function AppShell({ children }) {
 
 function StatusChip({ status, children }) { return <span className={`status status--${status}`}><span aria-hidden="true" />{children || status}</span>; }
 
-function FlowCard({ flow, loading = false, onUse, onEdit, compact = false }) {
-  return <article className={`flow-card ${compact ? "flow-card--compact" : ""}`} aria-busy={loading}><div className="flow-title"><span className="mini-mark"><Envelope weight="fill" /></span><h3>{flow.name}</h3>{loading && <SpinnerGap className="spin" aria-label="Opening flow" />}</div><div className="card-divider" /><small>Template</small><div className="field-list">{flow.fields.map((field) => <code key={field}>{field}</code>)}</div><footer><span><Clock /> {flow.metaLabel}</span><StatusChip status={flow.status}>{flow.status === "ready" ? "Ready" : "Draft"}</StatusChip></footer><div className="flow-card-actions"><button type="button" className="button button--coral button--small" onClick={onUse} disabled={loading}>Use flow <ArrowRight /></button>{onEdit && <button type="button" className="button button--outline button--small" onClick={onEdit} disabled={loading}>Edit</button>}</div></article>;
+function FlowCard({ flow, loading = false, removing = false, confirmingRemove = false, onUse, onEdit, onBeginRemove, onCancelRemove, onConfirmRemove, compact = false }) {
+  const busy = loading || removing;
+  return <article className={`flow-card ${compact ? "flow-card--compact" : ""}`} aria-busy={busy}>
+    <div className="flow-title"><span className="mini-mark"><Envelope weight="fill" /></span><h3>{flow.name}</h3>{busy && <SpinnerGap className="spin" aria-label={removing ? "Removing flow" : "Opening flow"} />}</div>
+    <div className="card-divider" />
+    <small>Template</small>
+    <div className="field-list">{flow.fields.map((field) => <code key={field}>{field}</code>)}</div>
+    <footer><span><Clock /> {flow.metaLabel}</span><StatusChip status={flow.status}>{flow.status === "ready" ? "Ready" : "Draft"}</StatusChip></footer>
+    <div className="flow-card-actions">
+      <button type="button" className="button button--coral button--small" onClick={onUse} disabled={busy}>Use flow <ArrowRight /></button>
+      {onEdit && <button type="button" className="button button--outline button--small" onClick={onEdit} disabled={busy}>Edit</button>}
+      {onBeginRemove && !confirmingRemove && <button type="button" className="button button--outline button--small" onClick={onBeginRemove} disabled={busy} aria-label={`Remove ${flow.name}`}><Trash /> Remove</button>}
+      {confirmingRemove && <><span className="flow-remove-note">Campaign history stays available.</span><button type="button" className="button button--outline button--small" onClick={onCancelRemove} disabled={busy}>Keep flow</button><button type="button" className="button button--danger button--small" onClick={onConfirmRemove} disabled={busy} aria-label={`Confirm remove ${flow.name}`}>{removing ? <SpinnerGap className="spin" /> : <Trash />} {removing ? "Removing" : "Confirm remove"}</button></>}
+    </div>
+  </article>;
 }
 
 function useFlowActions() {
@@ -296,22 +311,36 @@ function DashboardPage() {
   const { user, dashboard } = useApi();
   const { openingFlowId, openFlowError, openFlow, startNewFlow } = useFlowActions();
   const flows = dashboard.flows ? dashboard.flows.map(displayFlow) : [];
-  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts)) : [];
+  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
   const hasRemoteError = dashboard.status === "error";
   const campaignTarget = campaigns[0]?.id;
   return <AppShell><div className="page dashboard-page"><header className="page-header"><div><h1>Good afternoon, {user?.displayName?.split(" ")[0] || "there"}.</h1><p>Your society mail, in one clear view.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{dashboard.error && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /> {dashboard.error}</div>}{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}<section className="section-heading"><h2>Reusable flows</h2><Link to="/flows">View all flows <ArrowRight /></Link></section>{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : hasRemoteError ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-grid">{flows.slice(0, 2).map((flow) => <FlowCard compact flow={flow} key={flow.id} loading={openingFlowId === flow.id} onUse={() => void openFlow(flow, "use")} />)}</div> : <div className="panel empty-state"><h2>No flows yet</h2><p>Start with a spreadsheet so Mail Flow can discover the fields available for personalization.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}<div className="dashboard-lower"><section className="panel campaign-list"><div className="section-heading"><h2>Recent campaigns</h2>{campaignTarget ? <Link to="/campaigns">View campaigns <ArrowRight /></Link> : <span className="empty-link">No campaigns yet</span>}</div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : hasRemoteError ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns.slice(0, 3)} /> : <p className="empty-state">No campaigns yet. Your first reviewed send will appear here.</p>}</section><aside className="panel route-card"><h2>Today&apos;s route</h2>{[["Draft", `${flows.length} flows ready`, Check], ["Validated", `${campaigns.filter((campaign) => campaign.failed > 0).length} need attention`, WarningCircle], ["Accepted", `${campaigns.reduce((sum, campaign) => sum + campaign.accepted, 0)} by Microsoft`, PaperPlaneTilt]].map(([label, value, Icon], index) => <div className="route-row" key={label}><span className={`route-dot route-dot--${index}`}><Icon weight="bold" /></span><span><strong>{label}</strong><small>{value}</small></span></div>)}{campaignTarget ? <Link to={`/campaigns/${campaignTarget}`}>View route details <ArrowRight /></Link> : <span className="empty-link">No campaign route yet</span>}</aside></div></div></AppShell>;
 }
 
 function FlowsPage() {
-  const { dashboard } = useApi();
+  const { dashboard, csrfToken, refreshDashboard } = useApi();
   const { openingFlowId, openFlowError, openFlow, startNewFlow } = useFlowActions();
+  const [removeState, setRemoveState] = useState({ confirmingId: null, workingId: null, error: "" });
   const flows = dashboard.flows ? dashboard.flows.map(displayFlow) : [];
-  return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Your reusable flows.</h1><p>Use an existing message with a new file, or edit its saved template.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : dashboard.status === "error" ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-library-grid">{flows.map((flow) => <FlowCard flow={flow} key={flow.id} loading={openingFlowId === flow.id} onUse={() => void openFlow(flow, "use")} onEdit={() => void openFlow(flow, "edit")} />)}</div> : <div className="panel empty-state empty-state--large"><span className="empty-state-icon"><FlowArrow weight="duotone" /></span><h2>No flows yet</h2><p>Import a CSV or Excel file first. Its headers become the dynamic fields in your message.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}</div></AppShell>;
+  const confirmRemove = (flowId) => setRemoveState({ confirmingId: flowId, workingId: null, error: "" });
+  const cancelRemove = () => setRemoveState({ confirmingId: null, workingId: null, error: "" });
+  const removeFlow = async (flowId) => {
+    if (removeState.workingId) return;
+    setRemoveState({ confirmingId: flowId, workingId: flowId, error: "" });
+    try {
+      await archiveFlow(flowId, csrfToken);
+      setRemoveState({ confirmingId: null, workingId: null, error: "" });
+      await refreshDashboard();
+    } catch (error) {
+      setRemoveState({ confirmingId: flowId, workingId: null, error: error instanceof Error ? error.message : "The flow could not be removed." });
+    }
+  };
+  return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Your reusable flows.</h1><p>Use an existing message with a new file, or edit its saved template.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}{removeState.error && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {removeState.error}</div>}{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : dashboard.status === "error" ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-library-grid">{flows.map((flow) => <FlowCard flow={flow} key={flow.id} loading={openingFlowId === flow.id} removing={removeState.workingId === flow.id} confirmingRemove={removeState.confirmingId === flow.id} onUse={() => void openFlow(flow, "use")} onEdit={() => void openFlow(flow, "edit")} onBeginRemove={() => confirmRemove(flow.id)} onCancelRemove={cancelRemove} onConfirmRemove={() => void removeFlow(flow.id)} />)}</div> : <div className="panel empty-state empty-state--large"><span className="empty-state-icon"><FlowArrow weight="duotone" /></span><h2>No flows yet</h2><p>Import a CSV or Excel file first. Its headers become the dynamic fields in your message.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}</div></AppShell>;
 }
 
 function CampaignsPage() {
   const { dashboard } = useApi();
-  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts)) : [];
+  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
   return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Campaign history.</h1><p>Every spreadsheet row keeps its own auditable outcome.</p></div></header><section className="panel campaign-list campaign-list--page"><div className="section-heading"><h2>All campaigns</h2><span className="empty-link">Newest first</span></div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : dashboard.status === "error" ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns} /> : <div className="empty-state"><h2>No campaigns yet</h2><p>Completed reviews and sends will appear here.</p></div>}</section></div></AppShell>;
 }
 
@@ -982,7 +1011,14 @@ function ReviewPage() {
     setActionError("");
     try {
       const response = await ensureCampaign();
-      await sendCampaignTest(response.campaign.id, { subject: message.subject, bodyHtml: message.bodyHtml, importance: state.draft.importance }, csrfToken);
+      await sendCampaignTest(response.campaign.id, {
+        subject: message.subject,
+        bodyHtml: message.bodyHtml,
+        cc: message.cc,
+        bcc: message.bcc,
+        replyTo: message.replyTo,
+        importance: state.draft.importance,
+      }, csrfToken);
       setTestState("accepted");
     } catch (error) {
       setTestState("error");
@@ -1020,16 +1056,20 @@ function CampaignPage() {
   const [loadError, setLoadError] = useState("");
   const [actionState, setActionState] = useState("idle");
   const [copied, setCopied] = useState(false);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
     if (!campaignId) return;
+    const sequence = ++loadSequence.current;
     try {
       const [campaignResponse, jobsResponse] = await Promise.all([getCampaign(campaignId), getCampaignJobs(campaignId, 100, 0)]);
+      if (sequence !== loadSequence.current) return;
       setCampaignState(campaignResponse.campaign);
       setCounts(campaignResponse.counts);
       setJobs(jobsResponse.jobs);
       setLoadError("");
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       setCampaignState(null);
       setCounts(null);
       setJobs(null);
@@ -1064,11 +1104,14 @@ function CampaignPage() {
     setActionState(action);
     setLoadError("");
     try {
-      if (action === "pause") await pauseCampaign(campaignId, csrfToken);
-      else await resumeCampaign(campaignId, csrfToken);
+      const response = action === "pause"
+        ? await pauseCampaign(campaignId, csrfToken)
+        : await resumeCampaign(campaignId, csrfToken);
+      setCampaignState(response.campaign);
       await load();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "The campaign could not be updated.");
+      await load();
     } finally {
       setActionState("idle");
     }

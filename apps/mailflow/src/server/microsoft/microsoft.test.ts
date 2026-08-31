@@ -113,10 +113,24 @@ describe("test-send service", () => {
         return { accepted: true as const, status: 202, requestId: "request-fixture" };
       },
     };
-    const result = await sendTestToSelf(provider, "access-fixture", { subject: "Fixture test", bodyHtml: "<p>Fixture</p>", importance: "low" });
+    const result = await sendTestToSelf(provider, "access-fixture", {
+      subject: "Fixture test",
+      bodyHtml: "<p>Fixture</p>",
+      cc: ["copy@example.test"],
+      bcc: ["audit@example.test"],
+      replyTo: ["replies@example.test"],
+      importance: "low",
+    });
     expect(result).toMatchObject({ status: "accepted", userMessage: "Accepted by Microsoft", senderAddress: "member@example.test", recipientAddress: "member@example.test" });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ to: ["member@example.test"], importance: "low", saveToSentItems: true });
+    expect(calls[0]).toMatchObject({
+      to: ["member@example.test"],
+      cc: ["copy@example.test"],
+      bcc: ["audit@example.test"],
+      replyTo: ["replies@example.test"],
+      importance: "low",
+      saveToSentItems: true,
+    });
   });
 });
 

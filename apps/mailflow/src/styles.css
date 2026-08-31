@@ -55,6 +55,8 @@ img { display: block; max-width: 100%; }
 .button--outline { background: var(--paper-bright); border-color: #a9aca6; }
 .button--outline:hover:not(:disabled) { border-color: var(--ink); background: white; }
 .button--text { background: transparent; color: var(--moss-dark); }
+.button--danger { background: var(--danger); color: white; }
+.button--danger:hover:not(:disabled) { background: var(--coral-dark); }
 .button--small { min-height: 40px; padding: .58rem .85rem; font-size: .9rem; }
 .button--hero { width: min(365px, 100%); min-height: 66px; font-size: 1.05rem; border-radius: 12px; box-shadow: 0 10px 0 rgba(126,50,38,.14); }
 .button--hero svg { width: 1.35rem; height: 1.35rem; }
@@ -157,6 +159,7 @@ img { display: block; max-width: 100%; }
 .flow-card footer > span:first-child { display: inline-flex; align-items: center; gap: .35rem; }
 .flow-card footer svg { width: 1rem; }
 .flow-card-actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: .6rem; }
+.flow-remove-note { flex-basis: 100%; color: var(--muted); font-size: .82rem; }
 .flow-card--compact .flow-card-actions .button--outline { display: none; }
 .flow-library-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .library-page .page-header { align-items: center; }

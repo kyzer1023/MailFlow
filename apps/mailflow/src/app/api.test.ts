@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, createCampaign, pauseCampaign, startCampaign } from "./api";
+import { apiRequest, archiveFlow, createCampaign, pauseCampaign, sendCampaignTest, startCampaign } from "./api";
 import type { CampaignCreatePayload } from "../client/types";
 
 afterEach(() => {
@@ -41,6 +41,15 @@ describe("same-origin API client", () => {
     expect(JSON.parse(String(options?.body))).toMatchObject({ idempotencyKey: "request-1", flowId: "flow_1" });
   });
 
+  it("bypasses browser caches for live campaign reads", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ campaigns: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiRequest("/api/campaigns");
+
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: "no-store" });
+  });
+
   it("aligns acknowledgement and pause bodies with the Worker routes", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ campaign: { id: "campaign_1" } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -50,6 +59,40 @@ describe("same-origin API client", () => {
 
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ acknowledged: true });
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ reason: "Paused by member" });
+  });
+
+  it("archives a flow without deleting its campaign history", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ flow: { id: "flow_1", state: "archived" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await archiveFlow("flow_1", "csrf-archive");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/flows/flow_1");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "PATCH" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ state: "archived" });
+  });
+
+  it("sends the reviewed recipient metadata with a test message", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ result: { status: "accepted" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendCampaignTest("campaign_1", {
+      subject: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      cc: ["copy@example.test"],
+      bcc: ["audit@example.test"],
+      replyTo: ["replies@example.test"],
+      importance: "high",
+    }, "csrf-3");
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      subject: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      cc: ["copy@example.test"],
+      bcc: ["audit@example.test"],
+      replyTo: ["replies@example.test"],
+      importance: "high",
+    });
   });
 
   it("surfaces only the API's redacted error contract", async () => {

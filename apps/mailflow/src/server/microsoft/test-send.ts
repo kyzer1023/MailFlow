@@ -5,6 +5,9 @@ import type { MailImportance } from "../../domain/types";
 export interface TestSendInput {
   subject: string;
   bodyHtml: string;
+  cc?: readonly string[];
+  bcc?: readonly string[];
+  replyTo?: readonly string[];
   importance?: MailImportance;
 }
 
@@ -53,6 +56,9 @@ export class TestSendService {
         bodyHtml: input.bodyHtml,
         importance: input.importance ?? "normal",
         to: [self],
+        cc: input.cc ? [...input.cc] : undefined,
+        bcc: input.bcc ? [...input.bcc] : undefined,
+        replyTo: input.replyTo ? [...input.replyTo] : undefined,
         saveToSentItems: true,
       });
       return {
