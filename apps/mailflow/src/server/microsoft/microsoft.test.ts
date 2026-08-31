@@ -29,6 +29,7 @@ describe("Microsoft OAuth", () => {
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("scope")).toContain("Mail.Send");
     expect(url.searchParams.get("response_type")).toBe("code");
+    expect(url.searchParams.get("prompt")).toBe("select_account");
   });
 
   it("exchanges a code using form encoding and parses token metadata", async () => {

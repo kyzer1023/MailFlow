@@ -18,15 +18,6 @@ export const DEFAULT_CLIENT_CAMPAIGN_LIMIT = 300;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
 
-/**
- * DOMPurify serializes the HTML void element `<br />` as `<br>`. Normalize
- * that harmless syntax difference before comparing sanitized output so a
- * clean multiline draft is not reported as unsafe markup.
- */
-function canonicalizeTemplateHtml(html: string): string {
-  return html.replace(/<br\s*\/?\s*>/giu, "<br>");
-}
-
 export type AddressValue = string | readonly string[] | null | undefined;
 
 export interface ParsedAddressList {
@@ -253,13 +244,11 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
   }
 
   const sanitizedBodyHtml = sanitizeTemplateHtml(input.bodyHtml);
-  if (canonicalizeTemplateHtml(sanitizedBodyHtml) !== canonicalizeTemplateHtml(input.bodyHtml)) {
-    issues.push({
-      code: "unsafe_html",
-      field: "bodyHtml",
-      message: "The message contains HTML that is not allowed. Review and remove the flagged markup.",
-    });
-  }
+  // The sanitized form is the authoritative template used for previews,
+  // immutable template versions, campaign rows, and Graph sends. DOMPurify
+  // may remove active content or normalize harmless email markup, so string
+  // inequality is not itself a validation failure. The Worker independently
+  // rejects active HTML at the API boundary and never receives this raw input.
 
   const rowResult = validateMappedRecipientRows(input.rows, input.separator ?? "auto");
   issues.push(...rowResult.issues);

@@ -259,7 +259,7 @@ describe("mapping and validation", () => {
     expect(result.issues.map((issue) => issue.code)).toEqual(["malformed_address", "duplicate_recipient", "missing_recipient"]);
   });
 
-  it("extracts placeholders and enforces mappings, values, unsafe HTML, and limits", () => {
+  it("extracts placeholders, sanitizes HTML, and enforces mappings, values, and limits", () => {
     expect(extractPlaceholders("Hi {{ first_name }}", "<p>{{first_name}} {{order.id}}</p>")).toEqual(["first_name", "order.id"]);
     const mapped = [mappedRow(2, "a@example.com", "Ada")];
     const invalid = validateClientCampaign({
@@ -271,9 +271,10 @@ describe("mapping and validation", () => {
       maxRecipients: 1,
       pacePerMinute: 12,
     });
-    expect(invalid.ok).toBe(false);
-    expect(invalid.issues.some((issue) => issue.code === "unsafe_html")).toBe(true);
+    expect(invalid.ok).toBe(true);
+    expect(invalid.issues).toEqual([]);
     expect(invalid.sanitizedBodyHtml).not.toContain("script");
+    expect(invalid.sanitizedBodyHtml).not.toContain("onclick");
 
     const cleanRows = [1, 2, 3, 4, 5].map((row) => mappedRow(row + 1, `person${row}@example.com`, `Person ${row}`));
     const cleanMultiline = validateClientCampaign({

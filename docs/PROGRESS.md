@@ -164,3 +164,25 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Prepared the current `main` history and working snapshot for initial publication to the project GitHub repository.
 - Kept the ignored root `.env` and local `.qa-*.png` captures out of Git. The local QA captures can contain mailbox or recipient identifiers and are not publication-safe evidence.
 - Verified `npm test`: TypeScript, the production build, and 67 unit and integration tests pass before publication.
+
+### 2026-08-31 - Authoritative import state and exact HTML preview
+
+- Restored explicit logout on both the authenticated landing header and dashboard rail while retaining the rolling 365-day session for members who do not sign out.
+- Made the currently selected worksheet authoritative: replacing a workbook or worksheet now replaces the saved field map, and Template displays only that table's current headers.
+- Removed the application-supplied MailFlow header and watermark from Review. The preview iframe now contains only the sanitized, personalized template HTML.
+- Added a visible Review blocker panel with route-specific recovery links and explanatory disabled-button text.
+- Added component and mapping coverage for logout and stale-header removal. TypeScript, 67 unit and integration tests, the production build, and a Wrangler deployment dry run pass.
+- Confirmed that `npm run dev` serves both the client and Worker at port 5173 and that the local D1 migration succeeds. Before the ignored app-local environment files were configured, `/auth/microsoft/start` correctly returned `503` rather than pretending OAuth was available.
+- Configured ignored app-local development secrets, verified the localhost Microsoft callback, completed interactive local sign-in, and confirmed that server-side logout returns the landing page to a signed-out state.
+- Changed client validation to treat the DOMPurify output as the authoritative message body. Active markup and event handlers are still removed, while harmless email-HTML normalization no longer creates a false blocking issue.
+- Re-ran the requested workbook and DOCX-derived HTML through localhost and the deployed Worker. Review reported Ready to queue, exposed only the two current workbook fields, enabled both send controls after acknowledgement, and added no MailFlow branding to the iframe.
+- Deployed version `310fe61c-ff81-4c01-94d1-995055fc430f`. The test-to-self request was accepted by Microsoft; the five-recipient campaign completed with 5 accepted, 0 pending, 0 sending, 0 skipped, and 0 failed.
+- The new message was observed in four recipient Gmail inboxes. The fifth recipient account was not present in the active Chrome Gmail sessions, so its inbox receipt remains not checked rather than inferred from Graph acceptance.
+
+### 2026-08-31 - Explicit Microsoft account selection after logout
+
+- Added `prompt=select_account` to every new Microsoft authorization request. MailFlow logout continues to revoke its own server session and clear its cookies, while the next sign-in can no longer silently reuse the last Microsoft account.
+- Chose the account picker instead of Microsoft global logout so signing out of MailFlow does not unexpectedly sign the member out of Outlook, Teams, or other Microsoft applications.
+- Added OAuth URL coverage and verified TypeScript, 67 unit and integration tests, and the production build with no local secret artifact.
+- Verified both localhost and the deployed Worker in Chrome: after MailFlow sign-out, Continue with Microsoft opened the Microsoft `Pick an account` screen with saved accounts and `Use another account` rather than returning automatically to MailFlow.
+- Deployed Worker version `08c97835-7b3a-4ed2-8dc7-a32fc75b91fd` and left the production landing page signed out after the check.

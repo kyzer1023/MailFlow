@@ -32,9 +32,23 @@ Then confirm:
 
 - `.env` and `.dev.vars` are ignored.
 - No password, token, client secret, or account address is staged in Git.
-- `PUBLIC_ORIGIN` is still local until the production hostname is known.
+- `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
 - The Entra app remains single tenant and uses only delegated Graph permissions.
 - Real-mail recipients and message content have been explicitly approved for the test.
+
+## Local full-stack development
+
+`npm run dev` is the full-stack local command. The Cloudflare Vite plugin serves the React client and executes the Worker routes on the same `http://localhost:5173` origin. Do not start a second API server.
+
+Before testing sign-in locally:
+
+1. Copy `.env.example` to the ignored `.env` file beside `wrangler.jsonc`. Use `.env` or `.dev.vars`, never both.
+2. Supply a dedicated, short-lived Entra client secret and independent local values for `TOKEN_ENCRYPTION_KEY_B64` and `SESSION_SECRET`. Never reuse or extract production Worker secrets.
+3. Confirm that `http://localhost:5173/auth/microsoft/callback` remains registered as a Web redirect URI in the existing Entra application.
+4. Run `npm run db:migrate:local` once for a fresh local D1 state.
+5. Run `npm run dev`, then verify `/api/me` returns `401` before sign-in and that Microsoft sign-in returns to the local callback.
+
+If `/auth/microsoft/start` returns `503`, the Worker is running but one or more required values are missing from the app-local `.env` or `.dev.vars`. A successful landing-page response does not by itself prove local OAuth is configured.
 
 ## Provision Cloudflare
 
