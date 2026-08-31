@@ -152,6 +152,7 @@ describe("mapping and validation", () => {
       bccFixed: "audit@example.com",
       replyToFixed: null,
       placeholderMappings: {},
+      importance: "normal",
       separator: "semicolon",
     });
   });
@@ -163,6 +164,7 @@ describe("mapping and validation", () => {
       bcc: { kind: "column", field: " bcc " },
       replyTo: { kind: "fixed", value: " replies@example.com " },
       placeholders: { first_name: " name ", " order.id ": " order_id " },
+      importance: "high",
       separator: "auto",
     });
     expect(configuration).toEqual({
@@ -174,6 +176,7 @@ describe("mapping and validation", () => {
       bccFixed: null,
       replyToFixed: "replies@example.com",
       placeholderMappings: { first_name: "name", "order.id": "order_id" },
+      importance: "high",
       separator: "auto",
     });
     expect(recipientConfigurationToClientMapping(configuration)).toEqual({
@@ -182,6 +185,7 @@ describe("mapping and validation", () => {
       bcc: { kind: "column", field: "bcc" },
       replyTo: { kind: "fixed", value: "replies@example.com" },
       placeholders: { first_name: "name", "order.id": "order_id" },
+      importance: "high",
       separator: "auto",
     });
   });
@@ -199,6 +203,7 @@ describe("mapping and validation", () => {
       bcc: null,
       replyTo: { kind: "column", field: "reply_to" },
       placeholders: {},
+      importance: "normal",
       separator: "semicolon",
     });
   });

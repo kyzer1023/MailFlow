@@ -57,6 +57,7 @@ export interface FlowRecord {
 }
 
 export type AddressSeparator = "comma" | "semicolon" | "newline" | "auto";
+export type MailImportance = "low" | "normal" | "high";
 
 export interface RecipientConfiguration {
   toField: string;
@@ -74,6 +75,8 @@ export interface RecipientConfiguration {
   replyToFixed?: string | null;
   /** Safe worksheet-column keys for subject/body placeholders. */
   placeholderMappings?: Readonly<Record<string, string>>;
+  /** Microsoft Graph message importance. Older saved versions default to normal. */
+  importance?: MailImportance;
   separator: AddressSeparator;
 }
 
@@ -117,6 +120,8 @@ export interface RecipientJobRecord {
   cc: readonly string[];
   bcc: readonly string[];
   replyTo: readonly string[];
+  /** Optional for records created before the importance migration. */
+  importance?: MailImportance;
   mergeData: Readonly<Record<string, string>>;
   renderedSubject: string;
   renderedBodyHtml: string;

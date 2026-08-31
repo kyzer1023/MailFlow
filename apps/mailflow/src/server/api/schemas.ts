@@ -15,6 +15,7 @@ export const recipientConfigurationSchema = z.object({
   bccFixed: optionalAddressText(20_000),
   replyToFixed: optionalAddressText(20_000),
   placeholderMappings,
+  importance: z.enum(["low", "normal", "high"]).default("normal"),
   separator: z.enum(["comma", "semicolon", "newline", "auto"]).default("auto"),
 }).strict();
 
@@ -75,6 +76,7 @@ export const templateVersionSchema = z.object({
 export const testSendSchema = z.object({
   subject: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
+  importance: z.enum(["low", "normal", "high"]).default("normal"),
 }).strict();
 
 export const acknowledgementSchema = z.object({

@@ -72,7 +72,7 @@ Owner, optional society label, name, current template version, lifecycle state, 
 
 ### template_versions
 
-Flow reference, version number, subject template, sanitized body HTML, recipient configuration, placeholder manifest, and immutable creation metadata.
+Flow reference, version number, subject template, sanitized body HTML, recipient configuration including message importance, placeholder manifest, and immutable creation metadata.
 
 ### campaigns
 
@@ -82,7 +82,7 @@ The campaign-create API requires the idempotency key. D1 enforces uniqueness per
 
 ### recipient_jobs
 
-Campaign reference, source row, resolved recipient metadata, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
+Campaign reference, source row, resolved recipient metadata, message importance, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
 
 ### audit_events
 

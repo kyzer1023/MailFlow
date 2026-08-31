@@ -1,4 +1,4 @@
-import type { AddressSeparator } from "../domain/types";
+import type { AddressSeparator, MailImportance } from "../domain/types";
 
 /** File formats accepted by the browser import step. */
 export type SpreadsheetFormat = "csv" | "xlsx";
@@ -73,6 +73,7 @@ export interface ClientMapping {
   readonly bccField?: string | null;
   readonly replyToField?: string | null;
   readonly separator?: AddressSeparator;
+  readonly importance?: MailImportance;
   /** Placeholder key to safe column key. */
   readonly placeholders?: Readonly<Record<string, string>>;
 }
@@ -182,6 +183,7 @@ export interface CampaignCreatePayload {
     readonly replyToFixed?: string | null;
     /** Safe worksheet-column keys used to resolve template placeholders. */
     readonly placeholderMappings?: Readonly<Record<string, string>>;
+    readonly importance?: MailImportance;
     readonly separator: AddressSeparator;
   };
   readonly pacePerMinute: number;

@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRight, CaretLeft, CaretRight, Check, CheckCircle, Clock,
+  ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge, House, Info,
   MicrosoftOutlookLogo, MinusCircle, PaperPlaneTilt, Pause, Play, Plus,
   Rows, SignOut, SpinnerGap, Users, WarningCircle, X,
@@ -37,7 +37,7 @@ import {
   selectSpreadsheetTable,
   validateClientCampaign,
 } from "./client";
-import { escapeMergeValue, replaceTextSelection } from "./client/template";
+import { escapeMergeValue } from "./client/template";
 
 const DraftContext = createContext(null);
 const ApiContext = createContext(null);
@@ -56,6 +56,7 @@ const emptyDraft = () => ({
   worksheet: "",
   headerRow: "Row 1",
   pace: fallbackConfig.defaultPacePerMinute,
+  importance: "normal",
   toField: "",
   separator: "auto",
   ccMode: "fixed",
@@ -330,6 +331,176 @@ function WizardStepper({ current }) {
 function WizardShell({ current, title, subtitle, actions, children }) { return <AppShell><WizardStepper current={current} /><div className="page wizard-page"><header className="page-header wizard-header"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="header-actions">{actions}</div></header>{children}</div></AppShell>; }
 function Field({ label, children, hint }) { return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
 
+function dynamicFieldLabel(key, options = []) {
+  const match = options.find((option) => option.value === key);
+  return match?.label || String(key || "").replace(/_/gu, " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
+function DynamicValueChip({ value, options = [], compact = false }) {
+  return <span className={`dynamic-value-chip${compact ? " dynamic-value-chip--compact" : ""}`}><BracketsCurly weight="bold" aria-hidden="true" />{dynamicFieldLabel(value, options)}</span>;
+}
+
+function serializeTokenEditor(root) {
+  if (!root) return "";
+  return [...root.childNodes].map((node) => {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const element = node;
+    if (element.dataset?.dynamicField) return `{{${element.dataset.dynamicField}}}`;
+    if (element.tagName === "BR") return "\n";
+    const nested = serializeTokenEditor(element);
+    return element.tagName === "DIV" || element.tagName === "P" ? `${nested}\n` : nested;
+  }).join("");
+}
+
+function appendTokenEditorContent(root, value, options) {
+  root.replaceChildren();
+  const pattern = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
+  let cursor = 0;
+  for (const match of String(value || "").matchAll(pattern)) {
+    if (match.index > cursor) root.append(document.createTextNode(value.slice(cursor, match.index)));
+    const token = document.createElement("span");
+    token.className = "dynamic-inline-token";
+    token.contentEditable = "false";
+    token.dataset.dynamicField = match[1];
+    token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(match[1], options)}`);
+    token.textContent = dynamicFieldLabel(match[1], options);
+    root.append(token);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < String(value || "").length) root.append(document.createTextNode(value.slice(cursor)));
+}
+
+const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
+  const rootRef = useRef(null);
+  const savedRangeRef = useRef(null);
+
+  const saveRange = useCallback(() => {
+    const root = rootRef.current;
+    const selection = window.getSelection();
+    if (!root || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (root.contains(range.commonAncestorContainer)) savedRangeRef.current = range.cloneRange();
+  }, []);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root && serializeTokenEditor(root) !== String(value || "")) appendTokenEditorContent(root, String(value || ""), options);
+  }, [value, options]);
+
+  useImperativeHandle(forwardedRef, () => ({
+    insertToken(key) {
+      const root = rootRef.current;
+      if (!root) return;
+      root.focus();
+      const selection = window.getSelection();
+      const range = savedRangeRef.current?.cloneRange() || document.createRange();
+      if (!savedRangeRef.current || !root.contains(range.commonAncestorContainer)) range.selectNodeContents(root), range.collapse(false);
+      const token = document.createElement("span");
+      token.className = "dynamic-inline-token";
+      token.contentEditable = "false";
+      token.dataset.dynamicField = key;
+      token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(key, options)}`);
+      token.textContent = dynamicFieldLabel(key, options);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      // insertHTML participates in the browser's editing transaction history,
+      // unlike Range.insertNode. This makes dynamic token insertion and text
+      // replacement reversible with the same Ctrl+Z flow as ordinary typing.
+      const insertedWithHistory = document.execCommand?.("insertHTML", false, token.outerHTML) ?? false;
+      if (!insertedWithHistory) {
+        range.deleteContents();
+        range.insertNode(token);
+        range.setStartAfter(token);
+        range.collapse(true);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      saveRange();
+      onChange(serializeTokenEditor(root));
+    },
+  }), [onChange, options, saveRange]);
+
+  const insertPlainText = (text) => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const insertedWithHistory = document.execCommand?.("insertText", false, text) ?? false;
+    if (!insertedWithHistory) {
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    saveRange();
+    onChange(serializeTokenEditor(rootRef.current));
+  };
+
+  return <div
+    ref={rootRef}
+    className="message-editor token-message-editor"
+    contentEditable
+    suppressContentEditableWarning
+    role="textbox"
+    aria-multiline="true"
+    aria-label="Message body"
+    data-placeholder={placeholder}
+    onFocus={(event) => { saveRange(); onFocus?.(event); }}
+    onKeyUp={saveRange}
+    onMouseUp={saveRange}
+    onInput={() => { saveRange(); onChange(serializeTokenEditor(rootRef.current)); }}
+    onKeyDown={(event) => {
+      if (event.key === "Enter") { event.preventDefault(); insertPlainText("\n"); }
+    }}
+    onPaste={(event) => { event.preventDefault(); insertPlainText(event.clipboardData.getData("text/plain")); }}
+  />;
+});
+
+function splitFixedAddresses(value) {
+  return String(value || "").split(/[;,\n]+/u).map((part) => part.trim()).filter(Boolean);
+}
+
+function AddressRuleField({ fieldKey, label, value, mode, column, options, onValue, onMode, onColumn, hint }) {
+  const [pending, setPending] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const fieldRef = useRef(null);
+  const addresses = splitFixedAddresses(value);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const close = (event) => { if (!fieldRef.current?.contains(event.target)) setMenuOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
+
+  const commitPending = (raw = pending) => {
+    const additions = splitFixedAddresses(raw);
+    if (additions.length > 0) {
+      const seen = new Set(addresses.map((address) => address.toLowerCase()));
+      onValue([...addresses, ...additions.filter((address) => !seen.has(address.toLowerCase()))].join("; "));
+    }
+    setPending("");
+  };
+  const removeAddress = (index) => onValue(addresses.filter((_, itemIndex) => itemIndex !== index).join("; "));
+  const removeDynamic = () => { onMode("fixed"); onColumn(""); };
+
+  return <div className="recipient-rule" ref={fieldRef}>
+    <label htmlFor={`${fieldKey}-fixed-input`}>{label}</label>
+    <div className={`address-chip-input${mode === "column" ? " address-chip-input--dynamic" : ""}`}>
+      <div className="address-chip-values">
+        {mode === "column" && column ? <span className="selected-dynamic-value"><DynamicValueChip value={column} options={options} /><button type="button" onClick={removeDynamic} aria-label={`Remove dynamic ${label} value`}><X /></button></span> : addresses.map((address, index) => <span className="address-chip" key={`${address}-${index}`}><span aria-hidden="true">{address.charAt(0).toUpperCase()}</span><span className="address-chip-label">{address}</span><button type="button" onClick={() => removeAddress(index)} aria-label={`Remove ${address}`}><X /></button></span>)}
+        {mode === "fixed" && <input id={`${fieldKey}-fixed-input`} value={pending} onChange={(event) => setPending(event.target.value)} onBlur={() => commitPending()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "," || event.key === ";") { event.preventDefault(); commitPending(); } else if (event.key === "Backspace" && !pending && addresses.length > 0) removeAddress(addresses.length - 1); }} placeholder={addresses.length ? "Add another" : "Add email addresses"} autoComplete="off" />}
+      </div>
+      <button type="button" className="dynamic-menu-trigger" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-haspopup="listbox" aria-label={`Choose a dynamic value for ${label}`} title="Choose a spreadsheet value"><BracketsCurly weight="bold" /></button>
+    </div>
+    {menuOpen && <div className="dynamic-value-menu" role="listbox" aria-label={`Dynamic values for ${label}`} onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}><div><strong>Dynamic values</strong><small>Choose a spreadsheet column containing email addresses.</small></div>{options.length > 0 ? options.map((option) => <button type="button" role="option" aria-selected={mode === "column" && column === option.value} key={option.value} onClick={() => { onMode("column"); onColumn(option.value); setPending(""); setMenuOpen(false); }}><DynamicValueChip value={option.value} options={options} compact />{mode === "column" && column === option.value && <Check weight="bold" />}</button>) : <p>No spreadsheet fields are available.</p>}</div>}
+    {hint && <small className="recipient-rule-hint">{hint}</small>}
+  </div>;
+}
+
 function DraftProvider({ children }) {
   const { user, config } = useApi();
   const [draft, setDraft] = useState(emptyDraft);
@@ -353,6 +524,7 @@ function DraftProvider({ children }) {
       cc: source("cc"),
       bcc: source("bcc"),
       replyTo: source("replyTo"),
+      importance: draft.importance || "normal",
       separator: draft.separator || "auto",
       placeholders: draft.mappings,
     };
@@ -404,6 +576,7 @@ function DraftProvider({ children }) {
       cc: cc.fixed,
       bcc: bcc.fixed,
       replyTo: replyTo.fixed,
+      importance: savedMapping.importance || "normal",
       fileName: "",
       fileSize: "",
       rowCount: 0,
@@ -439,22 +612,13 @@ function TemplatePage() {
   const bodyRef = useRef(null);
   const [saveState, setSaveState] = useState("idle");
   const [saveError, setSaveError] = useState("");
-  const dynamicFields = table?.columns.map((column) => column.key) || [];
+  const dynamicOptions = columnOptions(table);
+  const dynamicFields = dynamicOptions.map((option) => option.value);
   const editingExisting = Boolean(editingFlowId) && !table;
   const canSave = Boolean(draft.name.trim() && draft.subject.trim() && draft.body.trim() && mapping.toField);
 
   const insertDynamicField = (key) => {
-    const input = bodyRef.current;
-    const token = `{{${key}}}`;
-    const start = input?.selectionStart ?? draft.body.length;
-    const end = input?.selectionEnd ?? start;
-    const replacement = replaceTextSelection(draft.body, token, start, end);
-    updateDraft("body", replacement.value);
-    window.requestAnimationFrame(() => {
-      if (!input) return;
-      input.focus();
-      input.setSelectionRange(replacement.cursor, replacement.cursor);
-    });
+    bodyRef.current?.insertToken(key);
   };
 
   const saveFlowDraft = async (destination = "") => {
@@ -483,7 +647,7 @@ function TemplatePage() {
   if (!table && !editingExisting) {
     return <AppShell><div className="route-gate" role="status"><WarningCircle weight="fill" /><h1>Import your data first.</h1><p>The template editor builds its dynamic fields from your spreadsheet headers.</p><Link className="button button--coral" to="/flows/new/data">Start with data</Link></div></AppShell>;
   }
-  return <WizardShell current={1} title="Compose the reusable message." subtitle="Your spreadsheet headers are ready to use as dynamic fields." actions={<><button className="button button--outline" onClick={() => navigate(editingExisting ? "/flows" : "/flows/new/data")}><ArrowLeft /> Back</button><button className="button button--text" onClick={() => void saveFlowDraft()} disabled={saveState === "saving" || !canSave}><Files /> {saveState === "saving" ? "Saving" : saveState === "saved" ? "Saved" : "Save draft"}</button><button className="button button--coral" onClick={() => void saveFlowDraft(nextDestination)} disabled={saveState === "saving" || !canSave}>{editingExisting ? "Save changes" : "Continue to recipients"} <ArrowRight /></button></>}><div className="template-layout">{saveError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {saveError}</div>}<section className="panel editor-card"><Field label="Flow name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="For example, Event invitation" /></Field><Field label="Subject"><input value={draft.subject} onChange={(event) => updateDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field><Field label="Message body" hint="Select text to replace it with a dynamic field, or place the cursor where the field should appear."><textarea ref={bodyRef} className="message-editor" value={draft.body} onChange={(event) => updateDraft("body", event.target.value)} placeholder="Write the reusable message here." /></Field></section><aside className="panel dynamic-panel"><h2>Dynamic fields</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert {{${key}}}`}>{`{{${key}}}`}</button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Clicking a field replaces highlighted text. With no selection, it inserts at the cursor.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside></div></WizardShell>;
+  return <WizardShell current={1} title="Compose the reusable message." subtitle="Your spreadsheet headers are ready to use as dynamic fields." actions={<><button className="button button--outline" onClick={() => navigate(editingExisting ? "/flows" : "/flows/new/data")}><ArrowLeft /> Back</button><button className="button button--text" onClick={() => void saveFlowDraft()} disabled={saveState === "saving" || !canSave}><Files /> {saveState === "saving" ? "Saving" : saveState === "saved" ? "Saved" : "Save draft"}</button><button className="button button--coral" onClick={() => void saveFlowDraft(nextDestination)} disabled={saveState === "saving" || !canSave}>{editingExisting ? "Save changes" : "Continue to recipients"} <ArrowRight /></button></>}><div className="template-layout">{saveError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {saveError}</div>}<section className="panel editor-card"><Field label="Flow name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="For example, Event invitation" /></Field><Field label="Subject"><input value={draft.subject} onChange={(event) => updateDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field><Field label="Message body" hint="Select text to replace it with a dynamic value, or place the cursor where it should appear."><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => updateDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /></Field></section><aside className="panel dynamic-panel"><h2>Dynamic values</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert ${dynamicFieldLabel(key, dynamicOptions)}`}><DynamicValueChip value={key} options={dynamicOptions} /></button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Click a value to insert it in the message. Highlighted text is replaced.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside></div></WizardShell>;
 }
 
 function EditFlowTemplatePage() {
@@ -561,13 +725,168 @@ function DataFirstPage() {
   const canContinue = Boolean(table && draft.toField);
   const subtitle = table ? `We found ${draft.rowCount} rows in ${draft.fileName}.` : "Start with a CSV or Excel file so we can discover its dynamic fields.";
 
-  return <WizardShell current={0} title="Bring in the recipient data." subtitle={subtitle} actions={<><button className="button button--outline" onClick={() => navigate("/flows")}><ArrowLeft /> Back to flows</button><button className="button button--coral" onClick={() => navigate("/flows/new/template")} disabled={!canContinue}>Continue to template <ArrowRight /></button></>}><div className={`data-layout ${!table ? "data-layout--empty" : ""}`}><section className="panel upload-panel"><div className="upload-card"><span className="upload-icon"><FileArrowUp weight="duotone" /></span><div><h2>{draft.fileName || "Upload CSV or Excel"}</h2><p>{draft.fileName ? `${draft.fileSize} · ${draft.rowCount} rows` : "Choose a .csv or .xlsx file. It stays in this browser until you confirm the campaign."}</p>{uploadError && <p className="error-text" role="alert"><WarningCircle /> {uploadError}</p>}</div><label className="button button--outline file-button">{uploadState === "loading" ? <SpinnerGap className="spin" /> : <FileCsv />} {draft.fileName ? "Replace file" : "Choose file"}<input type="file" accept=".csv,.xlsx" onChange={onFile} /></label></div>{table ? <><div className="sheet-controls"><Field label="Worksheet"><select value={draft.worksheet} onChange={(event) => rebuildTable(workbook, event.target.value, Number.parseInt(draft.headerRow.replace(/\D/gu, ""), 10) || "auto")}>{workbook.worksheets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></Field><Field label="Header row"><select value={draft.headerRow} onChange={(event) => rebuildTable(workbook, draft.worksheet, Number.parseInt(event.target.value.replace(/\D/gu, ""), 10) || "auto")}>{headerCandidates.map((row) => <option key={row}>Row {row}</option>)}</select></Field><div className="validation-badge"><CheckCircle weight="fill" /><span><strong>{readyCount} ready</strong><small>{attentionCount} rows need attention</small></span></div></div><div className="preview-table table-wrap"><table><thead><tr><th>Row</th>{previewColumns.map((column) => <th key={column.key}>{column.label || column.key}</th>)}</tr></thead><tbody>{previewRows.map((row) => { const invalid = validation?.invalidRows.includes(row.sourceRow); return <tr key={row.sourceRow} className={invalid ? "row-error" : ""}><td>{row.sourceRow}</td>{previewColumns.map((column) => <td key={column.key}>{row.values[column.key]}{invalid && column.key === draft.toField && <WarningCircle />}</td>)}</tr>; })}</tbody></table></div>{firstIssue && <div className="issue-strip"><WarningCircle weight="fill" /><span><strong>Row {firstIssue.row}. Recipient data needs attention</strong><small>{firstIssue.message}</small></span><span>{attentionCount} flagged {attentionCount === 1 ? "row" : "rows"}</span></div>}</> : <div className="upload-empty"><h3>Your file defines the flow.</h3><p>Once imported, the header row becomes the set of dynamic fields available in the template. No sample recipients are preloaded.</p><span><CheckCircle weight="fill" /> Parsed locally in your browser</span></div>}</section><aside className="panel mapping-panel"><div className="section-heading"><div><h2>{table ? "Detected fields" : "Why data comes first"}</h2><p>{table ? "Confirm the recipient column and any saved field mappings." : "The message editor should only offer values that truly exist in your file."}</p></div><Rows /></div>{table ? <><Field label="Primary recipient"><select value={draft.toField} onChange={(event) => setDraft((value) => ({ ...value, toField: event.target.value }))}><option value="">Choose a column</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>{templateFields.length > 0 && mappingFields.map((key) => <Field key={key} label={`{{${key}}}`}><select value={draft.mappings[key] || ""} onChange={(event) => setDraft((value) => ({ ...value, mappings: { ...value.mappings, [key]: event.target.value } }))}><option value="">Choose a column</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>)}<div className="detected-field-list">{options.map((option) => <code key={option.value}>{`{{${option.value}}}`}</code>)}</div><div className="validation-metrics"><span><CheckCircle weight="fill" /><strong>{readyCount}</strong><small>ready</small></span><span><WarningCircle weight="fill" /><strong>{attentionCount}</strong><small>attention</small></span><span><Users weight="fill" /><strong>{validation?.duplicateRecipients.length ?? 0}</strong><small>duplicate</small></span></div><div className="locked-note"><CheckCircle weight="fill" /> Nothing is sent until Review.</div></> : <ol className="data-first-list"><li>Import the file.</li><li>Confirm the header row.</li><li>Use those headers in the message.</li></ol>}</aside></div></WizardShell>;
+  return (
+    <WizardShell
+      current={0}
+      title="Bring in the recipient data."
+      subtitle={subtitle}
+      actions={(
+        <>
+          <button className="button button--outline" onClick={() => navigate("/flows")}><ArrowLeft /> Back to flows</button>
+          <button className="button button--coral" onClick={() => navigate("/flows/new/template")} disabled={!canContinue}>Continue to template <ArrowRight /></button>
+        </>
+      )}
+    >
+      <div className={`data-layout ${!table ? "data-layout--empty" : ""}`}>
+        <section className="panel upload-panel">
+          <div className="upload-card">
+            <span className="upload-icon"><FileArrowUp weight="duotone" /></span>
+            <div>
+              <h2>{draft.fileName || "Upload CSV or Excel"}</h2>
+              <p>{draft.fileName ? `${draft.fileSize} · ${draft.rowCount} rows` : "Choose a .csv or .xlsx file. It stays in this browser until you confirm the campaign."}</p>
+              {uploadError && <p className="error-text" role="alert"><WarningCircle /> {uploadError}</p>}
+            </div>
+            <label className="button button--outline file-button">
+              {uploadState === "loading" ? <SpinnerGap className="spin" /> : <FileCsv />}
+              {draft.fileName ? "Replace file" : "Choose file"}
+              <input type="file" accept=".csv,.xlsx" onChange={onFile} />
+            </label>
+          </div>
+          {table ? (
+            <>
+              <div className="sheet-controls">
+                <Field label="Worksheet">
+                  <select value={draft.worksheet} onChange={(event) => rebuildTable(workbook, event.target.value, Number.parseInt(draft.headerRow.replace(/\D/gu, ""), 10) || "auto")}>
+                    {workbook.worksheets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Header row">
+                  <select value={draft.headerRow} onChange={(event) => rebuildTable(workbook, draft.worksheet, Number.parseInt(event.target.value.replace(/\D/gu, ""), 10) || "auto")}>
+                    {headerCandidates.map((row) => <option key={row}>Row {row}</option>)}
+                  </select>
+                </Field>
+                <div className="validation-badge">
+                  <CheckCircle weight="fill" />
+                  <span><strong>{readyCount} ready</strong><small>{attentionCount} rows need attention</small></span>
+                </div>
+              </div>
+              <div className="preview-table table-wrap">
+                <table>
+                  <thead><tr><th>Row</th>{previewColumns.map((column) => <th key={column.key}>{column.label || column.key}</th>)}</tr></thead>
+                  <tbody>
+                    {previewRows.map((row) => {
+                      const invalid = validation?.invalidRows.includes(row.sourceRow);
+                      return (
+                        <tr key={row.sourceRow} className={invalid ? "row-error" : ""}>
+                          <td>{row.sourceRow}</td>
+                          {previewColumns.map((column) => <td key={column.key}>{row.values[column.key]}{invalid && column.key === draft.toField && <WarningCircle />}</td>)}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {firstIssue && (
+                <div className="issue-strip">
+                  <WarningCircle weight="fill" />
+                  <span><strong>Row {firstIssue.row}. Recipient data needs attention</strong><small>{firstIssue.message}</small></span>
+                  <span>{attentionCount} flagged {attentionCount === 1 ? "row" : "rows"}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="upload-empty">
+              <h3>Your file defines the flow.</h3>
+              <p>Once imported, the header row becomes the set of dynamic fields available in the template. No sample recipients are preloaded.</p>
+              <span><CheckCircle weight="fill" /> Parsed locally in your browser</span>
+            </div>
+          )}
+        </section>
+        <aside className="panel mapping-panel">
+          <div className="section-heading">
+            <div>
+              <h2>{table ? "Map your spreadsheet" : "Why data comes first"}</h2>
+              <p>{table ? "Choose the email column, then match each message value to a column." : "The message editor should only offer values that truly exist in your file."}</p>
+            </div>
+            <Rows />
+          </div>
+          {table ? (
+            <>
+              <Field label="Recipient email column">
+                <select value={draft.toField} onChange={(event) => setDraft((value) => ({ ...value, toField: event.target.value }))}>
+                  <option value="">Choose a column</option>
+                  {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </Field>
+              {templateFields.length > 0 && mappingFields.map((key) => (
+                <Field key={key} label={`${dynamicFieldLabel(key, options)} in message`}>
+                  <select value={draft.mappings[key] || ""} onChange={(event) => setDraft((value) => ({ ...value, mappings: { ...value.mappings, [key]: event.target.value } }))}>
+                    <option value="">Choose a column</option>
+                    {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </Field>
+              ))}
+              <div className="detected-field-group">
+                <span className="detected-field-group__label">Columns found in your file</span>
+                <div className="detected-field-list">
+                  {options.map((option) => <span className="detected-field-name" key={option.value}>{option.label}</span>)}
+                </div>
+              </div>
+              <div className="validation-metrics">
+                <span><CheckCircle weight="fill" /><strong>{readyCount}</strong><small>ready</small></span>
+                <span><WarningCircle weight="fill" /><strong>{attentionCount}</strong><small>attention</small></span>
+                <span><Users weight="fill" /><strong>{validation?.duplicateRecipients.length ?? 0}</strong><small>duplicate</small></span>
+              </div>
+              <div className="locked-note"><CheckCircle weight="fill" /> Nothing is sent until Review.</div>
+            </>
+          ) : (
+            <ol className="data-first-list">
+              <li>Import the file.</li>
+              <li>Confirm the header row.</li>
+              <li>Use those headers in the message.</li>
+            </ol>
+          )}
+        </aside>
+      </div>
+    </WizardShell>
+  );
 }
 
 function RecipientsPage() {
-  const { draft, setDraft, updateDraft, table, validation } = useContext(DraftContext); const { user } = useApi(); const navigate = useNavigate(); const options = columnOptions(table); const sender = user?.mailboxAddress || user?.principalName || "Sender not available";
-  const sourceOptions = (mode, columnKey, fieldKey) => <select aria-label={`${fieldKey} source`} value={mode === "column" ? draft[columnKey] : "fixed"} onChange={(event) => setDraft((value) => ({ ...value, [`${fieldKey}Mode`]: event.target.value === "fixed" ? "fixed" : "column", ...(event.target.value === "fixed" ? {} : { [columnKey]: event.target.value }) }))}><option value="fixed">Fixed address</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>;
-  return <WizardShell current={2} title="Set the sending rules." subtitle="Recipients stay scoped to this file and this flow. Your USM Outlook remains the sender." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/template")}><ArrowLeft /> Back</button><button className="button button--coral" onClick={() => navigate("/flows/new/review")} disabled={!table || !draft.toField}>Continue to review <ArrowRight /></button></>}><div className="recipients-layout"><section className="panel recipient-card"><div className="locked-sender"><span><Envelope weight="fill" /></span><div><small>Sender, locked by Microsoft</small><strong>{sender}</strong><p>Every spreadsheet row produces one separate message from this mailbox.</p></div><CheckCircle weight="fill" /></div><Field label="Primary recipient column"><select value={draft.toField} onChange={(event) => setDraft((value) => ({ ...value, toField: event.target.value }))}><option value="">Choose a column</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field><div className="two-fields"><Field label="CC"><input value={draft.cc} disabled={draft.ccMode === "column"} onChange={(event) => updateDraft("cc", event.target.value)} placeholder="Optional fixed address" />{sourceOptions(draft.ccMode, "ccColumn", "cc")}</Field><Field label="BCC"><input value={draft.bcc} disabled={draft.bccMode === "column"} onChange={(event) => updateDraft("bcc", event.target.value)} placeholder="Optional" />{sourceOptions(draft.bccMode, "bccColumn", "bcc")}</Field></div><Field label="Reply-to"><input value={draft.replyTo} disabled={draft.replyToMode === "column"} onChange={(event) => updateDraft("replyTo", event.target.value)} placeholder="Use sender mailbox" />{sourceOptions(draft.replyToMode, "replyToColumn", "replyTo")}</Field>{validation && !validation.ok && <div className="notice notice--warn"><WarningCircle weight="fill" /><span>Flagged recipient rows can be skipped during Review. Template-level issues must be resolved before sending.</span></div>}</section><aside className="panel pace-card"><Gauge weight="duotone" /><h2>Paced for safety</h2><p>Mail Flow sends one personalized message at a time and records the result for every row.</p><Field label={`${draft.pace} messages per minute`}><input type="range" min="6" max="20" value={draft.pace} onChange={(event) => updateDraft("pace", Number(event.target.value))} /></Field><div className="pace-facts"><span><strong>{validation?.totalRows ?? draft.rowCount}</strong>Total rows</span><span><strong>About {Math.ceil((validation?.validRecipientCount ?? draft.rowCount) / draft.pace)} min</strong>Estimated time</span></div><div className="notice"><Info weight="fill" /><span>Accepted rows are never sent twice. An uncertain Microsoft response is marked Unknown for manual review.</span></div></aside></div></WizardShell>;
+  const { draft, setDraft, updateDraft, table, validation } = useContext(DraftContext);
+  const { user } = useApi();
+  const navigate = useNavigate();
+  const options = columnOptions(table);
+  const sender = user?.mailboxAddress || user?.principalName || "Sender not available";
+  const updateRule = (fieldKey, property, value) => setDraft((current) => ({ ...current, [property === "mode" ? `${fieldKey}Mode` : property === "column" ? `${fieldKey}Column` : fieldKey]: value }));
+  const ruleProps = (fieldKey, label, hint) => ({
+    fieldKey,
+    label,
+    hint,
+    value: draft[fieldKey],
+    mode: draft[`${fieldKey}Mode`],
+    column: draft[`${fieldKey}Column`],
+    options,
+    onValue: (value) => updateRule(fieldKey, "value", value),
+    onMode: (value) => updateRule(fieldKey, "mode", value),
+    onColumn: (value) => updateRule(fieldKey, "column", value),
+  });
+
+  return <WizardShell current={2} title="Set the sending rules." subtitle="Recipients stay scoped to this file and this flow. Your USM Outlook remains the sender." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/template")}><ArrowLeft /> Back</button><button className="button button--coral" onClick={() => navigate("/flows/new/review")} disabled={!table || !draft.toField}>Continue to review <ArrowRight /></button></>}>
+    <div className="recipients-layout">
+      <section className="panel recipient-card">
+        <div className="locked-sender"><span><Envelope weight="fill" /></span><div><small>Sender, locked by Microsoft</small><strong>{sender}</strong><p>Every spreadsheet row produces one separate message from this mailbox.</p></div><CheckCircle weight="fill" /></div>
+        <Field label="Primary recipient column"><select value={draft.toField} onChange={(event) => setDraft((value) => ({ ...value, toField: event.target.value }))}><option value="">Choose a column</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+        <div className="two-fields recipient-address-grid"><AddressRuleField {...ruleProps("cc", "CC")} /><AddressRuleField {...ruleProps("bcc", "BCC")} /></div>
+        <div className="two-fields recipient-bottom-grid">
+          <AddressRuleField {...ruleProps("replyTo", "Reply-to", "The address members will use when replying. Leave empty to use your sender mailbox.")} />
+          <Field label="Importance" hint="Sets the priority flag shown by supported email clients."><select value={draft.importance} onChange={(event) => updateDraft("importance", event.target.value)}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></Field>
+        </div>
+        {validation && !validation.ok && <div className="notice notice--warn"><WarningCircle weight="fill" /><span>Flagged recipient rows can be skipped during Review. Template-level issues must be resolved before sending.</span></div>}
+      </section>
+      <aside className="panel pace-card"><Gauge weight="duotone" /><h2>Paced for safety</h2><p>Mail Flow sends one personalized message at a time and records the result for every row.</p><Field label={`${draft.pace} messages per minute`}><input type="range" min="6" max="20" value={draft.pace} onChange={(event) => updateDraft("pace", Number(event.target.value))} /></Field><div className="pace-facts"><span><strong>{validation?.totalRows ?? draft.rowCount}</strong>Total rows</span><span><strong>About {Math.ceil((validation?.validRecipientCount ?? draft.rowCount) / draft.pace)} min</strong>Estimated time</span></div><div className="notice"><Info weight="fill" /><span>Accepted rows are never sent twice. An uncertain Microsoft response is marked Unknown for manual review.</span></div></aside>
+    </div>
+  </WizardShell>;
 }
 
 function useEnsureCampaign() {
@@ -663,7 +982,7 @@ function ReviewPage() {
     setActionError("");
     try {
       const response = await ensureCampaign();
-      await sendCampaignTest(response.campaign.id, { subject: message.subject, bodyHtml: message.bodyHtml }, csrfToken);
+      await sendCampaignTest(response.campaign.id, { subject: message.subject, bodyHtml: message.bodyHtml, importance: state.draft.importance }, csrfToken);
       setTestState("accepted");
     } catch (error) {
       setTestState("error");

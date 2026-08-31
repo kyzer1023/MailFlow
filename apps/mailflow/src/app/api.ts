@@ -169,7 +169,7 @@ export function getCampaignJobs(campaignId: string, limit = 100, offset = 0): Pr
 
 export function sendCampaignTest(
   campaignId: string,
-  payload: { readonly subject: string; readonly bodyHtml: string },
+  payload: { readonly subject: string; readonly bodyHtml: string; readonly importance: "low" | "normal" | "high" },
   csrfToken: string,
 ): Promise<TestSendResponse> {
   return apiRequest<TestSendResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}/test-send`, { method: "POST", body: payload, csrfToken });

@@ -1,4 +1,5 @@
 import type { FetchLike } from "../auth/tenant";
+import type { MailImportance } from "../../domain/types";
 import { classifyGraphError, classifyGraphNetworkError, GraphApiError } from "./errors";
 
 export { GraphApiError } from "./errors";
@@ -23,6 +24,7 @@ export interface GraphMessageInput {
   cc?: Array<string | GraphEmailAddress>;
   bcc?: Array<string | GraphEmailAddress>;
   replyTo?: Array<string | GraphEmailAddress>;
+  importance?: MailImportance;
   saveToSentItems?: boolean;
 }
 
@@ -172,6 +174,7 @@ export class GraphMailProvider implements GraphMailProviderContract {
       subject: input.subject,
       body: { contentType: "HTML", content: input.bodyHtml },
       toRecipients,
+      importance: input.importance ?? "normal",
       ...(ccRecipients?.length ? { ccRecipients } : {}),
       ...(bccRecipients?.length ? { bccRecipients } : {}),
       ...(replyTo?.length ? { replyTo } : {}),

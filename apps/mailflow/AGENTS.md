@@ -12,4 +12,10 @@ Build app UI in `src/`. Mail Flow is deployed only to Cloudflare. The production
 
 Mail Flow is a general tool for USM student society members who send personalized campaign email from their own student mailbox. Do not hard-code the name or identity of USM Debate Society, or any other individual society, in UI copy, defaults, fixtures, tests, or flow creation. Organization-specific names in approved mock images are layout references only.
 
+Recipient metadata controls should follow a Power Automate-like pattern: fixed CC, BCC, and Reply-to addresses use removable chips, while spreadsheet-sourced values stay behind one explicit dynamic-value control. Render dynamic values as readable green tokens without exposing merge braces in the interface, including inside the message editor. Email Importance is a first-class sending rule with Normal as the default.
+
+The Data step sidebar should explain mappings in plain language: identify the recipient email column, label each message value by its readable name, and show detected spreadsheet columns without merge braces or dynamic-value icons. Reserve green token styling for places where a member inserts or selects a dynamic value.
+
+In Sending rules, CC, BCC, Reply-to, and Importance each occupy their own full-width row. Do not pair these inputs into two-column groups.
+
 Do not edit files owned by another active workstream. Check `../../docs/PROGRESS.md` for current ownership and record meaningful checkpoints there.

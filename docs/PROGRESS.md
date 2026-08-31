@@ -217,3 +217,28 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Replaced debate-specific fixture and screen-spec content with a general annual-event invitation while retaining neutral test aliases and the approved mock layouts.
 - Added durable guidance that organization names in the mock images are sample copy rather than product identity, plus a component assertion that the general audience label is rendered.
 - `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.
+
+### 2026-09-01 - Power Automate-inspired sending rules and dynamic values
+
+- Replaced the secondary CC, BCC, and Reply-to source dropdowns with direct address entry, removable address chips, and one explicit dynamic-value button that opens the available spreadsheet columns.
+- Added Low, Normal, and High message Importance with Normal as the default. Importance is saved with template recipient configuration, copied into each recipient job, persisted through migration `0002_message_importance.sql`, included in test sends, and passed to Microsoft Graph.
+- Replaced visible merge braces with readable green dynamic-value tokens in the detected-field panel, field mapping labels, dynamic-value picker, and message body editor. The underlying saved template continues to use deterministic merge keys.
+- Recorded the Power Automate-like interaction as durable frontend guidance in `apps/mailflow/AGENTS.md` and updated the domain documentation for message importance.
+- Applied the new D1 migration locally. `npm test` passes with TypeScript, the production build, and all 67 unit and integration tests; `npx wrangler deploy --dry-run` also passes.
+- Checked the live local wizard with Playwright using the committed CSV fixture. Fixed-address chips, dynamic BCC selection, High importance, and inline body tokens behaved correctly. Captures at 1440 x 900, 1024 x 768, and 390 x 844 show no horizontal overflow after the tablet layout adjustment.
+- Made dynamic-value insertion and selected-text replacement participate in the browser's native editing history. Chromium checks confirmed Ctrl+Z restores the prior body text and Ctrl+Shift+Z reapplies the same token transaction without introducing spacing before punctuation.
+
+### 2026-09-01 - Clear spreadsheet mapping sidebar
+
+- Renamed the confusing Detected fields panel to Map your spreadsheet and rewrote its description as a direct two-part instruction.
+- Relabeled the primary setting as Recipient email column and each template mapping as a readable message value, such as Recipient Name in message.
+- Removed merge braces and the dynamic-value icon from sidebar field names. Available spreadsheet columns remain visible as clearly labeled, plain reference tags.
+- Verified the populated state with the committed CSV fixture and an inserted message value in Chromium at 1440 x 900. The mapping controls expose clear accessible names and the layout has no horizontal overflow.
+- `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.
+
+### 2026-09-01 - Single-column sending rules
+
+- Stacked CC, BCC, Reply-to, and Importance as four full-width rows instead of two paired rows.
+- Preserved the existing address chips, dynamic-value controls, helper text, and Importance behavior.
+- Verified the populated Recipients step in Chromium at 1440 x 1000 and confirmed no horizontal overflow at 390 x 844.
+- `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.

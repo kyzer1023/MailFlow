@@ -95,6 +95,7 @@ export async function processCampaignTick(
         cc: job.cc,
         bcc: job.bcc,
         replyTo: job.replyTo,
+        importance: job.importance ?? "normal",
         subject: job.renderedSubject,
         htmlBody: job.renderedBodyHtml,
       },

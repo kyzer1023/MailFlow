@@ -70,6 +70,7 @@ describe("delegated Graph provider", () => {
       bodyHtml: "<p>Hello</p>",
       to: ["recipient@example.test"],
       cc: ["copy@example.test"],
+      importance: "high",
       saveToSentItems: true,
     });
     expect(result).toMatchObject({ accepted: true, status: 202, requestId: "request-fixture" });
@@ -79,6 +80,7 @@ describe("delegated Graph provider", () => {
     const payload = JSON.parse(String(sendRequest?.init?.body));
     expect(payload.message.toRecipients).toEqual([{ emailAddress: { address: "recipient@example.test" } }]);
     expect(payload.message.ccRecipients).toEqual([{ emailAddress: { address: "copy@example.test" } }]);
+    expect(payload.message.importance).toBe("high");
     expect(payload.message.body).toEqual({ contentType: "HTML", content: "<p>Hello</p>" });
   });
 
@@ -111,10 +113,10 @@ describe("test-send service", () => {
         return { accepted: true as const, status: 202, requestId: "request-fixture" };
       },
     };
-    const result = await sendTestToSelf(provider, "access-fixture", { subject: "Fixture test", bodyHtml: "<p>Fixture</p>" });
+    const result = await sendTestToSelf(provider, "access-fixture", { subject: "Fixture test", bodyHtml: "<p>Fixture</p>", importance: "low" });
     expect(result).toMatchObject({ status: "accepted", userMessage: "Accepted by Microsoft", senderAddress: "member@example.test", recipientAddress: "member@example.test" });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ to: ["member@example.test"], saveToSentItems: true });
+    expect(calls[0]).toMatchObject({ to: ["member@example.test"], importance: "low", saveToSentItems: true });
   });
 });
 

@@ -38,6 +38,7 @@ A flow contains:
 - Optional fixed or mapped CC.
 - Optional fixed or mapped BCC.
 - Optional fixed or mapped Reply-To.
+- Message importance: Low, Normal, or High. Normal is the default.
 - A template version.
 
 Reusing a flow with a new spreadsheet creates a new campaign. It does not overwrite campaign history.
@@ -57,6 +58,7 @@ The member chooses:
 - The primary recipient column.
 - Placeholder-to-column mappings.
 - Fixed or column-based CC, BCC, and Reply-To.
+- Message importance.
 - The separator for multiple addresses in a cell.
 
 Every source row creates one recipient job and one separate message. Unrelated recipients are never combined in one To list.

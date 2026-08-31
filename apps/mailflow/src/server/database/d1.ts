@@ -358,12 +358,12 @@ export class D1CampaignRepository implements CampaignRepository {
     return bind(
       this.db.prepare(
         `INSERT INTO recipient_jobs
-         (id, campaign_id, source_row, recipient, cc_json, bcc_json, reply_to_json,
+         (id, campaign_id, source_row, recipient, cc_json, bcc_json, reply_to_json, importance,
           merge_data_json, rendered_subject, rendered_body_html, send_key, status, attempt_count,
           claim_token, claimed_at, sending_at, accepted_at, next_attempt_at,
           last_error_category, last_error_message, provider_message_id, provider_request_id,
           created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)`,
       ),
       [
         job.id,
@@ -373,6 +373,7 @@ export class D1CampaignRepository implements CampaignRepository {
         json(job.cc),
         json(job.bcc),
         json(job.replyTo),
+        job.importance ?? "normal",
         json(job.mergeData),
         job.renderedSubject,
         job.renderedBodyHtml,
@@ -500,6 +501,7 @@ interface RecipientJobRow {
   cc_json: string;
   bcc_json: string;
   reply_to_json: string;
+  importance: "low" | "normal" | "high";
   merge_data_json: string;
   rendered_subject: string;
   rendered_body_html: string;
@@ -528,6 +530,7 @@ function toRecipientJob(row: RecipientJobRow): RecipientJobRecord {
     cc: parseJson<string[]>(row.cc_json, []),
     bcc: parseJson<string[]>(row.bcc_json, []),
     replyTo: parseJson<string[]>(row.reply_to_json, []),
+    importance: row.importance ?? "normal",
     mergeData: parseJson<Record<string, string>>(row.merge_data_json, {}),
     renderedSubject: row.rendered_subject,
     renderedBodyHtml: row.rendered_body_html,

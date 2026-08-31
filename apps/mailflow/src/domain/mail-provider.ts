@@ -1,9 +1,12 @@
+import type { MailImportance } from "./types";
+
 /** The provider-neutral message passed to the Microsoft Graph adapter. */
 export interface MailMessage {
   to: string;
   cc: readonly string[];
   bcc: readonly string[];
   replyTo: readonly string[];
+  importance?: MailImportance;
   subject: string;
   htmlBody: string;
 }
@@ -55,4 +58,3 @@ export type MailSendResult = MailSendAccepted | MailSendRetryable | MailSendFail
 export interface MailProvider {
   send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult>;
 }
-

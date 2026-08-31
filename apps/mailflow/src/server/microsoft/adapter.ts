@@ -88,6 +88,7 @@ export function delegatedGraphMailProvider(
           cc: [...message.cc],
           bcc: [...message.bcc],
           replyTo: [...message.replyTo],
+          importance: message.importance ?? "normal",
           saveToSentItems: true,
         });
         return { kind: "accepted", providerMessageId: null, providerRequestId: result.requestId ?? null };

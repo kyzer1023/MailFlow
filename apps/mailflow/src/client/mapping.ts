@@ -133,6 +133,7 @@ export function mappingToRecipientConfiguration(mapping: ClientMapping): Recipie
     bccFixed: mappingFixedValue(bccMapping),
     replyToFixed: mappingFixedValue(replyToMapping),
     placeholderMappings,
+    importance: mapping.importance ?? "normal",
     separator: mapping.separator ?? "auto",
   };
 }
@@ -163,6 +164,7 @@ export function recipientConfigurationToClientMapping(
     cc: addressMapping(configuration.ccFixed, configuration.ccField),
     bcc: addressMapping(configuration.bccFixed, configuration.bccField),
     replyTo: addressMapping(configuration.replyToFixed, configuration.replyToField),
+    importance: configuration.importance ?? "normal",
     separator: configuration.separator ?? "auto",
     placeholders: { ...(configuration.placeholderMappings ?? {}) },
   };

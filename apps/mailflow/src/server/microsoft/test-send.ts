@@ -1,9 +1,11 @@
 import { GraphApiError } from "./graph";
 import type { GraphMailProviderContract } from "./graph";
+import type { MailImportance } from "../../domain/types";
 
 export interface TestSendInput {
   subject: string;
   bodyHtml: string;
+  importance?: MailImportance;
 }
 
 export interface TestSendResult {
@@ -49,6 +51,7 @@ export class TestSendService {
       const result = await this.provider.sendMail(accessToken, {
         subject: input.subject,
         bodyHtml: input.bodyHtml,
+        importance: input.importance ?? "normal",
         to: [self],
         saveToSentItems: true,
       });

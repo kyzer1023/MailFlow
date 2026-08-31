@@ -134,6 +134,7 @@ function publicJob(job: RecipientJobRecord): Record<string, unknown> {
     cc: job.cc,
     bcc: job.bcc,
     replyTo: job.replyTo,
+    importance: job.importance ?? "normal",
     status: job.status,
     attemptCount: job.attemptCount,
     claimedAt: job.claimedAt,
@@ -286,6 +287,7 @@ type RecipientConfigurationInput = {
   bccFixed?: string | null;
   replyToFixed?: string | null;
   placeholderMappings?: Readonly<Record<string, string>>;
+  importance?: "low" | "normal" | "high";
   separator: "comma" | "semicolon" | "newline" | "auto";
 };
 
@@ -312,6 +314,7 @@ function versionConfigFromInput(input: RecipientConfigurationInput): RecipientCo
     bccFixed: input.bccFixed?.trim() || null,
     replyToFixed: input.replyToFixed?.trim() || null,
     placeholderMappings,
+    importance: input.importance ?? "normal",
     separator: input.separator,
   };
 }
@@ -628,6 +631,7 @@ app.post("/api/campaigns", async (context) => {
     cc: row.cc.map((address) => address.trim().toLowerCase()),
     bcc: row.bcc.map((address) => address.trim().toLowerCase()),
     replyTo: row.replyTo.map((address) => address.trim().toLowerCase()),
+    importance: input.recipientConfiguration.importance,
     mergeData: row.mergeData,
     renderedSubject: row.renderedSubject.trim(),
     renderedBodyHtml: row.renderedBodyHtml.trim(),
@@ -743,7 +747,7 @@ app.post("/api/campaigns/:id/test-send", async (context) => {
   try {
     const { auth, graph } = configFor(context);
     const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
-    const result = await sendTestToSelf(graph, tokens.accessToken, { subject: subject.subject, bodyHtml: body.html });
+    const result = await sendTestToSelf(graph, tokens.accessToken, { subject: subject.subject, bodyHtml: body.html, importance: input.importance });
     return context.json({ result });
   } catch (errorValue) {
     const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError
