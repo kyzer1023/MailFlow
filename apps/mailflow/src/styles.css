@@ -4,12 +4,16 @@
   --moss-dark: #33483c;
   --coral: #f0684f;
   --coral-dark: #d9543e;
+  --coral-text: #a84334;
+  --coral-soft: #f9ded7;
   --mist: #dce5de;
   --paper: #f4f0e8;
   --paper-bright: #fffdf8;
   --paper-deep: #eae4d9;
   --muted: #6c766f;
   --line: #d0ccc3;
+  --step-line: #c6cbc6;
+  --step-muted: #626c66;
   --danger: #b84a3c;
   --warn: #c98229;
   --font-display: "Avenir Next", "Segoe UI", Arial, sans-serif;
@@ -185,17 +189,21 @@ td small { display: block; margin-top: .18rem; color: var(--muted); }
 .route-card > a { margin-top: 1rem; }
 
 /* Wizard shared */
-.stepper-wrap { position: relative; background: var(--paper-bright); border-bottom: 1px solid var(--line); }
-.stepper { height: 86px; margin: 0; padding: 0 clamp(28px, 5vw, 88px); list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); align-items: center; }
-.wizard-count { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); color: var(--muted); font: 700 .68rem/1 var(--font-mono); }
-.stepper li { position: relative; }
-.stepper li:not(:last-child)::after { content: ""; height: 1px; position: absolute; left: 62%; right: -38%; top: 18px; background: #cfcfc8; }
-.stepper a, .stepper-future { display: inline-flex; align-items: center; gap: .55rem; text-decoration: none; color: #8b918c; font-size: .78rem; font-weight: 700; }
-.stepper a > span, .stepper-future > span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; border: 1px solid #bfc2bd; background: var(--paper-bright); z-index: 1; }
+.stepper-wrap { min-height: 86px; padding: 0 clamp(22px, 3.5vw, 56px); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: clamp(22px, 3vw, 44px); background: var(--paper-bright); border-bottom: 1px solid var(--line); }
+.stepper { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; }
+.wizard-count { min-width: 72px; min-height: 32px; padding: 0 .72rem; border: 1px solid var(--line); border-radius: 999px; display: inline-grid; place-items: center; background: var(--paper); color: var(--step-muted); font: 750 .68rem/1 var(--font-mono); white-space: nowrap; }
+.stepper li { min-width: 0; position: relative; display: flex; justify-content: center; }
+.stepper li:not(:last-child)::after { content: ""; height: 1px; position: absolute; z-index: 0; left: 50%; right: -50%; top: 18px; background: var(--step-line); }
+.stepper li.complete::after { background: var(--moss); }
+.stepper a, .stepper-future { position: relative; z-index: 1; padding-right: clamp(.45rem, 1vw, .9rem); display: inline-grid; grid-template-columns: 36px auto; align-items: center; gap: .62rem; background: var(--paper-bright); color: var(--step-muted); font-size: .8rem; font-weight: 720; line-height: 1; text-decoration: none; white-space: nowrap; }
+.stepper a { transition: color .18s ease, transform .18s ease; }
+.stepper a:hover { color: var(--ink); transform: translateY(-1px); }
+.stepper-node { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; border: 1px solid #aeb5af; background: var(--paper-bright); color: var(--step-muted); font: 700 .74rem/1 var(--font-mono); }
+.stepper-node svg { width: 1rem; height: 1rem; }
 .stepper .complete a { color: var(--moss-dark); }
-.stepper .complete a > span { background: var(--moss); color: white; border-color: var(--moss); }
-.stepper .current a { color: var(--ink); }
-.stepper .current a > span { background: var(--coral); color: white; border-color: var(--coral); box-shadow: 0 0 0 5px #f9ded7; }
+.stepper .complete .stepper-node { background: var(--moss); color: var(--paper-bright); border-color: var(--moss); }
+.stepper .current a { color: var(--coral-text); font-weight: 800; }
+.stepper .current .stepper-node { background: var(--coral); color: var(--ink); border-color: var(--coral); box-shadow: 0 0 0 5px var(--coral-soft), 0 3px 10px rgba(112, 62, 50, .12); }
 .wizard-page { padding-top: 34px; }
 .wizard-header { align-items: center; }
 .wizard-header h1 { font-size: clamp(2rem, 3vw, 2.85rem); }
@@ -404,7 +412,7 @@ details input { margin-top: 10px; }
   .mailbox-preview iframe { height: 430px; }
   .campaign-aside { grid-template-columns: 1fr; }
   .route-counts { overflow-x: auto; grid-template-columns: repeat(6, 130px); padding-bottom: .5rem; }
-  .stepper { padding-inline: 22px; }
+  .stepper-wrap { padding-inline: 22px; gap: 18px; }
 }
 
 @media (max-width: 680px) {
@@ -439,10 +447,16 @@ details input { margin-top: 10px; }
   .campaign-list { padding-inline: 15px; }
   .campaign-list .table-wrap { margin-inline: -15px; overflow-x: auto; }
   .campaign-list table { min-width: 660px; }
-  .stepper { height: 62px; grid-template-columns: repeat(4,1fr); padding-inline: 10px; }
-  .stepper a, .stepper-future { display: grid; justify-items: center; gap: .15rem; font-size: .56rem; }
-  .stepper a > span, .stepper-future > span { width: 27px; height: 27px; }
-  .stepper li:not(:last-child)::after { top: 13px; }
+  .stepper-wrap { min-height: 74px; padding-inline: 12px; gap: 10px; }
+  .stepper { height: auto; }
+  .wizard-count { min-width: 60px; min-height: 29px; padding-inline: .5rem; font-size: .62rem; }
+  .stepper li { height: 46px; align-items: start; }
+  .stepper li:not(:last-child)::after { top: 14px; }
+  .stepper a, .stepper-future { width: 100%; padding: 0; display: grid; grid-template-columns: 1fr; justify-items: center; gap: .25rem; background: transparent; font-size: .62rem; }
+  .stepper-node { width: 28px; height: 28px; background: var(--paper-bright); font-size: .64rem; }
+  .stepper .complete .stepper-node { background: var(--moss); }
+  .stepper .current .stepper-node { box-shadow: 0 0 0 4px var(--coral-soft); }
+  .stepper li:not(.current) .stepper-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .wizard-page { padding-top: 24px; }
   .two-fields, .sheet-controls, .pace-facts { grid-template-columns: 1fr; }
   .upload-card { grid-template-columns: 48px minmax(0,1fr); }

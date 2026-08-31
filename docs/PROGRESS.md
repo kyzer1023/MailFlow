@@ -201,3 +201,11 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Reverted forced credential entry after MailFlow logout at the user's request. Logout again clears only the MailFlow application session, and the following Microsoft authorization request uses `prompt=select_account` so an existing Microsoft browser session can be reused.
 - Retained the independent Dashboard navigation and hero-action alignment fixes.
 - TypeScript, all 67 tests, production build, and Wrangler dry run pass. Deployed version `8d885e01-a38e-4560-b7d0-d927452754d1`; both ordinary and formerly marked authorization URLs now return `prompt=select_account` with the production callback.
+
+### 2026-09-01 - Wizard stepper refinement
+
+- Reworked the four-step wizard header into one centered route with accurately aligned connectors, distinct completed/current/future states, and a contained step counter.
+- Added `aria-current="step"` to the active route link, kept Phosphor checkmarks for completed steps, strengthened small-text contrast, and preserved the existing step order and navigation behavior.
+- Added a mobile presentation that retains all four checkpoints while showing only the active label, with the count kept inside the same progress header.
+- Playwright captures at 1440 x 900, 1024 x 768, and 390 x 844 show no horizontal overflow or console errors. Data and Template states were both checked, including the completed route segment.
+- `npm test` passes: TypeScript, production build, and all 67 unit and integration tests.

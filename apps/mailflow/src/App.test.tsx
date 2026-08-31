@@ -115,6 +115,7 @@ describe("authenticated information architecture", () => {
 
     expect(await screen.findByRole("heading", { name: "Bring in the recipient data." })).toBeInTheDocument();
     expect(screen.getByRole("list", { name: "Step 1 of 4" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute("aria-current", "step");
     expect(screen.getByText(/No sample recipients are preloaded\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to template/ })).toBeDisabled();
     expect(screen.queryByText("recipients.xlsx")).not.toBeInTheDocument();
