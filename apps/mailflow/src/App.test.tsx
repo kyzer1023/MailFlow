@@ -1,29 +1,35 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { ApiRequestError, archiveFlow, getCampaign, getCampaigns, getFlows, getMe, logout } from "./app/api";
+import { ApiRequestError, archiveFlow, createTemplateVersion, getCampaign, getCampaigns, getFlow, getFlows, getMe, logout, updateFlow } from "./app/api";
 
 vi.mock("./app/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./app/api")>();
   return {
     ...actual,
     archiveFlow: vi.fn(),
+    createTemplateVersion: vi.fn(),
     getMe: vi.fn(),
     getFlows: vi.fn(),
     getCampaigns: vi.fn(),
     getCampaign: vi.fn(),
+    getFlow: vi.fn(),
     logout: vi.fn(),
+    updateFlow: vi.fn(),
   };
 });
 
 const mockedGetMe = vi.mocked(getMe);
 const mockedArchiveFlow = vi.mocked(archiveFlow);
+const mockedCreateTemplateVersion = vi.mocked(createTemplateVersion);
 const mockedGetFlows = vi.mocked(getFlows);
 const mockedGetCampaigns = vi.mocked(getCampaigns);
 const mockedGetCampaign = vi.mocked(getCampaign);
+const mockedGetFlow = vi.mocked(getFlow);
 const mockedLogout = vi.mocked(logout);
+const mockedUpdateFlow = vi.mocked(updateFlow);
 
 describe("landing actions", () => {
   beforeEach(() => {
@@ -42,6 +48,30 @@ describe("landing actions", () => {
         state: "archived",
         createdAt: "2026-09-01T00:00:00.000Z",
         updatedAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedCreateTemplateVersion.mockResolvedValue({
+      version: {
+        id: "template-renamed",
+        flowId: "flow-rename",
+        version: 2,
+        subjectTemplate: "Hello",
+        bodyHtml: "<p>Hello</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:01:00.000Z",
+      },
+    });
+    mockedUpdateFlow.mockResolvedValue({
+      flow: {
+        id: "flow-rename",
+        ownerUserId: "user-1",
+        societyName: null,
+        name: "Renamed flow",
+        currentTemplateVersionId: "template-renamed",
+        state: "active",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:01:00.000Z",
       },
     });
   });
@@ -112,6 +142,30 @@ describe("authenticated information architecture", () => {
         updatedAt: "2026-09-01T00:00:01.000Z",
       },
     });
+    mockedCreateTemplateVersion.mockResolvedValue({
+      version: {
+        id: "template-renamed",
+        flowId: "flow-rename",
+        version: 2,
+        subjectTemplate: "Hello",
+        bodyHtml: "<p>Hello</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:01:00.000Z",
+      },
+    });
+    mockedUpdateFlow.mockResolvedValue({
+      flow: {
+        id: "flow-rename",
+        ownerUserId: "user-1",
+        societyName: null,
+        name: "Renamed flow",
+        currentTemplateVersionId: "template-renamed",
+        state: "active",
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-01T00:01:00.000Z",
+      },
+    });
   });
 
   afterEach(() => {
@@ -150,6 +204,142 @@ describe("authenticated information architecture", () => {
     expect(screen.getByRole("button", { name: /Continue to template/ })).toBeDisabled();
     expect(screen.queryByText("recipients.xlsx")).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Tan")).not.toBeInTheDocument();
+  });
+
+  it("revalidates shared data when navigation enters the flow library", async () => {
+    window.history.replaceState({}, "", "/dashboard");
+    const oldFlow = {
+      id: "flow-old",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Old flow",
+      currentTemplateVersionId: "template-old",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    const newFlow = { ...oldFlow, id: "flow-new", name: "Fresh route flow", currentTemplateVersionId: "template-new" };
+    mockedGetFlows.mockResolvedValueOnce({ flows: [oldFlow] }).mockResolvedValue({ flows: [newFlow] });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Old flow" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: /^Flows$/ }));
+
+    expect(await screen.findByRole("heading", { name: "Fresh route flow" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Old flow" })).not.toBeInTheDocument();
+    expect(mockedGetFlows).toHaveBeenCalledTimes(2);
+    expect(mockedGetCampaigns).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let an older overlapping request replace newer route data", async () => {
+    window.history.replaceState({}, "", "/dashboard");
+    const staleFlow = {
+      id: "flow-stale",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Stale flow",
+      currentTemplateVersionId: "template-stale",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    const newestFlow = { ...staleFlow, id: "flow-newest", name: "Newest flow", currentTemplateVersionId: "template-newest" };
+    let resolveOlderRequest!: (value: { flows: readonly typeof staleFlow[] }) => void;
+    const olderRequest = new Promise<{ flows: readonly typeof staleFlow[] }>((resolve) => { resolveOlderRequest = resolve; });
+    mockedGetFlows.mockReturnValueOnce(olderRequest).mockResolvedValue({ flows: [newestFlow] });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /Good afternoon/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: /^Flows$/ }));
+    expect(await screen.findByRole("heading", { name: "Newest flow" })).toBeInTheDocument();
+
+    await act(async () => { resolveOlderRequest({ flows: [staleFlow] }); });
+
+    expect(screen.getByRole("heading", { name: "Newest flow" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Stale flow" })).not.toBeInTheDocument();
+  });
+
+  it("persists a renamed flow before returning to the flow library", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const originalFlow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Original flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    const renamedFlow = { ...originalFlow, name: "Renamed flow", updatedAt: "2026-09-01T00:01:00.000Z" };
+    mockedGetFlow.mockResolvedValue({
+      flow: originalFlow,
+      templateVersion: {
+        id: "template-original",
+        flowId: originalFlow.id,
+        version: 1,
+        subjectTemplate: "Hello",
+        bodyHtml: "<p>Hello</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValueOnce({ flows: [originalFlow] }).mockResolvedValue({ flows: [renamedFlow] });
+    mockedUpdateFlow.mockResolvedValue({ flow: renamedFlow });
+
+    render(<App />);
+
+    const nameInput = await screen.findByLabelText("Flow name");
+    fireEvent.change(nameInput, { target: { value: "Renamed flow" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockedUpdateFlow).toHaveBeenCalledWith("flow-rename", { name: "Renamed flow" }, "test-csrf-token"));
+    expect(mockedCreateTemplateVersion).toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Renamed flow" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Original flow" })).not.toBeInTheDocument();
+  });
+
+  it("shows a duplicate-name conflict beside the flow name field", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const originalFlow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Original flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlow.mockResolvedValue({
+      flow: originalFlow,
+      templateVersion: {
+        id: "template-original",
+        flowId: originalFlow.id,
+        version: 1,
+        subjectTemplate: "Hello",
+        bodyHtml: "<p>Hello</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValue({ flows: [originalFlow] });
+    mockedUpdateFlow.mockRejectedValue(new ApiRequestError(409, { error: { code: "flow_name_conflict", message: "Choose a different flow name. Flow names must be unique." } }));
+
+    render(<App />);
+
+    const nameInput = await screen.findByLabelText("Flow name");
+    fireEvent.change(nameInput, { target: { value: "Existing flow" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Choose a different flow name. Flow names must be unique.")).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute("aria-invalid", "true");
+    expect(mockedCreateTemplateVersion).not.toHaveBeenCalled();
+    expect(screen.queryByText("Changes were not fully saved.")).not.toBeInTheDocument();
   });
 
   it("requires confirmation before removing a flow and then archives it", async () => {

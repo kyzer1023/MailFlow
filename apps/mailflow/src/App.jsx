@@ -1,5 +1,5 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge, House, Info,
@@ -24,6 +24,7 @@ import {
   resumeCampaign,
   sendCampaignTest,
   startCampaign,
+  updateFlow as updateFlowRequest,
 } from "./app/api";
 import {
   buildMessagePreviews,
@@ -134,13 +135,21 @@ function displayCampaign(campaign, counts, flowName = "") {
   };
 }
 
+const dashboardDataRoutes = new Set(["/dashboard", "/flows", "/campaigns"]);
+
 function AppDataProvider({ children }) {
+  const location = useLocation();
   const [session, setSession] = useState({ status: "loading", user: null, csrfToken: "", config: fallbackConfig });
   const [dashboard, setDashboard] = useState({ status: "idle", flows: null, campaigns: null, error: "" });
+  const dashboardRequestRef = useRef(0);
+  const activeUserIdRef = useRef(session.user?.id || null);
+  activeUserIdRef.current = session.user?.id || null;
 
   const refreshDashboard = useCallback(async () => {
-    if (!session.user) return;
-    setDashboard((current) => ({ ...current, status: "loading", error: "" }));
+    const userId = activeUserIdRef.current;
+    if (!userId) return;
+    const requestId = ++dashboardRequestRef.current;
+    setDashboard({ status: "loading", flows: null, campaigns: null, error: "" });
     try {
       const [flowsResponse, campaignsResponse] = await Promise.all([getFlows(), getCampaigns()]);
       const flowNames = new Map(flowsResponse.flows.map((flow) => [flow.id, flow.name]));
@@ -151,11 +160,13 @@ function AppDataProvider({ children }) {
         const detail = await getCampaign(campaign.id);
         return { campaign, counts: detail.counts, flowName: flowNames.get(campaign.flowId) || "" };
       }));
+      if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
       setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, error: "" });
     } catch (error) {
-      setDashboard((current) => ({ ...current, status: "error", error: error instanceof Error ? error.message : "The dashboard could not be loaded." }));
+      if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
+      setDashboard({ status: "error", flows: null, campaigns: null, error: error instanceof Error ? error.message : "The dashboard could not be loaded." });
     }
-  }, [session.user]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -174,8 +185,13 @@ function AppDataProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (session.user) void refreshDashboard();
-  }, [session.user, refreshDashboard]);
+    dashboardRequestRef.current += 1;
+    setDashboard({ status: "idle", flows: null, campaigns: null, error: "" });
+  }, [session.user?.id]);
+
+  useEffect(() => {
+    if (session.user && dashboardDataRoutes.has(location.pathname)) void refreshDashboard();
+  }, [location.key, location.pathname, session.user, refreshDashboard]);
 
   const value = useMemo(() => ({
     ...session,
@@ -358,7 +374,7 @@ function WizardStepper({ current }) {
   </div>;
 }
 function WizardShell({ current, title, subtitle, actions, children }) { return <AppShell><WizardStepper current={current} /><div className="page wizard-page"><header className="page-header wizard-header"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="header-actions">{actions}</div></header>{children}</div></AppShell>; }
-function Field({ label, children, hint }) { return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
+function Field({ label, children, hint, error, errorId }) { return <label className={`field${error ? " field--error" : ""}`}><span>{label}</span>{children}{error ? <small className="field-error" id={errorId} role="alert">{error}</small> : hint && <small>{hint}</small>}</label>; }
 
 function dynamicFieldLabel(key, options = []) {
   const match = options.find((option) => option.value === key);
@@ -635,16 +651,24 @@ function DraftProvider({ children }) {
 
 function TemplatePage() {
   const { draft, updateDraft, flowId, mapping, setFlowId, setTemplateVersionId, table } = useContext(DraftContext);
-  const { csrfToken } = useApi();
+  const { csrfToken, refreshDashboard } = useApi();
   const navigate = useNavigate();
   const { flowId: editingFlowId } = useParams();
   const bodyRef = useRef(null);
   const [saveState, setSaveState] = useState("idle");
   const [saveError, setSaveError] = useState("");
+  const [nameError, setNameError] = useState("");
   const dynamicOptions = columnOptions(table);
   const dynamicFields = dynamicOptions.map((option) => option.value);
   const editingExisting = Boolean(editingFlowId) && !table;
   const canSave = Boolean(draft.name.trim() && draft.subject.trim() && draft.body.trim() && mapping.toField);
+
+  const editDraft = (key, value) => {
+    updateDraft(key, value);
+    setSaveState("idle");
+    setSaveError("");
+    if (key === "name") setNameError("");
+  };
 
   const insertDynamicField = (key) => {
     bodyRef.current?.insertToken(key);
@@ -655,7 +679,8 @@ function TemplatePage() {
       setSaveError("Add a flow name, subject, message body, and primary recipient before saving.");
       return;
     }
-    setSaveState("saving"); setSaveError("");
+    setSaveState("saving"); setSaveError(""); setNameError("");
+    let flowNameSaved = false;
     try {
       const bodyHtml = bodyHtmlFromDraft(draft.body);
       const recipientConfiguration = mappingToRecipientConfiguration(mapping);
@@ -665,18 +690,39 @@ function TemplatePage() {
         setFlowId(response.flow.id);
         setTemplateVersionId(response.templateVersion?.id || null);
       } else {
+        await updateFlowRequest(flowId, { name: draft.name }, csrfToken);
+        flowNameSaved = true;
         const response = await createTemplateVersionRequest(flowId, templatePayload, csrfToken);
         setTemplateVersionId(response.version.id);
       }
+      await refreshDashboard();
       setSaveState("saved");
       if (destination) navigate(destination);
-    } catch (error) { setSaveState("error"); setSaveError(error instanceof Error ? error.message : "The flow could not be saved."); }
+    } catch (error) {
+      setSaveState("error");
+      if (error instanceof ApiRequestError && error.code === "flow_name_conflict") {
+        setNameError(error.message);
+      } else {
+        const message = error instanceof Error ? error.message : "The flow could not be saved.";
+        setSaveError(flowNameSaved ? `The flow name was saved, but the message changes were not saved. ${message}` : message);
+      }
+    }
   };
   const nextDestination = editingExisting ? "/flows" : "/flows/new/recipients";
   if (!table && !editingExisting) {
     return <AppShell><div className="route-gate" role="status"><WarningCircle weight="fill" /><h1>Import your data first.</h1><p>The template editor builds its dynamic fields from your spreadsheet headers.</p><Link className="button button--coral" to="/flows/new/data">Start with data</Link></div></AppShell>;
   }
-  return <WizardShell current={1} title="Compose the reusable message." subtitle="Your spreadsheet headers are ready to use as dynamic fields." actions={<><button className="button button--outline" onClick={() => navigate(editingExisting ? "/flows" : "/flows/new/data")}><ArrowLeft /> Back</button><button className="button button--text" onClick={() => void saveFlowDraft()} disabled={saveState === "saving" || !canSave}><Files /> {saveState === "saving" ? "Saving" : saveState === "saved" ? "Saved" : "Save draft"}</button><button className="button button--coral" onClick={() => void saveFlowDraft(nextDestination)} disabled={saveState === "saving" || !canSave}>{editingExisting ? "Save changes" : "Continue to recipients"} <ArrowRight /></button></>}><div className="template-layout">{saveError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {saveError}</div>}<section className="panel editor-card"><Field label="Flow name"><input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} placeholder="For example, Event invitation" /></Field><Field label="Subject"><input value={draft.subject} onChange={(event) => updateDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field><Field label="Message body" hint="Select text to replace it with a dynamic value, or place the cursor where it should appear."><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => updateDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /></Field></section><aside className="panel dynamic-panel"><h2>Dynamic values</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert ${dynamicFieldLabel(key, dynamicOptions)}`}><DynamicValueChip value={key} options={dynamicOptions} /></button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Click a value to insert it in the message. Highlighted text is replaced.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside></div></WizardShell>;
+  return <WizardShell current={1} title="Compose the reusable message." subtitle="Your spreadsheet headers are ready to use as dynamic fields." actions={<><button className="button button--outline" onClick={() => navigate(editingExisting ? "/flows" : "/flows/new/data")}><ArrowLeft /> Back</button><button className="button button--text" onClick={() => void saveFlowDraft()} disabled={saveState === "saving" || !canSave}><Files /> {saveState === "saving" ? "Saving" : saveState === "saved" ? "Saved" : "Save draft"}</button><button className="button button--coral" onClick={() => void saveFlowDraft(nextDestination)} disabled={saveState === "saving" || !canSave}>{editingExisting ? "Save changes" : "Continue to recipients"} <ArrowRight /></button></>}>
+    <div className="template-layout">
+      <section className="panel editor-card">
+        {saveError && <div className="notice notice--warn template-save-error" role="alert"><WarningCircle weight="fill" /><span><strong>Changes were not fully saved.</strong>{saveError}</span></div>}
+        <Field label="Flow name" error={nameError} errorId="flow-name-error"><input value={draft.name} onChange={(event) => editDraft("name", event.target.value)} placeholder="For example, Event invitation" aria-invalid={Boolean(nameError)} aria-describedby={nameError ? "flow-name-error" : undefined} /></Field>
+        <Field label="Subject"><input value={draft.subject} onChange={(event) => editDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field>
+        <Field label="Message body" hint="Select text to replace it with a dynamic value, or place the cursor where it should appear."><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => editDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /></Field>
+      </section>
+      <aside className="panel dynamic-panel"><h2>Dynamic values</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert ${dynamicFieldLabel(key, dynamicOptions)}`}><DynamicValueChip value={key} options={dynamicOptions} /></button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Click a value to insert it in the message. Highlighted text is replaced.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside>
+    </div>
+  </WizardShell>;
 }
 
 function EditFlowTemplatePage() {
@@ -961,6 +1007,7 @@ function useEnsureCampaign() {
     });
     const response = await createCampaignRequest(payload, api.csrfToken);
     draftState.setCampaignResponse(response);
+    void api.refreshDashboard();
     return response;
   }, [api, draftState]);
 }
@@ -987,7 +1034,7 @@ function uniqueValidationIssues(issues) {
 
 function ReviewPage() {
   const state = useContext(DraftContext);
-  const { user, csrfToken } = useApi();
+  const { user, csrfToken, refreshDashboard } = useApi();
   const navigate = useNavigate();
   const [sampleIndex, setSampleIndex] = useState(0);
   const [ack, setAck] = useState(false);
@@ -1032,6 +1079,7 @@ function ReviewPage() {
     try {
       const response = await ensureCampaign();
       await startCampaign(response.campaign.id, csrfToken);
+      void refreshDashboard();
       navigate(`/campaigns/${response.campaign.id}`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "The campaign could not be started.");
@@ -1049,7 +1097,7 @@ function ReviewPage() {
 function CampaignPage() {
   const { campaignId } = useParams();
   const navigate = useNavigate();
-  const { csrfToken, user } = useApi();
+  const { csrfToken, user, refreshDashboard } = useApi();
   const [campaignState, setCampaignState] = useState(null);
   const [counts, setCounts] = useState(null);
   const [jobs, setJobs] = useState(null);
@@ -1081,7 +1129,10 @@ function CampaignPage() {
     void load();
     if (!campaignId) return undefined;
     const timer = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(timer);
+    return () => {
+      loadSequence.current += 1;
+      window.clearInterval(timer);
+    };
   }, [load, campaignId]);
 
   if (!campaignId) {
@@ -1108,6 +1159,7 @@ function CampaignPage() {
         ? await pauseCampaign(campaignId, csrfToken)
         : await resumeCampaign(campaignId, csrfToken);
       setCampaignState(response.campaign);
+      void refreshDashboard();
       await load();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "The campaign could not be updated.");

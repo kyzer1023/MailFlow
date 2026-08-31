@@ -161,6 +161,18 @@ export function archiveFlow(flowId: string, csrfToken: string): Promise<{ flow: 
   });
 }
 
+export function updateFlow(
+  flowId: string,
+  payload: { readonly name: string },
+  csrfToken: string,
+): Promise<{ flow: FlowRecord }> {
+  return apiRequest<{ flow: FlowRecord }>(`/api/flows/${encodeURIComponent(flowId)}`, {
+    method: "PATCH",
+    body: payload,
+    csrfToken,
+  });
+}
+
 export function getCampaigns(): Promise<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }> {
   return apiRequest<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }>("/api/campaigns");
 }

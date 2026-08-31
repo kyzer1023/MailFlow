@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, archiveFlow, createCampaign, pauseCampaign, sendCampaignTest, startCampaign } from "./api";
+import { apiRequest, archiveFlow, createCampaign, pauseCampaign, sendCampaignTest, startCampaign, updateFlow } from "./api";
 import type { CampaignCreatePayload } from "../client/types";
 
 afterEach(() => {
@@ -70,6 +70,17 @@ describe("same-origin API client", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/flows/flow_1");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "PATCH" });
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ state: "archived" });
+  });
+
+  it("sends flow name changes to the owner-scoped flow route", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ flow: { id: "flow_1", name: "Renamed flow" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateFlow("flow_1", { name: "Renamed flow" }, "csrf-rename");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/flows/flow_1");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "PATCH" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ name: "Renamed flow" });
   });
 
   it("sends the reviewed recipient metadata with a test message", async () => {

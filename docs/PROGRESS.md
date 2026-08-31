@@ -8,7 +8,7 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Git: initialized on `main`; the initial implementation commit was created after the local verification and secret-history gate.
 - Visual references: seven approved PNG files present, desktop comparisons are stored under `qa/`, and responsive Chrome evidence is stored locally under ignored `output/playwright/`.
 - Local test environment: root `.env` present and ignored; passwords and secret values are not stored in source control.
-- Quality: TypeScript, 66 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
+- Quality: TypeScript, 78 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
 - Deployment: live at `https://mailflow.kyzer-hono-test.workers.dev` with D1, Queues, Workers Static Assets, and Worker secrets.
 - Real Graph send: primary and secondary sender tests completed; each campaign recorded 5 accepted, 0 failed, 0 skipped, and 0 unknown.
 - Delivery observation: both distinct campaign subjects were found in all five approved Gmail inboxes. This is test evidence, not a general delivery guarantee.
@@ -268,3 +268,20 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added API serialization and component interaction coverage. A temporary D1 check confirmed active duplicates are rejected and an archived name can be reused.
 - `npm test` passes: TypeScript, production build, and all 73 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
 - No production data, deployment, or real mail was changed.
+
+### 2026-09-01 - Reliable flow renaming and contextual save errors
+
+- Fixed editing an existing flow so saving now updates the flow name through the owner-scoped flow API before creating the new template version.
+- Refreshed the shared flow library after a successful save, so returning to Flows immediately shows the persisted name instead of stale dashboard data.
+- Moved duplicate-name feedback beside the Flow name field with an invalid-field state, and kept other save failures inside the compose card without displacing the page layout.
+- Cleared stale error and Saved states as soon as the member edits the draft again. Partial-save feedback now distinguishes a saved rename from template changes that still need attention.
+- Added API and component regression coverage for successful renaming and duplicate-name conflicts. `npm test` passes: TypeScript, production builds, and all 76 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
+- No production data, deployment, or real mail was changed.
+
+### 2026-09-01 - Chrome-verified route data revalidation
+
+- Reproduced the stale-data defect in two authenticated local Chrome tabs: one tab created a flow while the second tab retained an older dashboard snapshot, and React Router navigation from Overview to Flows made no API request and omitted the new flow.
+- Revalidated the shared flow and campaign snapshot whenever authenticated navigation enters Overview, Flows, or Campaigns, and after successful campaign create, start, pause, or resume mutations. Request generations prevent an older overlapping response from replacing the latest route data.
+- Repeated the same two-tab scenario after the fix. Overview and Flows each requested fresh flow and campaign data, the previously stale tab displayed the new flow without a hard reload, and authenticated GET responses returned `Cache-Control: private, no-store, max-age=0`.
+- Added focused component regressions for route-entry refresh and out-of-order response suppression. `npm test` passes with TypeScript, the production build, and all 78 unit and integration tests; `npx wrangler deploy --dry-run` also passes.
+- The Chrome verification created two local-only flows named `Chrome stale-data check` and `Chrome route revalidation proof`. No message was sent and no production deployment or data was changed.
