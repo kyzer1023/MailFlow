@@ -62,7 +62,9 @@ img { display: block; max-width: 100%; }
 .landing { min-height: 100dvh; background: var(--paper); overflow: hidden; }
 .marketing-header { height: 92px; padding: 0 clamp(28px, 5vw, 84px); display: grid; grid-template-columns: 1fr auto; align-items: center; border-bottom: 1px solid rgba(81,106,89,.14); }
 .marketing-header > .button { justify-self: end; }
-.landing-auth-actions { justify-self: end; display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+.landing-auth-actions { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+.marketing-header > .landing-auth-actions { justify-self: end; }
+.hero-copy > .landing-auth-actions { width: fit-content; justify-content: flex-start; }
 .landing-auth-actions .error-text { flex-basis: 100%; text-align: right; }
 .landing-hero { min-height: calc(100dvh - 92px); position: relative; isolation: isolate; overflow: hidden; display: grid; grid-template-columns: minmax(420px, .88fr) minmax(520px, 1.12fr); align-items: center; gap: clamp(30px, 4vw, 80px); padding: clamp(42px, 5vh, 72px) clamp(28px, 5vw, 84px); }
 .hero-copy { position: relative; z-index: 1; grid-column: 1; max-width: 650px; padding-bottom: 2rem; }

@@ -225,7 +225,7 @@ function LandingAction({ compact = false, allowSignOut = false }) {
   const checking = status === "loading";
 
   if (authenticated) {
-    return <div className="landing-auth-actions"><Link className={compact ? "button button--outline button--small landing-action" : "button button--coral button--hero landing-action"} to="/dashboard"><House weight="bold" />{compact ? "Dashboard" : "Go to dashboard"}</Link>{allowSignOut && <button className="button button--text button--small" type="button" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />} Sign out</button>}{signOutError && <span className="error-text" role="alert">{signOutError}</span>}</div>;
+    return <div className="landing-auth-actions"><a className={compact ? "button button--outline button--small landing-action" : "button button--coral button--hero landing-action"} href="/dashboard"><House weight="bold" />{compact ? "Dashboard" : "Go to dashboard"}</a>{allowSignOut && <button className="button button--text button--small" type="button" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />} Sign out</button>}{signOutError && <span className="error-text" role="alert">{signOutError}</span>}</div>;
   }
 
   const onClick = () => { setLeaving(true); window.location.assign(`/auth/microsoft/start?returnTo=${encodeURIComponent("/dashboard")}`); };

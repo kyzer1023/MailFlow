@@ -186,3 +186,18 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added OAuth URL coverage and verified TypeScript, 67 unit and integration tests, and the production build with no local secret artifact.
 - Verified both localhost and the deployed Worker in Chrome: after MailFlow sign-out, Continue with Microsoft opened the Microsoft `Pick an account` screen with saved accounts and `Use another account` rather than returning automatically to MailFlow.
 - Deployed Worker version `08c97835-7b3a-4ed2-8dc7-a32fc75b91fd` and left the production landing page signed out after the check.
+
+### 2026-08-31 - Fresh credentials after MailFlow logout
+
+- Replaced the post-logout account-picker request with a conditional `prompt=login` authorization request. A normal signed-out visit still receives the Microsoft account picker, while a sign-in immediately following explicit MailFlow logout must enter fresh credentials and cannot silently restore the previous account.
+- Kept the reauthentication scoped to MailFlow. The flow does not call Microsoft's global logout endpoint and therefore does not deliberately sign the member out of Outlook, Teams, or other Microsoft applications.
+- Corrected the authenticated landing actions so both Dashboard links use reliable document navigation. Scoped the action-group alignment to the marketing header so the hero `Go to dashboard` button stays with the hero copy.
+- Verified locally in Chrome: `Go to dashboard` opened `/dashboard`; Sign out returned to `/?signedOut=1`; the next Sign in opened Microsoft's blank username form rather than a remembered-account picker or the previous account's continuation screen.
+- `npm run typecheck` and all 68 unit and integration tests pass. The local authorization endpoint returns `prompt=select_account` for ordinary sign-in and `prompt=login` for the explicit post-logout path.
+- Production build and Wrangler dry run pass. Deployed version `f2e351ad-3cd4-41db-81c0-ef2653946165`; the live authorization endpoint returns the same ordinary and post-logout prompt split with the production callback URI.
+
+### 2026-08-31 - Restored Microsoft browser SSO reuse
+
+- Reverted forced credential entry after MailFlow logout at the user's request. Logout again clears only the MailFlow application session, and the following Microsoft authorization request uses `prompt=select_account` so an existing Microsoft browser session can be reused.
+- Retained the independent Dashboard navigation and hero-action alignment fixes.
+- TypeScript, all 67 tests, production build, and Wrangler dry run pass. Deployed version `8d885e01-a38e-4560-b7d0-d927452754d1`; both ordinary and formerly marked authorization URLs now return `prompt=select_account` with the production callback.

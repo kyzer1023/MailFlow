@@ -74,10 +74,8 @@ export function buildAuthorizationUrl(
   url.search = new URLSearchParams({
     client_id: resolved.clientId,
     response_type: "code",
-    // MailFlow logout revokes the application session, but it must not let a
-    // remaining Microsoft browser session silently choose the previous user.
-    // The account picker makes every new MailFlow sign-in an explicit choice
-    // without signing the member out of unrelated Microsoft applications.
+    // MailFlow logout revokes the application session while leaving the
+    // Microsoft browser session available for convenient account selection.
     prompt: "select_account",
     redirect_uri: resolved.redirectUri,
     response_mode: "query",
