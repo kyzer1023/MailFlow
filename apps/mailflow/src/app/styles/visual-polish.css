@@ -14,13 +14,11 @@
     font-size: clamp(4rem, 5.6vw, 5.55rem);
   }
 
-  /* The approved reference dissolves into Paper rather than ending at a
-     rectangular image edge. A soft alpha mask preserves the supplied asset
-     while blending only its outer background into the page. */
-  .hero-art img {
-    -webkit-mask-image: radial-gradient(ellipse 94% 94% at 50% 50%, #000 76%, transparent 100%);
-    mask-image: radial-gradient(ellipse 94% 94% at 50% 50%, #000 76%, transparent 100%);
+  .landing-hero::before {
+    -webkit-mask-image: linear-gradient(to right, transparent 21%, rgba(0,0,0,.12) 36%, #000 60%);
+    mask-image: linear-gradient(to right, transparent 21%, rgba(0,0,0,.12) 36%, #000 60%);
   }
+
 }
 
 @media (min-width: 1181px) and (max-height: 950px) {

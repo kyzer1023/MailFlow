@@ -1,10 +1,10 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { buildMessagePreviews, createCampaignPayload, representativeRows } from "./campaign";
-import { mapSpreadsheetRows, mappingToRecipientConfiguration, recipientConfigurationToClientMapping } from "./mapping";
+import { mapSpreadsheetRows, mappingToRecipientConfiguration, mappingsForCurrentTable, recipientConfigurationToClientMapping } from "./mapping";
 import { resultsToCsv } from "./results-export";
 import { parseAndSelectSpreadsheet, parseCsvText, parseSpreadsheet, parseXlsx, selectSpreadsheetTable } from "./spreadsheet";
-import { buildPreviewSrcDoc, escapeMergeValue, renderTemplate, sanitizeTemplateHtml } from "./template";
+import { buildPreviewSrcDoc, escapeMergeValue, renderTemplate, replaceTextSelection, sanitizeTemplateHtml } from "./template";
 import type { MappedRecipientRow, NormalizedRecipientRow, SpreadsheetTable } from "./types";
 import { extractPlaceholders, parseEmailList, validateClientCampaign, validateMappedRecipientRows } from "./validation";
 
@@ -21,7 +21,32 @@ function mappedRow(sourceRow: number, to: string, name: string): MappedRecipient
   return { sourceRow, to, cc: "", bcc: "", replyTo: "", mergeData: { first_name: name } };
 }
 
+describe("template editor selections", () => {
+  it("replaces highlighted copy with a dynamic field and leaves the cursor after it", () => {
+    expect(replaceTextSelection("Hello friend, welcome", "{{first_name}}", 6, 12)).toEqual({
+      value: "Hello {{first_name}}, welcome",
+      cursor: 20,
+    });
+  });
+
+  it("inserts a dynamic field at an empty caret", () => {
+    expect(replaceTextSelection("Hello ", "{{first_name}}", 6, 6)).toEqual({
+      value: "Hello {{first_name}}",
+      cursor: 20,
+    });
+  });
+});
+
 describe("spreadsheet parsing and selection", () => {
+  it("uses only the latest worksheet headers as dynamic fields", () => {
+    const current = mappingsForCurrentTable(makeTable([
+      { sourceRow: 1, values: ["Name", "Email"] },
+      { sourceRow: 2, values: ["Ada", "ada@example.test"] },
+    ]));
+    expect(current).toEqual({ name: "name", email: "email" });
+    expect(current).not.toHaveProperty("past_sheet_field");
+  });
+
   it("parses quoted CSV fields, escaped quotes, and embedded newlines", () => {
     const rows = parseCsvText('Name,Email,Note\r\n"Ada, Lovelace",ada@example.com,"line 1\nline 2"\r\n"She said ""hello""",b@example.com,ok\r\n');
     expect(rows).toEqual([

@@ -1,64 +1,60 @@
 # Mail Flow design QA
 
-## Scope and visual authority
+## Comparison target
 
-- Source references: `mock-images/01-landing.png` through `mock-images/06-campaign.png`.
-- Brand reference: `mock-images/brandkit.png`.
-- Implementation: `apps/mailflow/src/App.jsx`, `apps/mailflow/src/styles.css`, and focused responsive overrides under `apps/mailflow/src/app/styles/`.
-- Product routes: `/`, `/dashboard`, `/flows/new/template`, `/flows/new/data`, `/flows/new/recipients`, `/flows/new/review`, and `/campaigns/:campaignId`.
-- Browser: the user's selected Chrome session.
-- Source viewport: 1672 x 941 for every route mock.
-- Captured implementation viewport: 1920 x 889. Side-by-side comparison plates normalize the images into a common canvas without cropping their contents.
+- Source visual truth: `C:\Users\kyzer\AppData\Local\Temp\codex-clipboard-3d426273-9556-4673-a03a-0dd504f21583.png` for the authenticated dashboard shell; `codex-clipboard-cf6a9b40-be07-4c72-aab9-f5997a0cfa7b.png` for the approved natural-color MailFlow logo; images 4, 5, and 6 from the request for campaign receipt removal, fixed footer, and Help removal.
+- Rendered implementation: `C:\Dev\MailFlow\.qa-dashboard-desktop.png`, `.qa-flows-desktop.png`, `.qa-data-desktop.png`, `.qa-data-imported.png`, `.qa-template-desktop.png`, `.qa-campaign-desktop-v2.png`, `.qa-data-mobile.png`, and `.qa-dashboard-fresh.png`.
+- Side-by-side evidence: `C:\Dev\MailFlow\.qa-dashboard-comparison.png`.
+- Browser: the user's selected Chrome session against `https://mailflow.kyzer-hono-test.workers.dev`.
 
-## Evidence
+## Normalization and state
 
-| Route | Final implementation capture | Side-by-side comparison |
-| --- | --- | --- |
-| Landing | `qa/landing-implementation-final3.jpg` | `qa/landing-comparison-latest.png` |
-| Dashboard | `qa/dashboard-implementation-final3.jpg` | `qa/dashboard-comparison-latest.png` |
-| Template | `qa/template-implementation-final3.jpg` | `qa/template-comparison-latest.png` |
-| Mapping | `qa/mapping-implementation-final3.jpg` | `qa/mapping-comparison-latest.png` |
-| Review | `qa/review-implementation-final3.jpg` | `qa/review-comparison-latest.png` |
-| Campaign | `qa/campaign-implementation-final3.jpg` | `qa/campaign-comparison-latest.png` |
+- Dashboard source: 1914 x 989 pixels including 44 pixels of browser chrome. The compared content crop is 1914 x 945.
+- Dashboard implementation: 1895 x 945 CSS pixels at device scale factor 1. The comparison plate places the equal-height source crop and implementation side by side without stretching.
+- Mobile implementation: 390 x 844 CSS pixels at device scale factor 1.
+- Desktop state: authenticated account before cleanup for populated dashboard and campaign evidence, then the same signed-in account after cleanup for the fresh empty dashboard.
+- Onboarding state: empty import, parsed two-row CSV with `email`, `first_name`, and `society` headers, then template composition with selected-text replacement.
 
-The full-view captures preserve enough detail to inspect the important regions without additional crops: landing CTA and illustration, dashboard cards and route, template editor and dynamic fields, mapping table and validation summary, review preview and acknowledgement, and campaign route, job table, recovery rules, and receipt.
+## Full-view comparison evidence
 
-The `final3` captures were taken after the real frontend API integration. Each source mock and matching `final3` capture was then loaded together in one comparison pass; no new desktop P0, P1, or P2 regression was observed.
+- The dashboard retains the approved Paper workspace, Deep Ink full-height rail, heading hierarchy, route card, bordered data surfaces, and Signal Coral actions.
+- The implementation intentionally replaces the older white-only rail logo with the homepage natural-color logo requested by the user.
+- The 264px desktop rail is consistent on Dashboard, Flows, Data, Template, Campaigns, and campaign detail routes. Recipients and Help are absent from the rail.
+- The support line remains fixed to the viewport bottom on desktop and mobile. Workspace padding keeps content reachable above it.
+- The final fresh dashboard visibly contains no preloaded flows, campaigns, recipients, or results.
 
-Responsive evidence is stored locally under ignored `output/playwright/` at 1024 x 768 and 390 x 844 for Landing, Dashboard, Template, Mapping, Review, and Campaign. The final measured document width equals the viewport width for the corrected responsive routes. The campaign job table deliberately keeps a horizontally scrollable detail surface with a sticky recipient column and a visible swipe instruction.
+## Focused region comparison evidence
 
-## Comparison history
+- Flow library: `.qa-flows-desktop.png` shows separate Use flow and Edit actions with the same card language as the dashboard.
+- Data first: `.qa-data-imported.png` shows the parsed header row, two real QA rows, recipient-column selection, and header-derived dynamic-field chips.
+- Template: `.qa-template-desktop.png` shows the body value `Hello {{first_name}}, welcome to {{society}}.` after replacing the selected word `friend` through the dynamic-field control.
+- Campaign detail: `.qa-campaign-desktop-v2.png` shows recipient outcomes plus useful campaign metadata with no decorative audit receipt. The Copy label stays on one line after the second-pass fix.
+- Mobile: `.qa-data-mobile.png` shows the compact rail header, four-step sequence, stacked controls, and fixed support footer without horizontal overflow.
 
-### Pass 1
+## Required fidelity surfaces
 
-- P1: Review incorrectly retained the product sidebar and did not use the approved Deep Ink outer frame. Fixed by introducing the full-frame review shell and inset Paper workspace.
-- P2: Campaign progress and audit evidence fell below the useful first viewport. Fixed by compacting the header, separating route counts from pace progress, and bringing the audit receipt into view.
-- P2: Landing workflow artwork was undersized and the progress treatment did not resemble the source. Fixed by increasing the raster artwork scale and matching the segmented rule.
+- Fonts and typography: display and UI weights preserve the approved editorial hierarchy, readable wraps, and compact mono metadata. No truncation or broken headings were observed.
+- Spacing and layout rhythm: rail length and width are consistent, cards align to the same content grid, responsive stacks are coherent, and persistent controls remain visible.
+- Colors and visual tokens: Paper, Deep Ink, Moss, Signal Coral, line, and semantic state colors come from the centralized token system.
+- Image quality and asset fidelity: all visible MailFlow branding uses the supplied raster assets. No logo, illustration, or non-standard icon was recreated with CSS, glyphs, emoji, or hand-authored SVG.
+- Copy and content: onboarding clearly explains why data comes first; dynamic-field behavior is described at the interaction point; campaign audit content is functional rather than decorative; empty states are explicit and honest.
 
-### Pass 2
+## Findings and comparison history
 
-- P2: Mapping lacked the visible 145 ready, 2 skipped, and 1 attention summary and recovery affordance. Fixed with the reference metrics, flagged-row review action, upload card, lock note, and Reply Deadline mapping.
-- P2: Review preview and summary were too sparse. Fixed with the richer branded message frame plus Sender, Recipients, CC, Pacing, Estimated duration, and Validation rows.
-- P2: Template metadata and branding were incomplete. Fixed with the CC row and prepared Mail Flow raster logo.
-- P3: Campaign accepted-state wording was ambiguous. Fixed to the exact label `Accepted by Microsoft`.
+- Pass 1, P2: the campaign ID Copy label wrapped to two lines in the narrow metadata card. Fix: reserve a non-shrinking, no-wrap action while allowing the ID code to wrap. Post-fix evidence: `.qa-campaign-desktop-v2.png`.
+- Pass 1, expected deviation: the source dashboard contained Recipients, Help, and a white logo. These were deliberately changed to match the user's newer explicit requirements.
+- Pass 2: no actionable P0, P1, or P2 differences remain.
 
-## Interaction checks
+## Interaction and quality checks
 
-- Review test-send control reaches the accepted-by-Microsoft state.
-- Confirm and start is disabled until the acknowledgement checkbox is checked.
-- Campaign pause changes the state to `Paused safely` and exposes Resume.
-- Resume restores `Sending safely` without changing accepted rows.
-- Primary route navigation and wizard links are keyboard-reachable and use visible focus styles.
-- Reduced-motion and narrow-layout CSS rules are present.
+- Verified CSV file-picker import, header detection, automatic primary-recipient detection, Data-to-Template navigation, selected-text replacement, fresh-account empty state, saved-flow actions, and campaign metadata.
+- Verified desktop and 390 x 844 mobile layouts.
+- Chrome console warnings/errors: none.
+- Typecheck, 66 unit/integration tests, production build, and Cloudflare deployment: passed.
 
-## Remaining non-blocking visual differences
+## Follow-up polish
 
-- P2: The template body remains a dependable plain-text/HTML-backed editing surface rather than reproducing every decorative rich-editor control in the mock. Template editing, merge fields, preview sanitization, saving, and campaign rendering are functional.
-- P2: The prepared landing raster retains a subtle internal paper rectangle. Its outer edge is softly masked into the page, but it is not a pixel-identical transparent reconstruction of the source composition.
-- P3: Exact source typography is approximated with the selected available font stack. Hierarchy, weight, spacing, palette, and overall composition remain aligned with the approved direction.
+- P3: split the large client JavaScript bundle with route-level lazy loading when performance becomes a priority.
+- P3: replace the placeholder support mailbox before a public demo.
 
-## Final result
-
-`passed for working prototype`
-
-Desktop, tablet, and mobile routes are usable without page-level overflow. The accepted prototype direction, core interactions, trust-critical validation, review, pacing, result, and recovery states are represented. The differences above are polish opportunities rather than blockers for the requested working prototype.
+final result: passed

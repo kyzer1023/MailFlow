@@ -84,6 +84,26 @@ export interface TemplateRenderResult {
   readonly missingPlaceholders: readonly string[];
 }
 
+export interface TextSelectionReplacement {
+  readonly value: string;
+  readonly cursor: number;
+}
+
+/** Replace highlighted editor text, or insert at the caret when the selection is empty. */
+export function replaceTextSelection(
+  value: string,
+  replacement: string,
+  selectionStart = value.length,
+  selectionEnd = selectionStart,
+): TextSelectionReplacement {
+  const start = Math.max(0, Math.min(value.length, selectionStart));
+  const end = Math.max(start, Math.min(value.length, selectionEnd));
+  return {
+    value: `${value.slice(0, start)}${replacement}${value.slice(end)}`,
+    cursor: start + replacement.length,
+  };
+}
+
 function escapeHtmlValue(value: string): string {
   return value
     .replace(/&/gu, "&amp;")

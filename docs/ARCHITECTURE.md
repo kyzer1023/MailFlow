@@ -47,7 +47,7 @@ Domain modules must have no Cloudflare imports. Adapters depend on domain contra
 - Server-side authorization-code flow with PKCE.
 - Scopes: `openid`, `profile`, `email`, `offline_access`, `User.Read`, and delegated `Mail.Send`.
 - Redirect route: `/auth/microsoft/callback` on local and deployed origins.
-- Session cookie: `HttpOnly`, `Secure` in production, `SameSite=Lax`, rotated after login.
+- Session cookie: `HttpOnly`, `Secure` in production, `SameSite=Lax`, rotated after login, and renewed on authenticated use with a 365-day rolling lifetime. Microsoft revocation and browser cookie clearing still end access.
 - OAuth state and PKCE verifier are short-lived and bound to the initiating browser.
 - Refresh tokens are encrypted before D1 storage using AES-GCM with a Worker secret that is not stored in D1.
 - Student passwords are not part of the application architecture.

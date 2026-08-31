@@ -163,6 +163,14 @@ export class D1AuthSessionStore implements SessionStore {
     return row ? session(row) : null;
   }
 
+  async renewByTokenHash(tokenHash: string, expiresAt: number): Promise<void> {
+    await bind(
+      this.db,
+      "UPDATE sessions SET expires_at = ?1 WHERE id_hash = ?2 AND revoked_at IS NULL",
+      [expiresAt, tokenHash],
+    ).run();
+  }
+
   async revokeByTokenHash(tokenHash: string, revokedAt: number): Promise<void> {
     await bind(this.db, "UPDATE sessions SET revoked_at = ?1 WHERE id_hash = ?2", [revokedAt, tokenHash]).run();
   }
@@ -231,4 +239,3 @@ export function createD1AuthStores(db: D1Database, now: () => number = Date.now)
     stateStore: new D1OAuthStateStore(db, now),
   };
 }
-

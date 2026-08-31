@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { base64UrlEncode, openSecret, sealSecret, sha256 } from "./crypto";
 import { consumeOAuthState, createOAuthState } from "./oauth-state";
 import { generatePkcePair, verifyPkceChallenge } from "./pkce";
-import { parseCookie, readSession, OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME, startSession } from "./session";
+import { DEFAULT_SESSION_TTL_SECONDS, parseCookie, readSession, renewSession, OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME, startSession } from "./session";
 import { assertIdTokenClaims, parseJwt, TenantVerificationError, verifyIdToken } from "./tenant";
 import { MicrosoftAuthService } from "./service";
 import type { AuthenticatedUser, OAuthStatePayload, OAuthTokenRecord, OAuthTokenStore, UserStore, UserUpsert } from "./contracts";
@@ -20,6 +20,11 @@ class MemorySessionStore implements SessionStore {
 
   async findByTokenHash(tokenHash: string): Promise<SessionRecord | null> {
     return this.records.get(tokenHash) ?? null;
+  }
+
+  async renewByTokenHash(tokenHash: string, expiresAt: number): Promise<void> {
+    const record = this.records.get(tokenHash);
+    if (record) record.expiresAt = expiresAt;
   }
 
   async revokeByTokenHash(tokenHash: string, revokedAt: number): Promise<void> {
@@ -140,6 +145,14 @@ describe("session primitives", () => {
     expect([...store.records.values()][0].tokenHash).not.toBe(started.token);
     expect(await readSession(store, started.token, 1_001)).not.toBeNull();
     expect(await readSession(store, started.token, 61_001)).toBeNull();
+  });
+
+  it("renews an active session for one year", async () => {
+    const store = new MemorySessionStore();
+    const started = await startSession(store, "user-1", { now: 1_000, cookie: { secure: false } });
+    const expiresAt = await renewSession(store, started.record, 5_000);
+    expect(expiresAt).toBe(5_000 + DEFAULT_SESSION_TTL_SECONDS * 1_000);
+    expect(store.records.get(started.tokenHash)?.expiresAt).toBe(expiresAt);
   });
 });
 

@@ -8,7 +8,10 @@ import {
 export const SESSION_COOKIE_NAME = "mailflow_session";
 export const CSRF_COOKIE_NAME = "mailflow_csrf";
 export const OAUTH_STATE_COOKIE_NAME = "mailflow_oauth_state";
-export const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 8;
+// Keep the application session durable for returning members. Microsoft can
+// still revoke the delegated refresh token, and clearing browser cookies ends
+// the local session, so this is intentionally long-lived rather than absolute.
+export const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 export interface SessionRecord {
   /** Database identifier, when the backing store has one. */
@@ -23,6 +26,7 @@ export interface SessionRecord {
 export interface SessionStore {
   create(record: SessionRecord): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
+  renewByTokenHash(tokenHash: string, expiresAt: number): Promise<void>;
   revokeByTokenHash(tokenHash: string, revokedAt: number): Promise<void>;
 }
 
@@ -151,6 +155,21 @@ export async function readSession(
   // Do not return the raw token. The caller only receives the database record
   // and can use its user id for ownership checks.
   return record;
+}
+
+/** Extend a valid session without rotating or exposing its opaque browser token. */
+export async function renewSession(
+  store: SessionStore,
+  record: SessionRecord,
+  now = Date.now(),
+  ttlSeconds = DEFAULT_SESSION_TTL_SECONDS,
+): Promise<number> {
+  if (!Number.isFinite(now) || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+    throw new RangeError("Invalid session lifetime");
+  }
+  const expiresAt = now + Math.floor(ttlSeconds * 1000);
+  await store.renewByTokenHash(record.tokenHash, expiresAt);
+  return expiresAt;
 }
 
 export async function revokeSession(

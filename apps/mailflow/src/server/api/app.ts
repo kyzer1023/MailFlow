@@ -11,12 +11,14 @@ import type {
 } from "../../domain/types";
 import {
   CSRF_COOKIE_NAME,
+  DEFAULT_SESSION_TTL_SECONDS,
   OAUTH_STATE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   clearCookie,
   createCsrfToken,
   parseCookie,
   readSession,
+  renewSession,
   revokeSession,
   serializeCookie,
   verifyCsrfToken,
@@ -77,16 +79,21 @@ function repositories(context: MailFlowContext): Repositories {
   return createD1Repositories(context.env.DB);
 }
 
+function applicationOrigin(context: MailFlowContext): string {
+  const requestUrl = new URL(context.req.url);
+  if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) return requestUrl.origin;
+  const configured = textEnv(context.env.PUBLIC_ORIGIN);
+  if (!configured) return requestUrl.origin;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return requestUrl.origin;
+  }
+}
+
 function sameOrigin(context: MailFlowContext): boolean {
   const requestUrl = new URL(context.req.url);
-  const configured = textEnv(context.env.PUBLIC_ORIGIN);
-  if (configured) {
-    try {
-      if (new URL(configured).origin !== requestUrl.origin) return false;
-    } catch {
-      return false;
-    }
-  }
+  if (applicationOrigin(context) !== requestUrl.origin) return false;
   const origin = context.req.header("Origin");
   if (origin) {
     try {
@@ -164,11 +171,19 @@ async function requireSession(context: MailFlowContext): Promise<{ user: MailFlo
   const sessionToken = parseCookie(context.req.header("Cookie"), SESSION_COOKIE_NAME);
   if (!sessionToken) return responseError(context, 401, "not_authenticated", "Sign in with your USM Microsoft account to continue.");
   const repo = repositories(context);
-  const session = await readSession(createD1AuthStores(context.env.DB).sessionStore, sessionToken);
+  const sessionStore = createD1AuthStores(context.env.DB).sessionStore;
+  const session = await readSession(sessionStore, sessionToken);
   if (!session) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
   const user = await repo.users.getById(session.userId);
   if (!user) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
   const csrfToken = await csrfTokenFor(context, sessionToken);
+  await renewSession(sessionStore, session);
+  context.header("Set-Cookie", serializeCookie(SESSION_COOKIE_NAME, sessionToken, {
+    secure: new URL(context.req.url).protocol === "https:",
+    sameSite: "Lax",
+    path: "/",
+    maxAgeSeconds: DEFAULT_SESSION_TTL_SECONDS,
+  }), { append: true });
   return { user: {
     id: user.id,
     tenantId: user.tenantId,
@@ -189,7 +204,7 @@ async function csrfTokenFor(context: MailFlowContext, sessionToken: string): Pro
     secure: new URL(context.req.url).protocol === "https:",
     sameSite: "Lax",
     path: "/",
-    maxAgeSeconds: 60 * 60 * 8,
+    maxAgeSeconds: DEFAULT_SESSION_TTL_SECONDS,
   }).replace("; HttpOnly", "");
   context.header("Set-Cookie", cookie, { append: true });
   return token;
@@ -214,7 +229,7 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
   const tokenSecret = textEnv(context.env.TOKEN_ENCRYPTION_KEY_B64);
   const sessionSecret = textEnv(context.env.SESSION_SECRET);
   if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
-  const origin = redirectOrigin ?? textEnv(context.env.PUBLIC_ORIGIN, new URL(context.req.url).origin);
+  const origin = redirectOrigin ?? applicationOrigin(context);
   const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
   const config = {
     tenantId,
@@ -232,6 +247,7 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
     stateSecret: sessionSecret,
     tokenEncryptionSecret: tokenSecret,
     secureCookies: new URL(context.req.url).protocol === "https:",
+    sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
     sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
   });
   return { graph, auth };

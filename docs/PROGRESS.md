@@ -8,7 +8,7 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Git: initialized on `main`; the initial implementation commit was created after the local verification and secret-history gate.
 - Visual references: seven approved PNG files present, desktop comparisons are stored under `qa/`, and responsive Chrome evidence is stored locally under ignored `output/playwright/`.
 - Local test environment: root `.env` present and ignored; passwords and secret values are not stored in source control.
-- Quality: TypeScript, 59 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
+- Quality: TypeScript, 66 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
 - Deployment: live at `https://mailflow.kyzer-hono-test.workers.dev` with D1, Queues, Workers Static Assets, and Worker secrets.
 - Real Graph send: primary and secondary sender tests completed; each campaign recorded 5 accepted, 0 failed, 0 skipped, and 0 unknown.
 - Delivery observation: both distinct campaign subjects were found in all five approved Gmail inboxes. This is test evidence, not a general delivery guarantee.
@@ -119,3 +119,48 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Sent Items was not checked. No recipient address, account password, token, client secret, or private message body is recorded in repository documentation.
 - Added real 1440 x 900, 1024 x 768, and 390 x 844 Playwright Chrome captures. Corrected review sample overlap, mobile stepper overflow, campaign checkpoint clipping, dashboard table overflow, mapping issue readability, compact-height campaign evidence, and the landing headline composition.
 - Timestamp: `2026-08-31 13:54 MYT`. Final responsive deployment version: `4fa5fa73-b99d-4492-a572-1c5e4e1a2f3b`.
+
+### 2026-08-31 - Landing authentication and hero refinement
+
+- Removed the landing marketing link group and the decorative section counter requested for the simplified hero.
+- Connected both landing actions to application session state. Signed-out visitors see Microsoft sign-in, signed-in members receive dashboard links, and session loading has a disabled checking state.
+- Dissolved the stationery artwork into the Paper surface with edge masking, tonal blending, and a desktop viewport bleed so the raster canvas no longer reads as a pasted rectangle.
+- Added two component tests for authenticated and unauthenticated landing actions.
+- Verified 1440 x 900, 1024 x 768, and 390 x 844 browser layouts with no horizontal overflow or console errors. `npm test` passes with 61 tests, and `npx wrangler deploy --dry-run` passes.
+
+### 2026-08-31 - Flow onboarding, navigation, and clean demo state
+
+- Standardized the authenticated shell on the landing-page MailFlow logo, a 264px desktop rail, Overview/Flows/Campaigns navigation, a fixed support footer, and no sidebar Recipients, Help, or logout controls.
+- Rebuilt `/flows` as the saved-flow library with use, edit, create, loading, error, and empty states. Direct saved-flow edit URLs now rehydrate after reload.
+- Reordered onboarding to Data, Template, Recipients, Review. New flows start with no file, recipients, template copy, mappings, or sample values. Spreadsheet headers now define the available dynamic fields before composition.
+- Added selected-text replacement in the message editor. A dynamic-field click replaces the highlighted body text, or inserts at the caret when nothing is selected.
+- Replaced the decorative campaign audit receipt with usable campaign metadata, preserved recipient-level results, and corrected the narrow audit-ID copy action.
+- Changed application sessions to a rolling 365-day lifetime while preserving Microsoft revocation, explicit server-side logout, and browser cookie clearing as security exits.
+- Verified the deployed Chrome flow at desktop and 390 x 844 mobile: fresh CSV import, header discovery, dynamic-field replacement, empty dashboard state, campaign details, fixed footer, and zero console warnings or errors.
+- `npm run typecheck`, `npm run test:unit` (66 tests), `npm run build`, and Cloudflare deployment passed. Production product data was then cleared: 0 flows, 0 template versions, 0 campaigns, 0 recipient jobs, and 0 audit events. User, OAuth token, and active session records were preserved so the demo opens signed in and empty.
+
+### 2026-08-31 - Responsive landing background refinement
+
+- Removed the standalone landing workflow image element and moved the existing stationery composition into one oversized hero background layer on viewports wider than 900px.
+- Extended the background beyond the hero's top and bottom edges and used a directional mask so it fades into the Paper surface behind the copy without a visible image boundary.
+- Disabled the background rule at 900px and below. Small screens now render a one-viewport Paper hero with no artwork beneath the CTA and no workflow image in the document.
+- Verified 1440 x 900, 1024 x 768, and 390 x 844 layouts with no overflow or browser console errors. `npm test` passes with 66 tests, and `npx wrangler deploy --dry-run` passes.
+
+### 2026-08-31 - Full landing artwork framing
+
+- Changed the desktop hero background from an intentionally oversized crop to a contained, aspect-ratio-preserving size with 16px of vertical breathing room.
+- Verified that the complete stationery composition remains visible at 1920 x 928, 1440 x 900, and 1024 x 768 without document overflow.
+- Reconfirmed at 390 x 844 that the artwork is absent from the pseudo-element and document image list, leaving a plain Paper hero beneath the CTA.
+- `npm test` passes with 66 tests, and `npx wrangler deploy --dry-run` passes.
+
+### 2026-08-31 - Wide hero copy alignment
+
+- Removed all hero padding above 900px and positioned the landing copy independently toward the center, reaching about 221px from the left at 1920px, 154px at 1440px, and 95px at 1024px.
+- Verified the adjustment at 1920 x 832, 1440 x 900, and 1024 x 768, then confirmed that 390 x 844 retains its 18px mobile gutter, plain Paper background, and overflow-free layout.
+- `npm test` passes with 66 tests, and `npx wrangler deploy --dry-run` passes.
+
+### 2026-08-31 - GitHub publication gate
+
+- Prepared the current `main` history and working snapshot for initial publication to the project GitHub repository.
+- Kept the ignored root `.env` and local `.qa-*.png` captures out of Git. The local QA captures can contain mailbox or recipient identifiers and are not publication-safe evidence.
+- Verified `npm test`: TypeScript, the production build, and 67 unit and integration tests pass before publication.

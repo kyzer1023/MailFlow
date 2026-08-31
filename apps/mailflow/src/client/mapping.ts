@@ -185,3 +185,11 @@ export function normalizePlaceholderMapping(
 export function mappingColumnOptions(columns: readonly SpreadsheetColumn[]): readonly { key: string; label: string }[] {
   return columns.map((column) => ({ key: column.key, label: column.label || column.key }));
 }
+
+/**
+ * Treat the currently selected worksheet as the complete dynamic-field source.
+ * Replacing a workbook must never carry placeholder keys from an earlier file.
+ */
+export function mappingsForCurrentTable(table: SpreadsheetTable): Readonly<Record<string, string>> {
+  return Object.fromEntries(table.columns.map((column) => [column.key, column.key]));
+}

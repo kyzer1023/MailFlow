@@ -26,3 +26,4 @@ Thumbs.db
 # Local scratch files
 tmp/
 artifacts/local/
+.qa-*.png
