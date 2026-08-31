@@ -18,6 +18,15 @@ export const DEFAULT_CLIENT_CAMPAIGN_LIMIT = 300;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
 
+/**
+ * DOMPurify serializes the HTML void element `<br />` as `<br>`. Normalize
+ * that harmless syntax difference before comparing sanitized output so a
+ * clean multiline draft is not reported as unsafe markup.
+ */
+function canonicalizeTemplateHtml(html: string): string {
+  return html.replace(/<br\s*\/?\s*>/giu, "<br>");
+}
+
 export type AddressValue = string | readonly string[] | null | undefined;
 
 export interface ParsedAddressList {
@@ -244,7 +253,7 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
   }
 
   const sanitizedBodyHtml = sanitizeTemplateHtml(input.bodyHtml);
-  if (sanitizedBodyHtml !== input.bodyHtml) {
+  if (canonicalizeTemplateHtml(sanitizedBodyHtml) !== canonicalizeTemplateHtml(input.bodyHtml)) {
     issues.push({
       code: "unsafe_html",
       field: "bodyHtml",

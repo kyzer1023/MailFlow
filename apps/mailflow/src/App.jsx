@@ -97,7 +97,10 @@ function bodyHtmlFromDraft(body) {
   if (/<[a-z][^>]*>/iu.test(source)) return source;
   return source
     .split(/\r?\n/u)
-    .map((line) => line ? `<p>${escapeMergeValue(line)}</p>` : "<br />")
+    // DOMPurify serializes void elements as `<br>`. Keep generated drafts in
+    // that same canonical form so a harmless blank line is not reported as
+    // an unsafe-template change during Review validation.
+    .map((line) => line ? `<p>${escapeMergeValue(line)}</p>` : "<br>")
     .join("");
 }
 

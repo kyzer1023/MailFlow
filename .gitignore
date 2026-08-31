@@ -13,6 +13,8 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.playwright-cli/
+output/
 *.tsbuildinfo
 
 # Editors and operating systems
@@ -24,4 +26,3 @@ Thumbs.db
 # Local scratch files
 tmp/
 artifacts/local/
-

@@ -4,6 +4,8 @@ Mail Flow is a focused mail-merge application for USM student societies. Members
 
 The deployed application uses Cloudflare only: Workers Static Assets, a Worker API, D1, Queues, and Worker secrets. Microsoft Entra ID provides identity and delegated authorization. Microsoft Graph sends from the signed-in member's Outlook mailbox.
 
+Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
+
 ## Repository map
 
 - `AGENTS.md`: first read for every coding agent.

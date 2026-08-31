@@ -1,0 +1,190 @@
+/* Campaign monitor responsive corrections.
+   The base campaign surface lives in the product stylesheet. These rules keep
+   every status discoverable when the workspace becomes narrower than the
+   desktop reference. */
+
+.campaign-page {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.campaign-page .route-summary,
+.campaign-page .route-counts,
+.campaign-page .jobs-panel,
+.campaign-page .campaign-lower {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.campaign-page .route-counts {
+  scrollbar-color: var(--moss) var(--paper-deep);
+  scrollbar-width: thin;
+}
+
+.campaign-page .route-counts:focus-visible {
+  outline: 3px solid var(--coral);
+  outline-offset: 3px;
+}
+
+.campaign-page .jobs-panel .table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--moss) var(--paper-deep);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.campaign-page .jobs-panel table {
+  min-width: 820px;
+}
+
+.campaign-page .jobs-panel th:first-child,
+.campaign-page .jobs-panel td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--paper-bright);
+  box-shadow: 7px 0 0 -6px var(--line);
+}
+
+.campaign-page .jobs-panel thead th:first-child {
+  z-index: 3;
+}
+
+/* The desktop receipt artwork is intentionally removed before the narrow
+   workspace has to stack the monitor columns. Keeping the facts on a solid
+   Paper surface prevents the transparent artwork from obscuring them. */
+@media (max-width: 1180px) {
+  .campaign-page .audit-card {
+    min-height: 0;
+    overflow: visible;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--paper-bright);
+  }
+
+  .campaign-page .audit-card > img {
+    display: none;
+  }
+
+  .campaign-page .audit-copy {
+    position: static;
+    inset: auto;
+    padding: 20px 22px 22px;
+    transform: none;
+  }
+}
+
+/* At this width the six checkpoints are a readable two-row summary. This is
+   deliberately preferred to clipping the final states behind a scroll edge. */
+@media (max-width: 900px) {
+  .campaign-page .route-counts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 15px 8px;
+    overflow-x: visible;
+    padding: 16px 14px 14px;
+  }
+
+  .campaign-page .route-counts .count {
+    min-width: 0;
+  }
+
+  .campaign-page .route-counts .count::after {
+    display: none;
+  }
+
+  .campaign-page .campaign-aside {
+    grid-template-columns: 1fr;
+  }
+
+}
+
+@media (max-width: 680px) {
+  .campaign-page {
+    overflow-x: clip;
+  }
+
+  .campaign-page .campaign-header .header-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .campaign-page .campaign-header .header-actions .button {
+    width: 100%;
+  }
+
+  .campaign-page .route-summary {
+    padding-inline: 0;
+  }
+
+  .campaign-page .route-counts {
+    width: 100%;
+    gap: 13px 4px;
+    padding: 15px 8px 13px;
+  }
+
+  .campaign-page .route-counts .count > span {
+    width: 40px;
+    height: 40px;
+    margin-bottom: .3rem;
+  }
+
+  .campaign-page .route-counts .count strong {
+    font-size: 1.05rem;
+  }
+
+  .campaign-page .route-counts .count small {
+    font-size: .64rem;
+  }
+
+  .campaign-page .progress-meta {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: .25rem .65rem;
+    line-height: 1.35;
+  }
+
+  .campaign-page .progress-meta span {
+    flex: 1 1 240px;
+  }
+
+  .campaign-page .jobs-panel > .section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: .75rem;
+  }
+
+  .campaign-page .jobs-panel > .section-heading > .button {
+    margin-left: auto;
+  }
+
+  .campaign-page .jobs-panel table {
+    min-width: 760px;
+  }
+
+  .campaign-page .jobs-panel th:first-child,
+  .campaign-page .jobs-panel td:first-child {
+    min-width: 132px;
+  }
+
+  .campaign-page .table-footer {
+    gap: .75rem;
+    flex-wrap: wrap;
+  }
+
+  .campaign-page .audit-copy {
+    padding: 18px 18px 20px;
+  }
+
+  .campaign-page .audit-copy dl {
+    gap: .8rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .campaign-page .jobs-panel .table-wrap {
+    scroll-behavior: auto;
+  }
+}

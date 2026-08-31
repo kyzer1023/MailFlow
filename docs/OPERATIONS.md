@@ -9,12 +9,14 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | Worker and static site | `mailflow` |
 | D1 database | `mailflow-db`, binding `DB` |
 | Queue | `mailflow-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
-| Public origin | The deployed `https://<worker>.<account>.workers.dev` origin |
+| Public origin | `https://mailflow.kyzer-hono-test.workers.dev` |
 | OAuth callback | `<PUBLIC_ORIGIN>/auth/microsoft/callback` |
 | Entra application | Existing single-tenant application named `MailFlow` |
 | Graph permissions | Delegated `User.Read` and delegated `Mail.Send` |
 
 The source configuration is `../apps/mailflow/wrangler.jsonc`. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
+
+As of 2026-08-31, the D1 database and Queue are provisioned, the initial migration is applied, the Entra production callback is registered, all Worker secrets are present, and the public deployment is active. Do not create duplicate resources during routine maintenance; inspect the existing bindings first.
 
 ## Preflight gate
 

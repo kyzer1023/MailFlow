@@ -178,6 +178,36 @@ describe("mapping and validation", () => {
     });
   });
 
+  it("does not resurrect a legacy mapped field after an address source is cleared", () => {
+    expect(mappingToRecipientConfiguration({
+      toField: "email",
+      cc: null,
+      // This alias can be present when a mapping was hydrated by an older
+      // client. An explicit null source is the user's current choice.
+      ccField: "previous_cc_column",
+      bcc: null,
+      replyTo: null,
+      separator: "auto",
+    })).toMatchObject({
+      ccField: null,
+      ccFixed: null,
+    });
+  });
+
+  it("keeps a cleared fixed value cleared after reopening a saved template", () => {
+    const reopened = recipientConfigurationToClientMapping({
+      toField: "email",
+      ccField: null,
+      bccField: null,
+      replyToField: null,
+      ccFixed: "previous@example.test",
+      separator: "auto",
+    });
+    const cleared = mappingToRecipientConfiguration({ ...reopened, cc: { kind: "fixed", value: "" } });
+    expect(cleared.ccField).toBeNull();
+    expect(cleared.ccFixed).toBeNull();
+  });
+
   it("flags missing mapped columns before row validation", () => {
     const result = mapSpreadsheetRows(table, { toField: "missing", placeholders: { name: "also_missing" } });
     expect(result.issues.map((issue) => issue.code)).toEqual(["missing_column", "missing_column"]);
@@ -219,6 +249,19 @@ describe("mapping and validation", () => {
     expect(invalid.ok).toBe(false);
     expect(invalid.issues.some((issue) => issue.code === "unsafe_html")).toBe(true);
     expect(invalid.sanitizedBodyHtml).not.toContain("script");
+
+    const cleanRows = [1, 2, 3, 4, 5].map((row) => mappedRow(row + 1, `person${row}@example.com`, `Person ${row}`));
+    const cleanMultiline = validateClientCampaign({
+      senderAddress: "sender@example.com",
+      subjectTemplate: "Hello",
+      // Saved or hand-authored templates may still contain the equivalent
+      // self-closing form; it must not become a false unsafe-html issue.
+      bodyHtml: "<p>Hello</p><br /><p>Thank you.</p>",
+      rows: cleanRows,
+    });
+    expect(cleanMultiline.ok).toBe(true);
+    expect(cleanMultiline.issues).toEqual([]);
+    expect(cleanMultiline.sanitizedBodyHtml).toBe("<p>Hello</p><br><p>Thank you.</p>");
 
     const missingValue = validateClientCampaign({
       senderAddress: "sender@example.com",

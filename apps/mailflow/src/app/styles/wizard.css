@@ -1,0 +1,184 @@
+/* Responsive wizard refinements. Loaded after styles.css by the app shell. */
+
+/* Keep the compact review rail from forcing text into the message preview. */
+.sample-card,
+.sample-card > button,
+.sample-card > button > span,
+.sample-card > button > strong,
+.sample-card > button > small {
+  min-width: 0;
+}
+
+.sample-card > button > strong,
+.sample-card > button > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  /* The narrow selector column remains readable at the tablet breakpoint. */
+  .review-layout .sample-card > button {
+    overflow: hidden;
+  }
+
+  .review-layout .sample-card > button > span,
+  .review-layout .sample-card > button > strong,
+  .review-layout .sample-card > button > small {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  /* The selector is a compact strip above the preview on tablet and mobile. */
+  .review-layout .sample-card {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .review-layout .sample-card > .section-kicker,
+  .review-layout .sample-card > h2,
+  .review-layout .sample-card > footer {
+    grid-column: 1 / -1;
+  }
+
+  .review-layout .sample-card > button {
+    width: auto;
+    margin: 0;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+    overflow: hidden;
+  }
+
+  .review-layout .sample-card > button > span {
+    grid-row: auto;
+    min-width: 0;
+  }
+
+  .review-layout .sample-card > button > strong,
+  .review-layout .sample-card > button > small {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  /* On a 390px viewport the review rail shares one compact header row with
+     the wordmark. Only the current step keeps its text label. The other
+     labels stay in the accessibility tree through their links and their
+     numbered or completed nodes remain visible. */
+  .app-frame--review .stepper-wrap {
+    overflow: hidden;
+  }
+
+  .app-frame--review .stepper {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    height: 42px;
+    padding-inline: 166px 10px;
+  }
+
+  .app-frame--review .stepper-wrap {
+    padding-top: 20px;
+  }
+
+  .app-frame--review .stepper li {
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .app-frame--review .stepper li:not(:last-child)::after {
+    left: 50%;
+    right: -50%;
+  }
+
+  .app-frame--review .stepper a {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  /* The current implementation keeps each label as a direct text node, so
+     size the link itself rather than relying on a child label selector. */
+  .app-frame--review .stepper li:not(.current) a {
+    font-size: 0;
+  }
+
+  .app-frame--review .stepper li.current a {
+    font-size: .58rem;
+    white-space: nowrap;
+  }
+
+  .app-frame--review .stepper a > span {
+    flex: 0 0 auto;
+  }
+
+  .app-frame--review .wizard-count {
+    right: 11px;
+    top: 5px;
+    transform: none;
+    font-size: .58rem;
+    z-index: 2;
+  }
+
+  .review-layout .sample-card {
+    gap: 7px;
+    padding: 13px;
+  }
+
+  .review-layout .sample-card > .section-kicker {
+    margin-bottom: 1px;
+  }
+
+  .review-layout .sample-card > h2 {
+    margin: .1rem 0 .35rem;
+    font-size: 1rem;
+    line-height: 1.18;
+  }
+
+  .review-layout .sample-card > button {
+    min-height: 68px;
+    padding: .55rem .45rem;
+    border-radius: 8px;
+    text-align: center;
+    justify-items: center;
+  }
+
+  .review-layout .sample-card > button > span,
+  .review-layout .sample-card > button > strong,
+  .review-layout .sample-card > button > small {
+    width: 100%;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  .review-layout .sample-card > button > span {
+    font-size: .61rem;
+  }
+
+  .review-layout .sample-card > button > strong {
+    font-size: .72rem;
+  }
+
+  .review-layout .sample-card > button > small {
+    font-size: .65rem;
+  }
+
+  .review-layout .sample-card footer {
+    margin-top: .4rem;
+    padding-top: .65rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-layout .sample-card > button,
+  .app-frame--review .stepper a {
+    transition: none !important;
+  }
+}

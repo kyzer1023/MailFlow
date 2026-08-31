@@ -4,14 +4,15 @@ Keep this append-only except when updating the short current-state summary. Neve
 
 ## Current state
 
-- Phase: local prototype verified; live provisioning is the next gated phase.
+- Phase: working Cloudflare prototype deployed and verified end to end with both approved USM test accounts.
 - Git: initialized on `main`; the initial implementation commit was created after the local verification and secret-history gate.
-- Visual references: seven approved PNG files present and compared against browser-rendered routes.
-- Local test environment: root `.env` present and ignored; no password or secret has entered source control.
-- Quality: TypeScript, 57 unit and integration tests, production build, Chrome desktop smoke checks, and Wrangler dry run pass.
-- Deployment: source and bindings are ready; no live Cloudflare resource has been created or changed.
-- Real Graph send: not started.
-- Entra verification: delegated `Mail.Send` and `User.Read` are configured; redirect URI and confidential client credential still need setup.
+- Visual references: seven approved PNG files present, desktop comparisons are stored under `qa/`, and responsive Chrome evidence is stored locally under ignored `output/playwright/`.
+- Local test environment: root `.env` present and ignored; passwords and secret values are not stored in source control.
+- Quality: TypeScript, 59 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
+- Deployment: live at `https://mailflow.kyzer-hono-test.workers.dev` with D1, Queues, Workers Static Assets, and Worker secrets.
+- Real Graph send: primary and secondary sender tests completed; each campaign recorded 5 accepted, 0 failed, 0 skipped, and 0 unknown.
+- Delivery observation: both distinct campaign subjects were found in all five approved Gmail inboxes. This is test evidence, not a general delivery guarantee.
+- Entra verification: existing single-tenant `MailFlow` app uses delegated `Mail.Send` and `User.Read`; local and production callbacks are configured and the Worker client credential is active.
 
 ## Log
 
@@ -101,3 +102,20 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Removed the inherited Sites packaging shim and its duplicate static-only Worker. The repository now has one deployment entrypoint, `worker/index.ts`, and one hosting target, Cloudflare Workers.
 - An independent read-only integration review confirmed saved-flow ownership, complete template and recipient-rule hydration, fresh-upload enforcement, new campaign idempotency state, mapping preservation, and authenticated fixture isolation.
 - Tablet and mobile image captures remain the only local visual-QA blocker because the selected Chrome automation session exposes a fixed viewport. Direct Playwright use requires explicit user permission under the active Product Design workflow.
+
+### 2026-08-31 - Review HTML canonicalization fix
+
+- Fixed generated plain-text draft bodies to emit canonical `<br>` elements. DOMPurify serializes the equivalent `<br />` input as `<br>`, so strict sanitized-body equality previously raised a false `unsafe_html` validation issue for an otherwise clean multiline message.
+- Added a regression covering five clean recipient rows and a safe multiline body; the Review validation result is now ready with zero issues when optional CC is cleared.
+- Verified the focused client suite (18 tests) and full `npm test`: typecheck, production build, and 59 unit/integration tests pass.
+
+### 2026-08-31 - Cloudflare deployment and controlled live validation
+
+- Provisioned the APAC D1 database `mailflow-db` and Queue `mailflow-campaign-ticks`, applied the initial migration remotely, and deployed the Worker, API, queue consumer, and static client to `https://mailflow.kyzer-hono-test.workers.dev`.
+- Configured the existing single-tenant Entra `MailFlow` registration with the local and production callbacks, created a time-limited confidential client credential, and stored all three runtime secrets only in Cloudflare Worker secret storage.
+- Fixed two pre-send findings before live campaign transmission: canonical `<br>` comparison no longer raises a false unsafe-HTML issue, and clearing a direct recipient mapping can no longer resurrect a legacy saved value.
+- Primary sender alias: test-to-self accepted by Microsoft; five-recipient campaign completed with 5 accepted, 0 failed, 0 skipped, and 0 unknown; the distinct subject was observed in all five approved Gmail inboxes.
+- Secondary sender alias: independent interactive OAuth consent and locked sender identity verified; test-to-self accepted by Microsoft; five-recipient campaign completed with 5 accepted, 0 failed, 0 skipped, and 0 unknown; the distinct subject was observed in all five approved Gmail inboxes.
+- Sent Items was not checked. No recipient address, account password, token, client secret, or private message body is recorded in repository documentation.
+- Added real 1440 x 900, 1024 x 768, and 390 x 844 Playwright Chrome captures. Corrected review sample overlap, mobile stepper overflow, campaign checkpoint clipping, dashboard table overflow, mapping issue readability, compact-height campaign evidence, and the landing headline composition.
+- Timestamp: `2026-08-31 13:54 MYT`. Final responsive deployment version: `4fa5fa73-b99d-4492-a572-1c5e4e1a2f3b`.

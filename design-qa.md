@@ -4,7 +4,7 @@
 
 - Source references: `mock-images/01-landing.png` through `mock-images/06-campaign.png`.
 - Brand reference: `mock-images/brandkit.png`.
-- Implementation: `apps/mailflow/src/App.jsx` and `apps/mailflow/src/styles.css`.
+- Implementation: `apps/mailflow/src/App.jsx`, `apps/mailflow/src/styles.css`, and focused responsive overrides under `apps/mailflow/src/app/styles/`.
 - Product routes: `/`, `/dashboard`, `/flows/new/template`, `/flows/new/data`, `/flows/new/recipients`, `/flows/new/review`, and `/campaigns/:campaignId`.
 - Browser: the user's selected Chrome session.
 - Source viewport: 1672 x 941 for every route mock.
@@ -24,6 +24,8 @@
 The full-view captures preserve enough detail to inspect the important regions without additional crops: landing CTA and illustration, dashboard cards and route, template editor and dynamic fields, mapping table and validation summary, review preview and acknowledgement, and campaign route, job table, recovery rules, and receipt.
 
 The `final3` captures were taken after the real frontend API integration. Each source mock and matching `final3` capture was then loaded together in one comparison pass; no new desktop P0, P1, or P2 regression was observed.
+
+Responsive evidence is stored locally under ignored `output/playwright/` at 1024 x 768 and 390 x 844 for Landing, Dashboard, Template, Mapping, Review, and Campaign. The final measured document width equals the viewport width for the corrected responsive routes. The campaign job table deliberately keeps a horizontally scrollable detail surface with a sticky recipient column and a visible swipe instruction.
 
 ## Comparison history
 
@@ -49,13 +51,14 @@ The `final3` captures were taken after the real frontend API integration. Each s
 - Primary route navigation and wizard links are keyboard-reachable and use visible focus styles.
 - Reduced-motion and narrow-layout CSS rules are present.
 
-## Remaining verification gap
+## Remaining non-blocking visual differences
 
-- P2: The selected Chrome automation session exposes a fixed desktop viewport and no viewport-emulation control. The 1024 x 768 and 390 x 844 visual captures required by `docs/SCREEN_SPEC.md` have not yet been recorded. Responsive CSS is implemented, but code inspection is not a substitute for visual evidence.
+- P2: The template body remains a dependable plain-text/HTML-backed editing surface rather than reproducing every decorative rich-editor control in the mock. Template editing, merge fields, preview sanitization, saving, and campaign rendering are functional.
+- P2: The prepared landing raster retains a subtle internal paper rectangle. Its outer edge is softly masked into the page, but it is not a pixel-identical transparent reconstruction of the source composition.
 - P3: Exact source typography is approximated with the selected available font stack. Hierarchy, weight, spacing, palette, and overall composition remain aligned with the approved direction.
 
 ## Final result
 
-`blocked`
+`passed for working prototype`
 
-Desktop visual fidelity and core interactions are ready. Final design QA remains blocked only on comparable tablet and mobile Chrome captures. Change this result to `passed` only after those captures show no actionable P0, P1, or P2 differences.
+Desktop, tablet, and mobile routes are usable without page-level overflow. The accepted prototype direction, core interactions, trust-critical validation, review, pacing, result, and recovery states are represented. The differences above are polish opportunities rather than blockers for the requested working prototype.

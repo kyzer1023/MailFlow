@@ -14,6 +14,7 @@
     {
       "binding": "DB",
       "database_name": "mailflow-db",
+      "database_id": "5a27ec3b-bd7d-4b45-be6d-10ad59aeb9de",
       "migrations_dir": "migrations"
     }
   ],
@@ -34,7 +35,9 @@
     ]
   },
   "vars": {
-    "PUBLIC_ORIGIN": "http://localhost:5173",
+    "PUBLIC_ORIGIN": "https://mailflow.kyzer-hono-test.workers.dev",
+    "ENTRA_TENANT_ID": "0ad0fbf8-69ca-4e5e-afad-cd70424ac626",
+    "ENTRA_CLIENT_ID": "20936b15-0b73-47f5-912f-737eab3de293",
     "DEFAULT_CAMPAIGN_PACE": "12",
     "MAX_CAMPAIGN_RECIPIENTS": "300"
   }

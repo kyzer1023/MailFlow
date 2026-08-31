@@ -10,8 +10,11 @@ import type {
 } from "./types";
 
 function sourceMapping(mapping: ClientMapping, key: "cc" | "bcc" | "replyTo"): AddressMapping {
-  const direct = mapping[key];
-  if (direct !== undefined) return direct;
+  // An explicitly supplied source, including `null`/`undefined`, is the
+  // current user's authoritative choice. This matters when a saved mapping
+  // still carries the legacy `*Field` alias: clearing the new source must not
+  // silently fall back to that stale alias.
+  if (Object.prototype.hasOwnProperty.call(mapping, key)) return mapping[key];
   if (key === "cc") return mapping.ccField;
   if (key === "bcc") return mapping.bccField;
   return mapping.replyToField;
