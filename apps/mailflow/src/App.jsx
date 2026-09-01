@@ -3,8 +3,9 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, use
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   Code, DownloadSimple, Envelope, Eraser, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
+  ArrowClockwise, CloudArrowUp, FilePdf, FileText, FileXls,
   HighlighterCircle, House, Info, LinkSimple, ListBullets, ListNumbers,
-  MicrosoftOutlookLogo, MinusCircle, PaperPlaneTilt, Pause, Play, Plus,
+  MicrosoftOutlookLogo, MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play, Plus,
   Rows, SignOut, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
   TextItalic, TextUnderline, Trash, Users, WarningCircle, X,
 } from "@phosphor-icons/react";
@@ -12,8 +13,10 @@ import {
   ApiRequestError,
   archiveFlow,
   createCampaign as createCampaignRequest,
+  createAttachmentSet as createAttachmentSetRequest,
   createFlow as createFlowRequest,
   createTemplateVersion as createTemplateVersionRequest,
+  deleteAttachmentFile as deleteAttachmentFileRequest,
   downloadCampaignExport,
   getCampaign,
   getCampaignJobs,
@@ -26,13 +29,20 @@ import {
   resumeCampaign,
   sendCampaignTest,
   startCampaign,
+  uploadAttachmentFile as uploadAttachmentFileRequest,
   updateFlow as updateFlowRequest,
 } from "./app/api";
 import {
   buildPreviewSrcDoc,
   buildMessagePreviews,
+  ATTACHMENT_ACCEPT,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_FILES,
+  attachmentMediaType,
+  attachmentTotalBytes,
   createCampaignPayload,
   extractPlaceholders,
+  formatAttachmentSize,
   getHeaderRowCandidates,
   mapSpreadsheetRows,
   mappingsForCurrentTable,
@@ -41,6 +51,7 @@ import {
   recipientConfigurationToClientMapping,
   selectSpreadsheetTable,
   sanitizeTemplateHtml,
+  validateAttachmentSelection,
   validateClientCampaign,
 } from "./client";
 import { escapeMergeValue } from "./client/template";
@@ -87,6 +98,32 @@ function formatDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function localAttachmentId() {
+  try {
+    return `attachment-local-${crypto.randomUUID()}`;
+  } catch {
+    return `attachment-local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function attachmentFileFromResponse(response, fallback, localId) {
+  const candidate = response?.file || response?.attachment || response || {};
+  const byteSize = Number(candidate.byteSize ?? candidate.size ?? fallback?.size ?? 0);
+  return {
+    id: String(candidate.id || localId),
+    name: String(candidate.originalFilename ?? candidate.filename ?? candidate.name ?? fallback?.name ?? "Attachment"),
+    mediaType: String(candidate.mediaType ?? candidate.contentType ?? candidate.type ?? fallback?.type ?? attachmentMediaType(fallback || { name: "", size: byteSize, type: "" })),
+    byteSize: Number.isFinite(byteSize) ? byteSize : Number(fallback?.size || 0),
+    status: "ready",
+  };
+}
+
+function attachmentSummaryText(attachments) {
+  return attachments.length > 0
+    ? attachments.map((attachment) => `${attachment.name} (${formatAttachmentSize(attachment.byteSize)})`).join(", ")
+    : "None";
 }
 
 function bodyHtmlFromDraft(body) {
@@ -698,14 +735,122 @@ function AddressRuleField({ fieldKey, label, value, mode, column, options, onVal
   </div>;
 }
 
+function AttachmentIcon({ mediaType }) {
+  if (mediaType === "application/pdf") return <FilePdf weight="duotone" />;
+  if (mediaType.includes("spreadsheet") || mediaType.includes("excel") || mediaType.endsWith("/csv")) return <FileXls weight="duotone" />;
+  if (mediaType.startsWith("text/") || mediaType.includes("word") || mediaType.includes("presentation")) return <FileText weight="duotone" />;
+  return <Files weight="duotone" />;
+}
+
+function AttachmentPicker() {
+  const state = useContext(DraftContext);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+  const locked = Boolean(state.campaignResponse);
+  const totalBytes = attachmentTotalBytes(state.attachments.filter((item) => item.status !== "error"));
+
+  const addFiles = (fileList) => {
+    if (locked) return;
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    const result = validateAttachmentSelection(files, state.attachments);
+    const rejectedEntries = result.rejected.map((error) => ({
+      id: localAttachmentId(),
+      name: error.name || "Unnamed file",
+      mediaType: error.mediaType,
+      byteSize: error.size,
+      status: "error",
+      error: error.message,
+    }));
+    const acceptedEntries = result.accepted.map((file) => ({
+      id: localAttachmentId(),
+      name: file.name,
+      mediaType: attachmentMediaType(file),
+      byteSize: file.size,
+      status: "uploading",
+    }));
+    if (rejectedEntries.length > 0 || acceptedEntries.length > 0) {
+      state.setAttachments((current) => [...current, ...rejectedEntries, ...acceptedEntries]);
+    }
+    result.accepted.forEach((file, index) => {
+      void state.uploadAttachment(acceptedEntries[index].id, file);
+    });
+  };
+
+  const onInput = (event) => {
+    addFiles(event.currentTarget.files);
+    // Permit selecting the same file again after removing or retrying it.
+    event.currentTarget.value = "";
+  };
+  const onDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    addFiles(event.dataTransfer.files);
+  };
+  const onKeyDown = (event) => {
+    if (locked) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inputRef.current?.click();
+    }
+  };
+
+  return <section className="attachment-picker" aria-labelledby="campaign-attachments-heading">
+    <div className="attachment-picker__heading">
+      <div><span className="section-kicker">CAMPAIGN FILES</span><h2 id="campaign-attachments-heading">Add attachments</h2><p>Every recipient receives the same files in this campaign.</p></div>
+      <Paperclip aria-hidden="true" />
+    </div>
+    <label
+      className={`attachment-dropzone${dragging ? " attachment-dropzone--dragging" : ""}${locked ? " attachment-dropzone--locked" : ""}`}
+      htmlFor="campaign-attachments-input"
+      role="button"
+      tabIndex={locked ? -1 : 0}
+      aria-disabled={locked}
+      onKeyDown={onKeyDown}
+      onDragEnter={(event) => { event.preventDefault(); if (!locked) setDragging(true); }}
+      onDragOver={(event) => { event.preventDefault(); if (!locked) setDragging(true); }}
+      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
+      onDrop={onDrop}
+    >
+      <CloudArrowUp aria-hidden="true" />
+      <span><strong>{locked ? "Attachments locked" : "Drop files here or choose files"}</strong><small>PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG</small></span>
+      <input ref={inputRef} id="campaign-attachments-input" className="attachment-picker__input" type="file" accept={ATTACHMENT_ACCEPT} multiple disabled={locked} onChange={onInput} />
+    </label>
+    <div className="attachment-picker__limits"><span>{state.attachments.length} of {ATTACHMENT_MAX_FILES} files</span><span>{formatAttachmentSize(totalBytes)} of {formatAttachmentSize(ATTACHMENT_MAX_BYTES)}</span></div>
+    {locked && <p className="attachment-lock-note" role="status"><CheckCircle weight="fill" /> Attachments are locked for this campaign.</p>}
+    {state.attachments.length > 0 && <ul className="attachment-list" aria-label="Campaign attachments">
+      {state.attachments.map((attachment) => <li className={`attachment-item attachment-item--${attachment.status}`} key={attachment.id} aria-busy={attachment.status === "uploading"}>
+        <span className="attachment-item__icon"><AttachmentIcon mediaType={attachment.mediaType} /></span>
+        <div className="attachment-item__body"><strong>{attachment.name}</strong><small>{formatAttachmentSize(attachment.byteSize)} · <span className={`attachment-item__status attachment-item__status--${attachment.status}`}>{attachment.status === "uploading" ? "Uploading" : attachment.status === "ready" ? "Ready" : "Upload failed"}</span></small>{attachment.error && <span className="attachment-item__error" role="alert">{attachment.error}</span>}</div>
+        <div className="attachment-item__actions">
+          {attachment.status === "uploading" && <SpinnerGap className="spin" aria-label={`Uploading ${attachment.name}`} />}
+          {attachment.status === "error" && <button type="button" className="attachment-action" onClick={() => state.retryAttachment(attachment.id)} disabled={locked} aria-label={`Retry upload ${attachment.name}`} title="Retry upload"><ArrowClockwise /></button>}
+          {!locked && <button type="button" className="attachment-action" onClick={() => void state.removeAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`} title="Remove attachment"><X /></button>}
+        </div>
+      </li>)}
+    </ul>}
+    {state.attachmentsUploading && <p className="attachment-live-status" role="status" aria-live="polite">Uploading attachments...</p>}
+    {state.attachmentsHaveErrors && <p className="attachment-live-status attachment-live-status--error" role="alert">Remove failed attachments or retry before continuing to Review.</p>}
+  </section>;
+}
+
 function DraftProvider({ children }) {
-  const { user, config } = useApi();
+  const { user, config, csrfToken } = useApi();
   const [draft, setDraft] = useState(emptyDraft);
   const [workbook, setWorkbook] = useState(null);
   const [table, setTable] = useState(null);
   const [flowId, setFlowId] = useState(null);
   const [templateVersionId, setTemplateVersionId] = useState(null);
   const [campaignResponse, setCampaignResponse] = useState(null);
+  // Attachment bytes are held by the upload request and this ref only while
+  // retry is possible. They are deliberately not part of draft state or any
+  // campaign payload.
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentSetId, setAttachmentSetId] = useState(null);
+  const [attachmentSetRequestKey, setAttachmentSetRequestKey] = useState(() => `attachment-${requestKey()}`);
+  const attachmentSourcesRef = useRef(new Map());
+  const attachmentSetPromiseRef = useRef(null);
+  const attachmentGenerationRef = useRef(0);
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
   const [campaignRequestKey, setCampaignRequestKey] = useState(requestKey);
   const bodyHtml = useMemo(() => bodyHtmlFromDraft(draft.body), [draft.body]);
@@ -745,6 +890,70 @@ function DraftProvider({ children }) {
     return rowOnly ? { ...validation, ok: true, issues: [] } : validation;
   }, [validation, skipInvalidRows]);
   const updateDraft = useCallback((key, value) => setDraft((current) => ({ ...current, [key]: value })), []);
+  const ensureAttachmentSet = useCallback(async () => {
+    if (attachmentSetId) return attachmentSetId;
+    const generation = attachmentGenerationRef.current;
+    const currentRequest = attachmentSetPromiseRef.current;
+    if (currentRequest && currentRequest.generation === generation) return currentRequest.promise;
+    const promise = createAttachmentSetRequest(attachmentSetRequestKey, csrfToken).then((response) => {
+      const id = response?.attachmentSet?.id;
+      if (!id || attachmentGenerationRef.current !== generation) throw new Error("The attachment upload was cancelled. Choose the files again.");
+      setAttachmentSetId(id);
+      return id;
+    }).finally(() => {
+      if (attachmentSetPromiseRef.current?.promise === promise) attachmentSetPromiseRef.current = null;
+    });
+    attachmentSetPromiseRef.current = { generation, promise };
+    return promise;
+  }, [attachmentSetId, attachmentSetRequestKey, csrfToken]);
+  const uploadAttachment = useCallback(async (localId, file) => {
+    setAttachments((current) => current.map((attachment) => attachment.id === localId
+      ? { ...attachment, status: "uploading", error: undefined }
+      : attachment));
+    attachmentSourcesRef.current.set(localId, file);
+    try {
+      const setId = await ensureAttachmentSet();
+      const response = await uploadAttachmentFileRequest(setId, file, csrfToken);
+      const next = attachmentFileFromResponse(response, file, localId);
+      attachmentSourcesRef.current.delete(localId);
+      setAttachments((current) => current.map((attachment) => attachment.id === localId ? next : attachment));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "This file could not be uploaded.";
+      setAttachments((current) => current.map((attachment) => attachment.id === localId
+        ? { ...attachment, status: "error", error: message }
+        : attachment));
+    }
+  }, [csrfToken, ensureAttachmentSet]);
+  const retryAttachment = useCallback((localId) => {
+    const file = attachmentSourcesRef.current.get(localId);
+    if (file) void uploadAttachment(localId, file);
+  }, [uploadAttachment]);
+  const removeAttachment = useCallback(async (localId) => {
+    if (campaignResponse) return;
+    const attachment = attachments.find((item) => item.id === localId);
+    if (!attachment) return;
+    const serverId = attachment.id && !attachment.id.startsWith("attachment-local-") ? attachment.id : "";
+    try {
+      if (serverId && attachmentSetId) await deleteAttachmentFileRequest(attachmentSetId, serverId, csrfToken);
+      attachmentSourcesRef.current.delete(localId);
+      setAttachments((current) => current.filter((item) => item.id !== localId));
+    } catch (error) {
+      setAttachments((current) => current.map((item) => item.id === localId
+        ? { ...item, status: "error", error: error instanceof Error ? error.message : "This file could not be removed." }
+        : item));
+    }
+  }, [attachmentSetId, attachments, campaignResponse, csrfToken]);
+  const resetAttachmentState = useCallback(() => {
+    attachmentGenerationRef.current += 1;
+    attachmentSetPromiseRef.current = null;
+    attachmentSourcesRef.current.clear();
+    setAttachments([]);
+    setAttachmentSetId(null);
+    setAttachmentSetRequestKey(`attachment-${requestKey()}`);
+  }, []);
+  const attachmentsUploading = attachments.some((attachment) => attachment.status === "uploading");
+  const attachmentsHaveErrors = attachments.some((attachment) => attachment.status === "error");
+  const attachmentsReady = !attachmentsUploading && !attachmentsHaveErrors && attachments.every((attachment) => attachment.status === "ready");
   const resetWizardState = useCallback(() => {
     setDraft(emptyDraft());
     setWorkbook(null);
@@ -752,9 +961,10 @@ function DraftProvider({ children }) {
     setFlowId(null);
     setTemplateVersionId(null);
     setCampaignResponse(null);
+    resetAttachmentState();
     setSkipInvalidRows(false);
     setCampaignRequestKey(requestKey());
-  }, []);
+  }, [resetAttachmentState]);
   const hydrateSavedFlow = useCallback((flow, templateVersion) => {
     const savedMapping = templateVersion
       ? recipientConfigurationToClientMapping(templateVersion.recipientConfiguration)
@@ -794,10 +1004,11 @@ function DraftProvider({ children }) {
     setFlowId(flow.id);
     setTemplateVersionId(templateVersion?.id || null);
     setCampaignResponse(null);
+    resetAttachmentState();
     setSkipInvalidRows(false);
     setCampaignRequestKey(requestKey());
-  }, []);
-  const value = useMemo(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState]);
+  }, [resetAttachmentState]);
+  const value = useMemo(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
 }
 
@@ -1082,7 +1293,7 @@ function DataFirstPage() {
 }
 
 function RecipientsPage() {
-  const { draft, setDraft, updateDraft, table, validation } = useContext(DraftContext);
+  const { draft, setDraft, updateDraft, table, validation, attachmentsReady } = useContext(DraftContext);
   const { user } = useApi();
   const navigate = useNavigate();
   const options = columnOptions(table);
@@ -1101,7 +1312,7 @@ function RecipientsPage() {
     onColumn: (value) => updateRule(fieldKey, "column", value),
   });
 
-  return <WizardShell current={2} title="Set the sending rules." subtitle="Recipients stay scoped to this file and this flow. Your USM Outlook remains the sender." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/template")}><ArrowLeft /> Back</button><button className="button button--coral" onClick={() => navigate("/flows/new/review")} disabled={!table || !draft.toField}>Continue to review <ArrowRight /></button></>}>
+  return <WizardShell current={2} title="Set the sending rules." subtitle="Recipients stay scoped to this file and this flow. Your USM Outlook remains the sender." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/template")}><ArrowLeft /> Back</button><button className="button button--coral" onClick={() => navigate("/flows/new/review")} disabled={!table || !draft.toField || !attachmentsReady} title={!attachmentsReady ? "Finish attachment uploads before continuing." : undefined}>Continue to review <ArrowRight /></button></>}>
     <div className="recipients-layout">
       <section className="panel recipient-card">
         <div className="locked-sender"><span><Envelope weight="fill" /></span><div><small>Sender, locked by Microsoft</small><strong>{sender}</strong><p>Every spreadsheet row produces one separate message from this mailbox.</p></div><CheckCircle weight="fill" /></div>
@@ -1112,6 +1323,7 @@ function RecipientsPage() {
           <Field label="Importance" hint="Sets the priority flag shown by supported email clients."><select value={draft.importance} onChange={(event) => updateDraft("importance", event.target.value)}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></Field>
         </div>
         {validation && !validation.ok && <div className="notice notice--warn"><WarningCircle weight="fill" /><span>Flagged recipient rows can be skipped during Review. Template-level issues must be resolved before sending.</span></div>}
+        <AttachmentPicker />
       </section>
       <aside className="panel pace-card"><Gauge weight="duotone" /><h2>Paced for safety</h2><p>Mail Flow sends one personalized message at a time and records the result for every row.</p><Field label={`${draft.pace} messages per minute`}><input type="range" min="6" max="20" value={draft.pace} onChange={(event) => updateDraft("pace", Number(event.target.value))} /></Field><div className="pace-facts"><span><strong>{validation?.totalRows ?? draft.rowCount}</strong>Total rows</span><span><strong>About {Math.ceil((validation?.validRecipientCount ?? draft.rowCount) / draft.pace)} min</strong>Estimated time</span></div><div className="notice"><Info weight="fill" /><span>Accepted rows are never sent twice. An uncertain Microsoft response is marked Unknown for manual review.</span></div></aside>
     </div>
@@ -1123,6 +1335,9 @@ function useEnsureCampaign() {
   return useCallback(async () => {
     if (!api.isLive) return null;
     if (draftState.campaignResponse) return draftState.campaignResponse;
+    if (!draftState.attachmentsReady) throw new Error("Finish uploading attachments or remove attachment errors before continuing.");
+    const attachmentSetId = draftState.attachments.length > 0 ? draftState.attachmentSetId : null;
+    if (draftState.attachments.length > 0 && !attachmentSetId) throw new Error("The attachment set is not ready. Upload the files again before continuing.");
     if (!draftState.table || !draftState.campaignValidation) throw new Error("Import and validate a recipient file before creating the campaign.");
     if (!draftState.campaignValidation.ok) throw new Error("Review and fix the flagged rows before starting the campaign.");
     let currentFlowId = draftState.flowId;
@@ -1149,6 +1364,7 @@ function useEnsureCampaign() {
     }
     const payload = createCampaignPayload({
       idempotencyKey: draftState.campaignRequestKey,
+      attachmentSetId,
       flowId: currentFlowId,
       templateVersionId: currentVersionId,
       sourceFilename: draftState.draft.fileName,
@@ -1198,16 +1414,26 @@ function ReviewPage() {
   const sender = user?.mailboxAddress || user?.principalName || "Sender not available";
   const displayName = user?.displayName || "USM member";
   const rows = state.validation?.validRows || [];
+  const attachments = state.attachments || [];
   const previews = useMemo(() => buildMessagePreviews({ senderAddress: sender, subjectTemplate: state.draft.subject, bodyHtml: state.bodyHtml, rows, fieldMappings: state.draft.mappings }), [sender, state.draft.subject, state.draft.mappings, state.bodyHtml, rows]);
   const safeIndex = Math.min(sampleIndex, Math.max(0, previews.length - 1));
   const message = previews[safeIndex] || null;
   const canSkip = Boolean(state.validation && !state.validation.ok && state.validation.issues.length > 0 && state.validation.issues.every((issue) => issue.row !== undefined));
   const blockingIssues = uniqueValidationIssues(state.campaignValidation?.issues || []);
-  const ready = Boolean(state.table && message && ack && state.campaignValidation?.ok);
-  const actionBlocker = blockingIssues.length > 0 ? `Resolve ${blockingIssues.length} validation ${blockingIssues.length === 1 ? "issue" : "issues"} first.` : !ack ? "Check the final acknowledgement first." : "";
+  const attachmentBlocker = state.attachmentsUploading
+    ? "Finish uploading attachments before continuing."
+    : state.attachmentsHaveErrors
+      ? "Remove failed attachments or retry before continuing."
+      : !state.attachmentsReady
+        ? "Finish preparing attachments before continuing."
+        : "";
+  const ready = Boolean(state.table && message && ack && state.campaignValidation?.ok && state.attachmentsReady);
+  const actionBlocker = blockingIssues.length > 0
+    ? `Resolve ${blockingIssues.length} validation ${blockingIssues.length === 1 ? "issue" : "issues"} first.`
+    : attachmentBlocker || (!ack ? "Check the final acknowledgement first." : "");
 
   const sendTest = async () => {
-    if (!message || !state.campaignValidation?.ok) return;
+    if (!message || !state.campaignValidation?.ok || !state.attachmentsReady) return;
     setTestState("sending");
     setActionError("");
     try {
@@ -1245,7 +1471,7 @@ function ReviewPage() {
   }
 
   const previewDocument = message ? buildPreviewSrcDoc(message.bodyHtml) : "";
-  return <WizardShell current={3} title="Review every detail before it leaves." subtitle="Check representative rows, send a test to yourself, then confirm the paced campaign." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/recipients")}><ArrowLeft /> Back</button><button className="button button--outline" onClick={() => void sendTest()} disabled={testState === "sending" || !message || !state.campaignValidation?.ok} title={blockingIssues.length ? actionBlocker : undefined} aria-describedby={blockingIssues.length ? "review-blockers" : undefined}>{testState === "sending" ? <SpinnerGap className="spin" /> : <Envelope />} Send test to me</button><button className="button button--coral" disabled={!ready} onClick={() => void start()} title={actionBlocker || undefined} aria-describedby={actionBlocker ? "review-blockers" : undefined}>Confirm &amp; start <PaperPlaneTilt weight="fill" /></button></>}><div className="review-layout"><aside className="panel sample-card"><span className="section-kicker">SAMPLE ROWS</span><h2>Who are you checking?</h2>{previews.slice(0, 3).map((preview, index) => <button key={`${preview.position}-${preview.sourceRow}`} className={index === safeIndex ? "selected" : ""} onClick={() => setSampleIndex(index)}><span>{["First", "Middle", "Last"][index]}</span><strong>{preview.to}</strong><small>Row {preview.sourceRow}</small></button>)}{previews.length === 0 && <p className="empty-state">No valid recipient rows are available yet.</p>}<footer><button aria-label="Previous sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + previews.length - 1) % previews.length)}><CaretLeft /></button><span>{previews.length ? `${safeIndex + 1} of ${Math.min(3, previews.length)}` : "0 of 0"}</span><button aria-label="Next sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + 1) % previews.length)}><CaretRight /></button></footer></aside><section className="panel mailbox-preview">{message ? <><div className="mail-toolbar"><span>Personalized preview</span></div><div className="mail-meta"><span className="avatar">{displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{displayName}</strong><small>{sender}</small></span><StatusChip status="ready">Preview</StatusChip></div><dl><div><dt>To</dt><dd>{message.to}</dd></div>{message.cc.length > 0 && <div><dt>CC</dt><dd>{message.cc.join(", ")}</dd></div>}{message.bcc.length > 0 && <div><dt>BCC</dt><dd>{message.bcc.join(", ")}</dd></div>}{message.replyTo.length > 0 && <div><dt>Reply-to</dt><dd>{message.replyTo.join(", ")}</dd></div>}<div><dt>Subject</dt><dd>{message.subject}</dd></div></dl><iframe title={`Email preview for ${message.to}`} sandbox="allow-same-origin" srcDoc={previewDocument} /></> : <div className="empty-state">Resolve the recipient issues to generate a preview.</div>}</section><aside className="panel review-summary"><span className="section-kicker">FINAL CHECK</span><h2>Review summary</h2>{[[Envelope, "Sender", sender], [Users, "Recipients", `${state.validation?.validRecipientCount ?? 0} valid, ${state.validation?.skippedRecipientCount ?? 0} skipped`], [Envelope, "CC", state.draft.cc || "None"], [Gauge, "Pacing", `${state.draft.pace} messages per minute`], [Clock, "Estimated duration", `About ${Math.ceil((state.validation?.validRecipientCount ?? 0) / state.draft.pace)} minutes`], [CheckCircle, "Validation", state.campaignValidation?.ok ? "Ready to queue" : `${blockingIssues.length} issues to review`]].map(([Icon, label, value]) => <div className="fact" key={label}><span><Icon weight="fill" /></span><div><small>{label}</small><strong>{value}</strong></div></div>)}{blockingIssues.length > 0 && <section className="review-blockers" id="review-blockers" role="alert"><div><WarningCircle weight="fill" /><h3>Fix these before sending</h3></div><ul>{blockingIssues.map((issue) => { const action = validationIssueAction(issue); return <li key={`${issue.code}:${issue.field || ""}:${issue.row || ""}:${issue.message}`}><span>{issue.message}</span><Link to={action.to}>{action.label}</Link></li>; })}</ul></section>}{canSkip && <label className="ack"><input type="checkbox" checked={state.skipInvalidRows} onChange={(event) => state.setSkipInvalidRows(event.target.checked)} /><span>Skip the flagged rows and continue with valid recipients only.</span></label>}<label className="ack"><input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} /><span>I have checked the sender, recipients, and personalized message.</span></label><div className="accepted-note"><Info weight="fill" /> Microsoft acceptance means the request was received. It is not a delivery receipt.</div><p className="test-status" aria-live="polite">{testState === "accepted" && <><CheckCircle weight="fill" /> Test accepted by Microsoft</>}{testState === "sending" && "Sending one message to your mailbox..."}{testState === "error" && <><WarningCircle weight="fill" /> {actionError}</>}{actionError && testState !== "error" && <><WarningCircle weight="fill" /> {actionError}</>}</p></aside></div></WizardShell>;
+  return <WizardShell current={3} title="Review every detail before it leaves." subtitle="Check representative rows, send a test to yourself, then confirm the paced campaign." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/recipients")}><ArrowLeft /> Back</button><button className="button button--outline" onClick={() => void sendTest()} disabled={testState === "sending" || !message || !state.campaignValidation?.ok || !state.attachmentsReady} title={actionBlocker || undefined} aria-describedby={actionBlocker ? "review-blockers" : undefined}>{testState === "sending" ? <SpinnerGap className="spin" /> : <Envelope />} Send test to me</button><button className="button button--coral" disabled={!ready} onClick={() => void start()} title={actionBlocker || undefined} aria-describedby={actionBlocker ? "review-blockers" : undefined}>Confirm &amp; start <PaperPlaneTilt weight="fill" /></button></>}><div className="review-layout"><aside className="panel sample-card"><span className="section-kicker">SAMPLE ROWS</span><h2>Who are you checking?</h2>{previews.slice(0, 3).map((preview, index) => <button key={`${preview.position}-${preview.sourceRow}`} className={index === safeIndex ? "selected" : ""} onClick={() => setSampleIndex(index)}><span>{["First", "Middle", "Last"][index]}</span><strong>{preview.to}</strong><small>Row {preview.sourceRow}</small></button>)}{previews.length === 0 && <p className="empty-state">No valid recipient rows are available yet.</p>}<footer><button aria-label="Previous sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + previews.length - 1) % previews.length)}><CaretLeft /></button><span>{previews.length ? `${safeIndex + 1} of ${Math.min(3, previews.length)}` : "0 of 0"}</span><button aria-label="Next sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + 1) % previews.length)}><CaretRight /></button></footer></aside><section className="panel mailbox-preview">{message ? <><div className="mail-toolbar"><span>Personalized preview</span></div><div className="mail-meta"><span className="avatar">{displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{displayName}</strong><small>{sender}</small></span><StatusChip status="ready">Preview</StatusChip></div><dl><div><dt>To</dt><dd>{message.to}</dd></div>{message.cc.length > 0 && <div><dt>CC</dt><dd>{message.cc.join(", ")}</dd></div>}{message.bcc.length > 0 && <div><dt>BCC</dt><dd>{message.bcc.join(", ")}</dd></div>}{message.replyTo.length > 0 && <div><dt>Reply-to</dt><dd>{message.replyTo.join(", ")}</dd></div>}<div><dt>Subject</dt><dd>{message.subject}</dd></div>{attachments.length > 0 && <div><dt>Attachments</dt><dd className="mail-attachment-summary">{attachmentSummaryText(attachments)}</dd></div>}</dl><iframe title={`Email preview for ${message.to}`} sandbox="allow-same-origin" srcDoc={previewDocument} /></> : <div className="empty-state">Resolve the recipient issues to generate a preview.</div>}</section><aside className="panel review-summary"><span className="section-kicker">FINAL CHECK</span><h2>Review summary</h2>{[[Envelope, "Sender", sender], [Users, "Recipients", `${state.validation?.validRecipientCount ?? 0} valid, ${state.validation?.skippedRecipientCount ?? 0} skipped`], [Envelope, "CC", state.draft.cc || "None"], [Paperclip, "Attachments", attachmentSummaryText(attachments)], [Gauge, "Pacing", `${state.draft.pace} messages per minute`], [Clock, "Estimated duration", `About ${Math.ceil((state.validation?.validRecipientCount ?? 0) / state.draft.pace)} minutes`], [CheckCircle, "Validation", state.campaignValidation?.ok ? "Ready to queue" : `${blockingIssues.length} issues to review`]].map(([Icon, label, value]) => <div className="fact" key={label}><span><Icon weight="fill" /></span><div><small>{label}</small><strong>{value}</strong></div></div>)}{(blockingIssues.length > 0 || attachmentBlocker) && <section className="review-blockers" id="review-blockers" role="alert"><div><WarningCircle weight="fill" /><h3>Fix these before sending</h3></div>{blockingIssues.length > 0 && <ul>{blockingIssues.map((issue) => { const action = validationIssueAction(issue); return <li key={`${issue.code}:${issue.field || ""}:${issue.row || ""}:${issue.message}`}><span>{issue.message}</span><Link to={action.to}>{action.label}</Link></li>; })}</ul>}{attachmentBlocker && <p className="review-attachment-blocker">{attachmentBlocker} <Link to="/flows/new/recipients">Manage attachments</Link></p>}</section>}{canSkip && <label className="ack"><input type="checkbox" checked={state.skipInvalidRows} onChange={(event) => state.setSkipInvalidRows(event.target.checked)} /><span>Skip the flagged rows and continue with valid recipients only.</span></label>}<label className="ack"><input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} /><span>I have checked the sender, recipients, and personalized message.</span></label><div className="accepted-note"><Info weight="fill" /> Microsoft acceptance means the request was received. It is not a delivery receipt.</div><p className="test-status" aria-live="polite">{testState === "accepted" && <><CheckCircle weight="fill" /> Test accepted by Microsoft</>}{testState === "sending" && "Sending one message to your mailbox..."}{testState === "error" && <><WarningCircle weight="fill" /> {actionError}</>}{actionError && testState !== "error" && <><WarningCircle weight="fill" /> {actionError}</>}</p></aside></div></WizardShell>;
 }
 
 function CampaignPage() {

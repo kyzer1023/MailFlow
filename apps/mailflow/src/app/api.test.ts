@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, archiveFlow, createCampaign, pauseCampaign, sendCampaignTest, startCampaign, updateFlow } from "./api";
+import { apiRequest, apiRequestFormData, archiveFlow, createAttachmentSet, createCampaign, deleteAttachmentFile, pauseCampaign, sendCampaignTest, startCampaign, updateFlow, uploadAttachmentFile } from "./api";
 import type { CampaignCreatePayload } from "../client/types";
 
 afterEach(() => {
@@ -16,6 +16,7 @@ describe("same-origin API client", () => {
     vi.stubGlobal("fetch", fetchMock);
     const payload = {
       idempotencyKey: "request-1",
+      attachmentSetId: null,
       flowId: "flow_1",
       templateVersionId: "version_1",
       sourceFilename: "recipients.csv",
@@ -48,6 +49,39 @@ describe("same-origin API client", () => {
     await apiRequest("/api/campaigns");
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: "no-store" });
+  });
+
+  it("sends attachment metadata with the campaign and keeps the multipart boundary browser-owned", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).includes("/files")) return jsonResponse({ file: { id: "file_1", originalFilename: "agenda.pdf", mediaType: "application/pdf", byteSize: 12 } });
+      return jsonResponse({ attachmentSet: { id: "set_1" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createAttachmentSet("attachment-request-1", "csrf-attachment");
+    const file = new File(["hello"], "agenda.pdf", { type: "application/pdf" });
+    await uploadAttachmentFile("set_1", file, "csrf-attachment");
+    await deleteAttachmentFile("set_1", "file_1", "csrf-attachment");
+
+    const createOptions = fetchMock.mock.calls[0][1];
+    expect(JSON.parse(String(createOptions?.body))).toEqual({ idempotencyKey: "attachment-request-1" });
+    expect((createOptions?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-attachment");
+    const uploadOptions = fetchMock.mock.calls[1][1];
+    expect(uploadOptions?.body).toBeInstanceOf(FormData);
+    expect((uploadOptions?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-attachment");
+    expect((uploadOptions?.headers as Headers).get("Content-Type")).toBeNull();
+    expect((uploadOptions?.body as FormData).get("file")).toBeInstanceOf(File);
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("supports the standalone multipart helper without a JSON content type", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const form = new FormData();
+    form.append("file", new File(["data"], "note.txt", { type: "text/plain" }));
+    await apiRequestFormData("/api/example", form, "csrf-form");
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("Content-Type")).toBeNull();
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-form");
   });
 
   it("aligns acknowledgement and pause bodies with the Worker routes", async () => {

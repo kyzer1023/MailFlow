@@ -3,6 +3,54 @@ import type { AddressSeparator, MailImportance } from "../domain/types";
 /** File formats accepted by the browser import step. */
 export type SpreadsheetFormat = "csv" | "xlsx";
 
+/** Limits for the first campaign attachment delivery path. */
+export const ATTACHMENT_MAX_FILES = 5;
+export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
+
+/** File types accepted by the browser attachment picker. */
+export const ATTACHMENT_ACCEPT = [
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".csv",
+  ".txt",
+  ".png",
+  ".jpg",
+  ".jpeg",
+].join(",");
+
+export type AttachmentUploadStatus = "uploading" | "ready" | "error";
+
+/** Public attachment metadata. Raw bytes and browser File objects stay out of this shape. */
+export interface AttachmentFileRecord {
+  readonly id: string;
+  readonly originalFilename: string;
+  readonly mediaType: string;
+  readonly byteSize: number;
+  readonly sha256?: string;
+  readonly position?: number;
+}
+
+export interface AttachmentSetRecord {
+  readonly id: string;
+  readonly fileCount?: number;
+  readonly totalBytes?: number;
+  readonly state?: string;
+}
+
+export interface CampaignAttachment {
+  readonly id: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly byteSize: number;
+  readonly status: AttachmentUploadStatus;
+  readonly error?: string;
+}
+
 /**
  * A row as it appeared in the source workbook. Row numbers are one based so
  * that validation messages match the row numbers users see in Excel.
@@ -166,6 +214,8 @@ export interface CampaignRecipientPayload {
 /** JSON-safe body for POST /api/campaigns. Sender identity is server-owned. */
 export interface CampaignCreatePayload {
   readonly idempotencyKey: string;
+  /** Existing uploaded attachment set, or null when this campaign has none. */
+  readonly attachmentSetId: string | null;
   readonly flowId: string;
   readonly templateVersionId: string | null;
   readonly sourceFilename: string | null;
