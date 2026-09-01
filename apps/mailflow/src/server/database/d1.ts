@@ -331,7 +331,7 @@ export class D1CampaignRepository implements CampaignRepository {
     return result.results.map(toCampaign);
   }
 
-  async create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[]): Promise<void> {
+  async create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[], attachmentSetId?: string | null): Promise<void> {
     const statements: D1PreparedStatement[] = [
       bind(
         this.db.prepare(
@@ -363,6 +363,42 @@ export class D1CampaignRepository implements CampaignRepository {
         ],
       ),
     ];
+    if (attachmentSetId) {
+      statements.push(
+        bind(
+          this.db.prepare(
+            `UPDATE attachment_sets
+             SET campaign_id = ?1, state = 'locked', locked_at = COALESCE(locked_at, ?2), updated_at = ?2
+             WHERE id = ?3 AND owner_user_id = ?4 AND campaign_id IS NULL
+               AND state = 'open' AND file_count > 0
+               AND EXISTS (
+                 SELECT 1 FROM campaigns
+                 WHERE campaigns.id = ?1 AND campaigns.owner_user_id = ?4
+               )`,
+          ),
+          [campaign.id, campaign.createdAt, attachmentSetId, campaign.ownerUserId],
+        ),
+      );
+      // D1 batches are atomic only when a statement fails. Force a unique
+      // constraint failure if the conditional association changed no row so
+      // the preceding campaign insert and all jobs roll back together.
+      statements.push(
+        bind(
+          this.db.prepare(
+            `INSERT INTO campaigns
+             (id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
+              total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
+              pause_reason, idempotency_key, created_at, queued_at, started_at, completed_at, updated_at)
+             SELECT id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
+                    total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
+                    pause_reason, idempotency_key, created_at, queued_at, started_at, completed_at, updated_at
+             FROM campaigns
+             WHERE id = ?1 AND changes() != 1`,
+          ),
+          [campaign.id],
+        ),
+      );
+    }
     for (const job of jobs) statements.push(this.jobInsert(job));
     await this.db.batch(statements);
   }
@@ -458,7 +494,7 @@ export class D1CampaignRepository implements CampaignRepository {
       await bind(
         this.db.prepare(
           `UPDATE campaigns SET state = 'failed', pause_reason = ?1, updated_at = ?2
-           WHERE id = ?3 AND state IN ('queued', 'running', 'paused')`,
+           WHERE id = ?3 AND state IN ('validated', 'queued', 'running', 'paused')`,
         ),
         [reason.trim() || "Campaign failed", now, id],
       ).run(),
@@ -1014,7 +1050,17 @@ export class D1AttachmentRepository implements AttachmentRepository {
     const result = await bind(
       this.db.prepare(
         `SELECT * FROM attachment_sets
-         WHERE state = 'open' AND campaign_id IS NULL AND expires_at <= ?1
+         WHERE (
+           state = 'open' AND campaign_id IS NULL AND expires_at <= ?1
+         ) OR (
+           campaign_id IS NOT NULL
+           AND state IN ('open', 'locked')
+           AND EXISTS (
+             SELECT 1 FROM campaigns
+             WHERE campaigns.id = attachment_sets.campaign_id
+               AND campaigns.state IN ('completed', 'failed')
+           )
+         )
          ORDER BY expires_at ASC LIMIT ?2`,
       ),
       [now, safeLimit],

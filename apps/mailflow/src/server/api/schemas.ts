@@ -36,6 +36,7 @@ export const campaignRecipientSchema = z.object({
 
 export const campaignCreateSchema = z.object({
   flowId: nonEmpty(128),
+  attachmentSetId: z.string().trim().max(128).nullable().optional().default(null),
   templateVersionId: z.string().trim().max(128).nullable().optional(),
   sourceFilename: z.string().trim().max(255).nullable().optional(),
   subjectTemplate: nonEmpty(998),
@@ -84,6 +85,10 @@ export const testSendSchema = z.object({
 
 export const acknowledgementSchema = z.object({
   acknowledged: z.literal(true),
+}).strict();
+
+export const attachmentSetCreateSchema = z.object({
+  idempotencyKey: z.string().trim().min(1).max(200),
 }).strict();
 
 export const pauseSchema = z.object({

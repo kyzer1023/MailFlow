@@ -1,5 +1,6 @@
 import type { D1Database } from "../database/contracts";
 import type { CampaignTickMessage, CloudflareQueueProducer } from "../queue/contracts";
+import type { AttachmentObjectStore } from "../attachments/contracts";
 
 /**
  * Bindings used by the Mail Flow Worker.  These are deliberately structural
@@ -9,6 +10,8 @@ import type { CampaignTickMessage, CloudflareQueueProducer } from "../queue/cont
 export interface MailFlowBindings {
   DB: D1Database;
   CAMPAIGN_QUEUE: CloudflareQueueProducer;
+  /** Private R2 storage for campaign attachment bytes. */
+  ATTACHMENTS?: AttachmentObjectStore;
   ASSETS: {
     fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   };

@@ -40,10 +40,21 @@ import {
   TestSendError,
 } from "../microsoft";
 import type { MailTransport } from "../microsoft";
+import {
+  ATTACHMENT_MAX_BYTES,
+  AttachmentError,
+  createAttachmentService,
+  type AttachmentPayload,
+  type AttachmentService,
+  type AttachmentFileRecord,
+  type AttachmentSetRecord,
+} from "../attachments";
+import type { MailAttachment } from "../../domain/mail-provider";
 import { OAuthProviderError } from "../microsoft/oauth";
 import { handleCampaignQueueMessage, cloudflareQueueAdapter } from "../queue";
 import {
   acknowledgementSchema,
+  attachmentSetCreateSchema,
   campaignCreateSchema,
   flowCreateSchema,
   flowUpdateSchema,
@@ -98,6 +109,75 @@ function integerEnv(value: string | undefined, fallback: number, minimum: number
 
 function repositories(context: MailFlowContext): Repositories {
   return createD1Repositories(context.env.DB);
+}
+
+function attachmentServiceFor(context: MailFlowContext, repo = repositories(context)): AttachmentService | null {
+  if (!context.env.ATTACHMENTS) return null;
+  return createAttachmentService(repo.attachments, context.env.ATTACHMENTS);
+}
+
+function publicAttachmentSet(set: AttachmentSetRecord): Record<string, unknown> {
+  // Upload keys, owner identifiers, expiry timestamps, and deletion details
+  // are server metadata. The browser only needs this bounded progress shape.
+  return {
+    id: set.id,
+    fileCount: set.fileCount,
+    totalBytes: set.totalBytes,
+    state: set.state,
+  };
+}
+
+function publicAttachmentFile(file: AttachmentFileRecord): Record<string, unknown> {
+  // Never expose the private R2 object key through any API response.
+  return {
+    id: file.id,
+    originalFilename: file.originalFilename,
+    mediaType: file.mediaType,
+    byteSize: file.byteSize,
+    sha256: file.sha256,
+    position: file.position,
+  };
+}
+
+/**
+ * Resolve and verify the immutable attachment set associated with a campaign.
+ * The association is intentionally discovered through D1 rather than a
+ * client-supplied identifier, so queue payloads and campaign reads never need
+ * to carry attachment bytes or private object keys.
+ */
+export async function loadCampaignAttachments(
+  repo: Repositories,
+  service: AttachmentService,
+  campaign: CampaignRecord,
+): Promise<readonly MailAttachment[]> {
+  const set = await repo.attachments.getSetByCampaignId(campaign.id);
+  if (!set) return [];
+  if (set.ownerUserId !== campaign.ownerUserId || set.state === "deleted") {
+    throw new AttachmentError("integrity_error", "The campaign attachment set is no longer available");
+  }
+  if (set.fileCount < 1) {
+    throw new AttachmentError("integrity_error", "The campaign attachment set is empty");
+  }
+  const payloads: readonly AttachmentPayload[] = await service.readSet(campaign.ownerUserId, set.id);
+  const totalBytes = payloads.reduce((total, payload) => total + payload.bytes.byteLength, 0);
+  if (payloads.length !== set.fileCount || totalBytes !== set.totalBytes) {
+    throw new AttachmentError("integrity_error", "The campaign attachment metadata does not match its files");
+  }
+  return payloads.map(({ file, bytes }) => ({
+    name: file.originalFilename,
+    contentType: file.mediaType,
+    content: bytes,
+  }));
+}
+
+export async function cleanupCampaignAttachments(
+  repo: Repositories,
+  service: AttachmentService | null,
+  campaignId: string,
+): Promise<void> {
+  if (!service) return;
+  const set = await repo.attachments.getSetByCampaignId(campaignId);
+  if (set) await service.cleanupSetBytes(set.id);
 }
 
 function applicationOrigin(context: MailFlowContext): string {
@@ -179,6 +259,22 @@ function responseError(
   issues?: readonly unknown[],
 ): Response {
   return context.json({ error: { code, message, ...(issues && issues.length > 0 ? { issues } : {}) } }, status);
+}
+
+function attachmentErrorResponse(context: MailFlowContext, error: unknown): Response {
+  if (!(error instanceof AttachmentError)) {
+    return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
+  }
+  const status: 400 | 404 | 409 | 413 | 422 | 503 =
+    error.code === "not_found" ? 404
+      : error.code === "immutable" || error.code === "already_associated" ? 409
+        : error.code === "size_limit_exceeded" ? 413
+          : error.code === "storage_error" || error.code === "integrity_error" ? 503
+            : 422;
+  const message = error.code === "storage_error" || error.code === "integrity_error"
+    ? "Campaign attachments are temporarily unavailable. Try again shortly."
+    : error.message;
+  return responseError(context, status, `attachment_${error.code}`, message);
 }
 
 async function bodyJson(context: MailFlowContext): Promise<unknown | null> {
@@ -465,6 +561,87 @@ app.get("/api/me", async (context) => {
   });
 });
 
+// --- Campaign attachment sets --------------------------------------------
+
+app.post("/api/attachment-sets", async (context) => {
+  const authenticated = await requireMutationSession(context);
+  if (authenticated instanceof Response) return authenticated;
+  const input = await parseOrError(context, attachmentSetCreateSchema);
+  if (input instanceof Response) return input;
+  const repo = repositories(context);
+  const service = attachmentServiceFor(context, repo);
+  if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
+  try {
+    const result = await service.createSet(authenticated.user.id, input.idempotencyKey);
+    return context.json({ attachmentSet: publicAttachmentSet(result.set) }, result.created ? 201 : 200);
+  } catch (error) {
+    return attachmentErrorResponse(context, error);
+  }
+});
+
+app.post("/api/attachment-sets/:id/files", async (context) => {
+  const authenticated = await requireMutationSession(context);
+  if (authenticated instanceof Response) return authenticated;
+  const contentLengthHeader = context.req.header("Content-Length");
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+    // Allow a bounded multipart envelope while rejecting obviously oversized
+    // requests before form-data parsing allocates their body in the Worker.
+    if (Number.isFinite(contentLength) && contentLength > ATTACHMENT_MAX_BYTES + 64 * 1024) {
+      return responseError(context, 413, "attachment_size_limit_exceeded", "The combined attachment size exceeds 2 MiB.");
+    }
+  }
+  const repo = repositories(context);
+  const service = attachmentServiceFor(context, repo);
+  if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
+  let uploaded: FormDataEntryValue | null = null;
+  try {
+    uploaded = (await context.req.raw.formData()).get("file");
+  } catch {
+    return responseError(context, 422, "invalid_input", "Choose an attachment file and try again.");
+  }
+  if (!uploaded || typeof uploaded === "string" || typeof uploaded.arrayBuffer !== "function" || typeof uploaded.name !== "string") {
+    return responseError(context, 422, "invalid_input", "Choose an attachment file and try again.");
+  }
+  if (typeof uploaded.size === "number" && uploaded.size > ATTACHMENT_MAX_BYTES) {
+    return responseError(context, 413, "attachment_size_limit_exceeded", "This attachment exceeds the campaign attachment size limit.");
+  }
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await uploaded.arrayBuffer();
+  } catch {
+    return responseError(context, 422, "invalid_input", "The attachment could not be read. Choose it again and try again.");
+  }
+  try {
+    const result = await service.addFile(authenticated.user.id, routeParam(context, "id"), {
+      filename: uploaded.name,
+      contentType: uploaded.type || null,
+      bytes,
+    });
+    return context.json({
+      file: publicAttachmentFile(result.file),
+      attachmentSet: publicAttachmentSet(result.set),
+    }, 201);
+  } catch (error) {
+    return attachmentErrorResponse(context, error);
+  }
+});
+
+app.delete("/api/attachment-sets/:id/files/:fileId", async (context) => {
+  const authenticated = await requireMutationSession(context);
+  if (authenticated instanceof Response) return authenticated;
+  const repo = repositories(context);
+  const service = attachmentServiceFor(context, repo);
+  if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
+  try {
+    const removed = await service.removeFile(authenticated.user.id, routeParam(context, "id"), routeParam(context, "fileId"));
+    if (!removed) return responseError(context, 404, "attachment_file_not_found", "That attachment is not available.");
+    return context.body(null, 204);
+  } catch (error) {
+    return attachmentErrorResponse(context, error);
+  }
+});
+
 // --- Flows and template versions -----------------------------------------
 
 app.get("/api/flows", async (context) => {
@@ -646,6 +823,12 @@ app.post("/api/campaigns", async (context) => {
   const repo = repositories(context);
   const existingCampaign = await repo.campaigns.getByIdempotencyKey(authenticated.user.id, input.idempotencyKey);
   if (existingCampaign) {
+    const existingAttachmentSet = await repo.attachments.getSetByCampaignId(existingCampaign.id);
+    const requestedAttachmentSetId = input.attachmentSetId ?? null;
+    const existingAttachmentSetId = existingAttachmentSet?.id ?? null;
+    if (requestedAttachmentSetId !== existingAttachmentSetId) {
+      return responseError(context, 409, "campaign_attachment_conflict", "This request key already belongs to a campaign with a different attachment set.");
+    }
     return context.json({
       campaign: publicCampaign(existingCampaign),
       counts: await repo.recipientJobs.counts(existingCampaign.id),
@@ -653,6 +836,27 @@ app.post("/api/campaigns", async (context) => {
   }
   const flow = await repo.flows.getByIdForOwner(input.flowId, authenticated.user.id);
   if (!flow) return responseError(context, 404, "flow_not_found", "Save the flow before creating a campaign.");
+  if (input.attachmentSetId) {
+    const service = attachmentServiceFor(context, repo);
+    if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
+    const attachmentSet = await repo.attachments.getSetByIdForOwner(input.attachmentSetId, authenticated.user.id);
+    if (!attachmentSet) return responseError(context, 404, "attachment_set_not_found", "That attachment set is not available.");
+    if (attachmentSet.state !== "open" || attachmentSet.campaignId) {
+      return responseError(context, 409, "attachment_set_immutable", "That attachment set can no longer be changed.");
+    }
+    if (attachmentSet.fileCount < 1) {
+      return responseError(context, 422, "attachment_set_empty", "Add at least one attachment before creating the campaign.");
+    }
+    try {
+      const payloads = await service.readSet(authenticated.user.id, attachmentSet.id);
+      const totalBytes = payloads.reduce((total, payload) => total + payload.bytes.byteLength, 0);
+      if (payloads.length !== attachmentSet.fileCount || totalBytes !== attachmentSet.totalBytes) {
+        return attachmentErrorResponse(context, new AttachmentError("integrity_error", "The campaign attachment metadata does not match its files"));
+      }
+    } catch (error) {
+      return attachmentErrorResponse(context, error);
+    }
+  }
   let templateVersion = input.templateVersionId ? await repo.templateVersions.getById(input.templateVersionId) : null;
   if (templateVersion && templateVersion.flowId !== flow.id) return responseError(context, 404, "template_not_found", "That template version is not available.");
   if (templateVersion && (templateVersion.subjectTemplate !== subject.subject || templateVersion.bodyHtml !== body.html || JSON.stringify(versionConfigFromInput(templateVersion.recipientConfiguration)) !== JSON.stringify(versionConfigFromInput(input.recipientConfiguration)))) {
@@ -721,16 +925,23 @@ app.post("/api/campaigns", async (context) => {
     updatedAt: createdAt,
   };
   try {
-    await repo.campaigns.create(campaign, jobs);
+    await repo.campaigns.create(campaign, jobs, input.attachmentSetId);
   } catch (errorValue) {
     const message = errorValue instanceof Error ? errorValue.message : "";
     if (/unique|constraint/iu.test(message)) {
       const concurrentCampaign = await repo.campaigns.getByIdempotencyKey(authenticated.user.id, input.idempotencyKey);
       if (concurrentCampaign) {
+        const concurrentAttachmentSet = await repo.attachments.getSetByCampaignId(concurrentCampaign.id);
+        if ((input.attachmentSetId ?? null) !== (concurrentAttachmentSet?.id ?? null)) {
+          return responseError(context, 409, "campaign_attachment_conflict", "This request key already belongs to a campaign with a different attachment set.");
+        }
         return context.json({
           campaign: publicCampaign(concurrentCampaign),
           counts: await repo.recipientJobs.counts(concurrentCampaign.id),
         });
+      }
+      if (input.attachmentSetId) {
+        return responseError(context, 409, "attachment_set_changed", "The attachment set changed while the campaign was being created. Upload the files again and review the campaign.");
       }
       return responseError(context, 409, "duplicate_idempotency_key", "A campaign with this request key already exists.");
     }
@@ -795,6 +1006,13 @@ app.post("/api/campaigns/:id/test-send", async (context) => {
   const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
   try {
+    const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
+    let attachments: readonly MailAttachment[] = [];
+    if (attachmentSet) {
+      const service = attachmentServiceFor(context, repo);
+      if (!service) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+      attachments = await loadCampaignAttachments(repo, service, campaign);
+    }
     const { auth, graph, smtp, mailTransport } = configFor(context);
     const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
     const inputValue = {
@@ -804,12 +1022,14 @@ app.post("/api/campaigns/:id/test-send", async (context) => {
       bcc: input.bcc,
       replyTo: input.replyTo,
       importance: input.importance,
+      attachments,
     };
     const result = mailTransport === "smtp"
       ? await sendProviderTestToSelf(delegatedSmtpMailProvider(smtp, tokens.accessToken, authenticated.user.mailboxAddress), authenticated.user.mailboxAddress, inputValue)
       : await sendTestToSelf(graph, tokens.accessToken, inputValue);
     return context.json({ result });
   } catch (errorValue) {
+    if (errorValue instanceof AttachmentError) return attachmentErrorResponse(context, errorValue);
     const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError || errorValue instanceof TestSendError
       ? errorValue.message
       : "The test message could not be accepted by Microsoft.";
@@ -835,11 +1055,50 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   const campaign = await repo.campaigns.getByIdForOwner(idValue, authenticated.user.id);
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
   if (campaign.state !== "validated") return responseError(context, 409, "campaign_not_ready", "Review and validate the campaign before starting it.");
+  const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
+  const attachmentService = attachmentServiceFor(context, repo);
+  if (attachmentSet && !attachmentService) {
+    const error = new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+    const failed = await repo.campaigns.fail(campaign.id, nowIso(), "The campaign attachments could not be verified. No message was sent.");
+    const latest = failed ? null : await repo.campaigns.getById(campaign.id);
+    if (failed || latest?.state === "completed" || latest?.state === "failed") {
+      try {
+        await cleanupCampaignAttachments(repo, attachmentService, campaign.id);
+      } catch {
+        // Scheduled cleanup will retry when storage is available again.
+      }
+    }
+    return attachmentErrorResponse(context, error);
+  }
+  if (attachmentSet && attachmentService) {
+    try {
+      await loadCampaignAttachments(repo, attachmentService, campaign);
+    } catch (error) {
+      const failed = await repo.campaigns.fail(campaign.id, nowIso(), "The campaign attachments could not be verified. No message was sent.");
+      const latest = failed ? null : await repo.campaigns.getById(campaign.id);
+      if (failed || latest?.state === "completed" || latest?.state === "failed") {
+        try {
+          await cleanupCampaignAttachments(repo, attachmentService, campaign.id);
+        } catch {
+          // Scheduled cleanup will retry when storage is available again.
+        }
+      }
+      return attachmentErrorResponse(context, error);
+    }
+  }
   if (!(await repo.campaigns.queue(campaign.id, authenticated.user.id, nowIso()))) return responseError(context, 409, "campaign_changed", "The campaign changed in another session. Refresh and try again.");
   try {
     await enqueueTick(context, campaign.id);
   } catch {
-    await repo.campaigns.fail(campaign.id, nowIso(), "The campaign queue is unavailable. No message was sent.");
+    const failed = await repo.campaigns.fail(campaign.id, nowIso(), "The campaign queue is unavailable. No message was sent.");
+    const latest = failed ? null : await repo.campaigns.getById(campaign.id);
+    if (failed || latest?.state === "completed" || latest?.state === "failed") {
+      try {
+        await cleanupCampaignAttachments(repo, attachmentService, campaign.id);
+      } catch {
+        // Scheduled cleanup will retry when storage is available again.
+      }
+    }
     return responseError(context, 503, "queue_unavailable", "The campaign queue is unavailable. No message was sent.");
   }
   await audit(repo, "campaign.queued", { actorUserId: authenticated.user.id, campaignId: campaign.id });
@@ -901,6 +1160,9 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
     req: { url: textEnv(bindings.PUBLIC_ORIGIN, "https://mailflow.invalid") } as MailFlowContext["req"],
   } as MailFlowContext;
   const repo = createD1Repositories(bindings.DB);
+  const attachmentService = bindings.ATTACHMENTS
+    ? createAttachmentService(repo.attachments, bindings.ATTACHMENTS)
+    : null;
   let authServices: ReturnType<typeof configFor> | null = null;
   for (const message of batch.messages) {
     if (!isCampaignTickMessage(message.body)) {
@@ -913,6 +1175,15 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
         campaigns: repo.campaigns,
         recipientJobs: repo.recipientJobs,
         queue: cloudflareQueueAdapter(bindings.CAMPAIGN_QUEUE),
+        attachmentLoader: async (campaign) => {
+          const set = await repo.attachments.getSetByCampaignId(campaign.id);
+          if (!set) return [];
+          if (!attachmentService) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+          return loadCampaignAttachments(repo, attachmentService, campaign);
+        },
+        attachmentCleanup: async (campaignId) => {
+          await cleanupCampaignAttachments(repo, attachmentService, campaignId);
+        },
         mailProvider: async (campaign) => {
           return authServices!.mailTransport === "smtp"
             ? delegatedSmtpMailProvider(authServices!.smtp, async () => (await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId)).accessToken, campaign.senderAddress)
@@ -925,6 +1196,14 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
       message.retry({ delaySeconds: 60 });
     }
   }
+}
+
+/** Run the hourly private-object retention sweep for orphan and terminal sets. */
+export async function processAttachmentCleanup(bindings: MailFlowBindings): Promise<void> {
+  if (!bindings.ATTACHMENTS) return;
+  const repo = createD1Repositories(bindings.DB);
+  const service = createAttachmentService(repo.attachments, bindings.ATTACHMENTS);
+  await service.cleanupExpiredOrphans(100);
 }
 
 export async function fetchMailFlow(request: Request, bindings: MailFlowBindings, executionContext?: MailFlowExecutionContext): Promise<Response> {

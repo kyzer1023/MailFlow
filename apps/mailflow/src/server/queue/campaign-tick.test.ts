@@ -74,7 +74,13 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & { stat
       },
       pause: async () => false,
       resume: async () => false,
-      fail: async () => false,
+      fail: async (_id, now, reason) => {
+        if (["queued", "running", "paused"].includes(state.campaign.state)) {
+          state.campaign = { ...state.campaign, state: "failed", pauseReason: reason, updatedAt: now };
+          return true;
+        }
+        return false;
+      },
       completeIfExhausted: async () => false,
     },
     recipientJobs: {
@@ -108,6 +114,8 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & { stat
     queue: {
       enqueue: async () => undefined,
     },
+    attachmentLoader: async () => [],
+    attachmentCleanup: async () => undefined,
     mailProvider: provider,
     now: () => new Date("2026-08-31T00:01:00.000Z"),
     claimToken: () => "claim-1",
@@ -139,6 +147,48 @@ describe("campaign tick", () => {
     const result = await processCampaignTick({ type: "campaign.tick", campaignId: "campaign-1" }, deps);
     expect(result.kind).toBe("scheduled");
     expect(deps.state.job.status).toBe("accepted");
+  });
+
+  it("loads and forwards one immutable attachment set to Graph", async () => {
+    const first = Uint8Array.from([1, 2, 3]);
+    const second = Uint8Array.from([250, 0, 9]);
+    let calls = 0;
+    const provider: MailProvider = {
+      send: async (message: MailMessage) => {
+        calls += 1;
+        expect(message.attachments?.map((attachment) => attachment.name)).toEqual(["one.txt", "two.bin"]);
+        expect([...((message.attachments?.[0]?.content) ?? [])]).toEqual([...first]);
+        expect([...((message.attachments?.[1]?.content) ?? [])]).toEqual([...second]);
+        return { kind: "accepted" };
+      },
+    };
+    const deps = dependencies(provider);
+    deps.attachmentLoader = async () => [
+      { name: "one.txt", contentType: "text/plain", content: first },
+      { name: "two.bin", contentType: "application/octet-stream", content: second },
+    ];
+    await expect(processCampaignTick("campaign-1", deps)).resolves.toMatchObject({ kind: "scheduled", outcome: "accepted" });
+    expect(calls).toBe(1);
+  });
+
+  it("fails before claiming a recipient when attachment integrity cannot be verified", async () => {
+    const provider: MailProvider = { send: async () => ({ kind: "accepted" }) };
+    const deps = dependencies(provider);
+    let cleanupCalls = 0;
+    deps.attachmentLoader = async () => {
+      throw new Error("missing private object");
+    };
+    deps.attachmentCleanup = async () => {
+      cleanupCalls += 1;
+    };
+    await expect(processCampaignTick("campaign-1", deps)).resolves.toEqual({
+      kind: "failed",
+      campaignId: "campaign-1",
+      reason: "attachments_unavailable",
+    });
+    expect(deps.state.job.status).toBe("pending");
+    expect(deps.state.campaign.state).toBe("failed");
+    expect(cleanupCalls).toBe(1);
   });
 
   it("turns a provider exception into unknown with no automatic retry", async () => {
