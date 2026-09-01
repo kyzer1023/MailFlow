@@ -7,6 +7,7 @@ import type {
   TemplateVersionRecord,
   UserRecord,
 } from "../../domain/types";
+import type { AttachmentRepository } from "../attachments/contracts";
 
 /**
  * Structural D1 types. Keeping these local avoids making the domain depend on
@@ -139,4 +140,5 @@ export interface Repositories {
   campaigns: CampaignRepository;
   recipientJobs: RecipientJobRepository;
   audit: AuditRepository;
+  attachments: AttachmentRepository;
 }
