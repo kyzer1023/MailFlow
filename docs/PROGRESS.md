@@ -312,3 +312,12 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Fact-checked the legacy table behavior with an anonymized fixture in `htmlcodeeditor.com`, then loaded the exact supplied HTML into the local QA route. The visual editor and sanitized preview now contain the same inline table border, zero spacing, and 12-pixel cell padding, and the visible table renders as a compact two-row grid.
 - `npm test` passes with TypeScript, the production build, and all 81 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
 - No production deployment, production data change, or real mail send was performed.
+
+### 2026-09-02 - HTML editor production release
+
+- Removed the standalone `html-editor-qa.html` harness and its React entry before release. The non-runtime design QA report and comparison captures remain as required verification evidence and are not included in the Vite production asset graph.
+- Released the visual/HTML message editor and legacy table-attribute compatibility fix from isolated `main`, excluding the unfinished small-attachment workstream.
+- Confirmed production D1 had no pending migrations, `npm test` passed with all 81 tests, and `npx wrangler deploy --dry-run` passed before deployment.
+- Deployed Worker version `41f6518f-fb1f-48b1-82f7-fa060d535d19` to `https://mailflow.kyzer-hono-test.workers.dev` with the existing D1 and Queue bindings.
+- Post-deployment smoke checks returned `200 text/html` for the landing page and the expected unauthenticated `401 application/json` for `/api/me`.
+- No production data was changed and no real message was sent.
