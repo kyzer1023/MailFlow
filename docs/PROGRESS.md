@@ -285,3 +285,30 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Repeated the same two-tab scenario after the fix. Overview and Flows each requested fresh flow and campaign data, the previously stale tab displayed the new flow without a hard reload, and authenticated GET responses returned `Cache-Control: private, no-store, max-age=0`.
 - Added focused component regressions for route-entry refresh and out-of-order response suppression. `npm test` passes with TypeScript, the production build, and all 78 unit and integration tests; `npx wrangler deploy --dry-run` also passes.
 - The Chrome verification created two local-only flows named `Chrome stale-data check` and `Chrome route revalidation proof`. No message was sent and no production deployment or data was changed.
+
+### 2026-09-01 - Production D1 schema-drift recovery
+
+- Traced the generic Review action failure to production schema drift: the deployed Worker inserts recipient-job Importance, while remote D1 had only recorded `0001_initial.sql` and did not yet contain the `recipient_jobs.importance` column.
+- Applied committed production migrations `0002_message_importance.sql` and `0003_unique_flow_names.sql` after explicit approval. The flow-name migration resolved one existing active duplicate with its deterministic friendly suffix before creating the unique index.
+- Verified that remote D1 has no pending migrations, `recipient_jobs.importance` is a required text column with the `normal` default, the active flow-name uniqueness index exists, and no duplicate active-name groups remain.
+- `npm test` passes with TypeScript, the production build, and all 78 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
+- No Worker deployment or real mail send was performed. The affected member can retry the existing Review action; the failed attempt did not reach Microsoft Graph.
+
+### 2026-09-01 - Power Automate-style visual and HTML message editor
+
+- Added a Power Automate-inspired code toggle to the Template message body. Visual mode now includes font, size, emphasis, highlight, list, alignment, link, and clear-formatting controls; HTML mode exposes the same body as editable source.
+- Replaced the lossy plain-text editor serialization with an HTML-preserving round trip. Sanitized rich HTML paste now retains email-safe tables, inline borders, padding, background colors, highlights, lists, and dynamic-value placeholders.
+- Made sanitized HTML authoritative before flow persistence and reused the isolated preview document in Review. Browser verification confirmed that the visual editor and send preview expose identical inline border and padding values.
+- Expanded the sanitizer to support safe email formatting tags and attributes while removing inline CSS that the Worker would reject, keeping preview, stored template HTML, and Graph input aligned.
+- Added regression coverage for visual/source toggling, sanitized rich paste, styled tables, highlight markup, unsafe script/CSS cleanup, and preview preservation. `npm test` passes with TypeScript, the production build, and all 81 unit and integration tests; `npx wrangler deploy --dry-run` also passes.
+- Product Design browser QA passed at 1440 x 900 and 390 x 844 with no console warnings or errors. Evidence and comparison history are recorded in `apps/mailflow/design-qa.md`.
+- No production deployment or real mail send was performed.
+
+### 2026-09-02 - Legacy email-table rendering compatibility
+
+- Reproduced the supplied template defect against the local visual editor and sanitized send preview. The affected table depended on legacy `border`, `cellpadding`, and `cellspacing` attributes, which did not survive DOMPurify, while source indentation was rendered as visible whitespace inside the rich editor.
+- Added a pre-sanitization compatibility pass that converts those bounded numeric table attributes into inline border, spacing, and per-side cell padding CSS. Existing inline cell padding remains authoritative.
+- Changed the rich editor to normal HTML whitespace collapsing and converted typed or pasted plain-text line breaks to `<br>` elements, aligning visual mode with browser and email HTML rendering.
+- Fact-checked the legacy table behavior with an anonymized fixture in `htmlcodeeditor.com`, then loaded the exact supplied HTML into the local QA route. The visual editor and sanitized preview now contain the same inline table border, zero spacing, and 12-pixel cell padding, and the visible table renders as a compact two-row grid.
+- `npm test` passes with TypeScript, the production build, and all 81 unit and integration tests. `npx wrangler deploy --dry-run` also passes.
+- No production deployment, production data change, or real mail send was performed.

@@ -2,9 +2,11 @@ import { createContext, forwardRef, useCallback, useContext, useEffect, useImper
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
-  DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge, House, Info,
+  Code, DownloadSimple, Envelope, Eraser, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
+  HighlighterCircle, House, Info, LinkSimple, ListBullets, ListNumbers,
   MicrosoftOutlookLogo, MinusCircle, PaperPlaneTilt, Pause, Play, Plus,
-  Rows, SignOut, SpinnerGap, Trash, Users, WarningCircle, X,
+  Rows, SignOut, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
+  TextItalic, TextUnderline, Trash, Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
   ApiRequestError,
@@ -27,6 +29,7 @@ import {
   updateFlow as updateFlowRequest,
 } from "./app/api";
 import {
+  buildPreviewSrcDoc,
   buildMessagePreviews,
   createCampaignPayload,
   extractPlaceholders,
@@ -37,6 +40,7 @@ import {
   parseSpreadsheet,
   recipientConfigurationToClientMapping,
   selectSpreadsheetTable,
+  sanitizeTemplateHtml,
   validateClientCampaign,
 } from "./client";
 import { escapeMergeValue } from "./client/template";
@@ -95,6 +99,12 @@ function bodyHtmlFromDraft(body) {
     // an unsafe-template change during Review validation.
     .map((line) => line ? `<p>${escapeMergeValue(line)}</p>` : "<br>")
     .join("");
+}
+
+function normalizeHtmlForComparison(html) {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "");
+  return template.innerHTML.trim();
 }
 
 function columnOptions(table) {
@@ -387,38 +397,52 @@ function DynamicValueChip({ value, options = [], compact = false }) {
 
 function serializeTokenEditor(root) {
   if (!root) return "";
-  return [...root.childNodes].map((node) => {
-    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
-    if (node.nodeType !== Node.ELEMENT_NODE) return "";
-    const element = node;
-    if (element.dataset?.dynamicField) return `{{${element.dataset.dynamicField}}}`;
-    if (element.tagName === "BR") return "\n";
-    const nested = serializeTokenEditor(element);
-    return element.tagName === "DIV" || element.tagName === "P" ? `${nested}\n` : nested;
-  }).join("");
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll("[data-dynamic-field]").forEach((element) => {
+    element.replaceWith(document.createTextNode(`{{${element.dataset.dynamicField}}}`));
+  });
+  return clone.innerHTML;
 }
 
 function appendTokenEditorContent(root, value, options) {
-  root.replaceChildren();
+  const safeHtml = sanitizeTemplateHtml(bodyHtmlFromDraft(value));
+  root.innerHTML = safeHtml;
   const pattern = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
-  let cursor = 0;
-  for (const match of String(value || "").matchAll(pattern)) {
-    if (match.index > cursor) root.append(document.createTextNode(value.slice(cursor, match.index)));
-    const token = document.createElement("span");
-    token.className = "dynamic-inline-token";
-    token.contentEditable = "false";
-    token.dataset.dynamicField = match[1];
-    token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(match[1], options)}`);
-    token.textContent = dynamicFieldLabel(match[1], options);
-    root.append(token);
-    cursor = match.index + match[0].length;
-  }
-  if (cursor < String(value || "").length) root.append(document.createTextNode(value.slice(cursor)));
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach((node) => {
+    const source = node.nodeValue || "";
+    pattern.lastIndex = 0;
+    if (!pattern.test(source)) return;
+    pattern.lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const match of source.matchAll(pattern)) {
+      if (match.index > cursor) fragment.append(document.createTextNode(source.slice(cursor, match.index)));
+      const token = document.createElement("span");
+      token.className = "dynamic-inline-token";
+      token.contentEditable = "false";
+      token.dataset.dynamicField = match[1];
+      token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(match[1], options)}`);
+      token.textContent = dynamicFieldLabel(match[1], options);
+      fragment.append(token);
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < source.length) fragment.append(document.createTextNode(source.slice(cursor)));
+    node.replaceWith(fragment);
+  });
 }
 
-const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
+export const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
   const rootRef = useRef(null);
+  const sourceRef = useRef(null);
   const savedRangeRef = useRef(null);
+  const lastEmittedRef = useRef(null);
+  const [mode, setMode] = useState("visual");
+  const sourceHtml = bodyHtmlFromDraft(value);
+  const sanitizedSourceHtml = sanitizeTemplateHtml(sourceHtml);
+  const sourceWasCleaned = normalizeHtmlForComparison(sourceHtml) !== normalizeHtmlForComparison(sanitizedSourceHtml);
 
   const saveRange = useCallback(() => {
     const root = rootRef.current;
@@ -430,11 +454,99 @@ const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onCha
 
   useEffect(() => {
     const root = rootRef.current;
-    if (root && serializeTokenEditor(root) !== String(value || "")) appendTokenEditorContent(root, String(value || ""), options);
-  }, [value, options]);
+    if (!root || mode !== "visual") return;
+    if (lastEmittedRef.current === String(value || "")) {
+      lastEmittedRef.current = null;
+      return;
+    }
+    if (serializeTokenEditor(root) !== sanitizedSourceHtml) appendTokenEditorContent(root, sanitizedSourceHtml, options);
+  }, [value, options, mode, sanitizedSourceHtml]);
+
+  const emitVisualChange = useCallback(() => {
+    const html = serializeTokenEditor(rootRef.current);
+    lastEmittedRef.current = html;
+    onChange(html);
+  }, [onChange]);
+
+  const restoreRange = useCallback(() => {
+    const root = rootRef.current;
+    const selection = window.getSelection();
+    if (!root || !selection) return;
+    const range = savedRangeRef.current?.cloneRange();
+    if (range && root.contains(range.commonAncestorContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    const fallback = document.createRange();
+    fallback.selectNodeContents(root);
+    fallback.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(fallback);
+  }, []);
+
+  const runCommand = useCallback((command, commandValue = null) => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.focus();
+    restoreRange();
+    document.execCommand?.(command, false, commandValue);
+    saveRange();
+    emitVisualChange();
+  }, [emitVisualChange, restoreRange, saveRange]);
+
+  const insertHtml = useCallback((html) => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.focus();
+    restoreRange();
+    const insertedWithHistory = document.execCommand?.("insertHTML", false, html) ?? false;
+    if (!insertedWithHistory) {
+      const selection = window.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      if (range) {
+        range.deleteContents();
+        const fragment = range.createContextualFragment(html);
+        const lastNode = fragment.lastChild;
+        range.insertNode(fragment);
+        if (lastNode) {
+          range.setStartAfter(lastNode);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+    }
+    saveRange();
+    emitVisualChange();
+  }, [emitVisualChange, restoreRange, saveRange]);
+
+  const switchMode = useCallback((nextMode) => {
+    if (nextMode === mode) return;
+    if (nextMode === "html") emitVisualChange();
+    else {
+      lastEmittedRef.current = null;
+      onChange(sanitizedSourceHtml);
+    }
+    setMode(nextMode);
+  }, [emitVisualChange, mode, onChange, sanitizedSourceHtml]);
 
   useImperativeHandle(forwardedRef, () => ({
     insertToken(key) {
+      if (mode === "html") {
+        const source = sourceRef.current;
+        if (!source) return;
+        const start = source.selectionStart ?? source.value.length;
+        const end = source.selectionEnd ?? start;
+        const token = `{{${key}}}`;
+        const nextValue = `${source.value.slice(0, start)}${token}${source.value.slice(end)}`;
+        onChange(nextValue);
+        requestAnimationFrame(() => {
+          source.focus();
+          source.setSelectionRange(start + token.length, start + token.length);
+        });
+        return;
+      }
       const root = rootRef.current;
       if (!root) return;
       root.focus();
@@ -462,46 +574,86 @@ const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onCha
         selection?.addRange(range);
       }
       saveRange();
-      onChange(serializeTokenEditor(root));
+      emitVisualChange();
     },
-  }), [onChange, options, saveRange]);
+  }), [emitVisualChange, mode, onChange, options, saveRange]);
 
   const insertPlainText = (text) => {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount) return;
-    const range = selection.getRangeAt(0);
-    const insertedWithHistory = document.execCommand?.("insertText", false, text) ?? false;
-    if (!insertedWithHistory) {
-      range.deleteContents();
-      const node = document.createTextNode(text);
-      range.insertNode(node);
-      range.setStartAfter(node);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    saveRange();
-    onChange(serializeTokenEditor(rootRef.current));
+    const html = escapeMergeValue(text).replace(/\r?\n/gu, "<br>");
+    insertHtml(html);
   };
 
-  return <div
-    ref={rootRef}
-    className="message-editor token-message-editor"
-    contentEditable
-    suppressContentEditableWarning
-    role="textbox"
-    aria-multiline="true"
-    aria-label="Message body"
-    data-placeholder={placeholder}
-    onFocus={(event) => { saveRange(); onFocus?.(event); }}
-    onKeyUp={saveRange}
-    onMouseUp={saveRange}
-    onInput={() => { saveRange(); onChange(serializeTokenEditor(rootRef.current)); }}
-    onKeyDown={(event) => {
-      if (event.key === "Enter") { event.preventDefault(); insertPlainText("\n"); }
-    }}
-    onPaste={(event) => { event.preventDefault(); insertPlainText(event.clipboardData.getData("text/plain")); }}
-  />;
+  const toolbarButton = (label, Icon, command, commandValue = null) => <button type="button" aria-label={label} title={label} onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand(command, commandValue)}><Icon weight="bold" /></button>;
+
+  const addLink = () => {
+    const href = window.prompt("Paste an HTTPS or mailto link");
+    if (!href) return;
+    const normalized = href.trim();
+    if (!/^(?:https?:|mailto:)/iu.test(normalized)) return;
+    runCommand("createLink", normalized);
+  };
+
+  return <div className={`html-message-composer html-message-composer--${mode}`}>
+    <div className="editor-toolbar" role="toolbar" aria-label="Message formatting">
+      {mode === "visual" ? <>
+        <select aria-label="Font" defaultValue="" onChange={(event) => { if (event.target.value) runCommand("fontName", event.target.value); event.target.value = ""; }}>
+          <option value="">Font</option>
+          <option value="Arial">Arial</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Times New Roman">Times New Roman</option>
+        </select>
+        <select aria-label="Font size" defaultValue="3" onChange={(event) => runCommand("fontSize", event.target.value)}>
+          <option value="2">10</option>
+          <option value="3">12</option>
+          <option value="4">14</option>
+          <option value="5">18</option>
+        </select>
+        <span className="editor-toolbar__divider" aria-hidden="true" />
+        {toolbarButton("Bold", TextB, "bold")}
+        {toolbarButton("Italic", TextItalic, "italic")}
+        {toolbarButton("Underline", TextUnderline, "underline")}
+        {toolbarButton("Highlight", HighlighterCircle, "hiliteColor", "#f1df9d")}
+        {toolbarButton("Bulleted list", ListBullets, "insertUnorderedList")}
+        {toolbarButton("Numbered list", ListNumbers, "insertOrderedList")}
+        {toolbarButton("Align left", TextAlignLeft, "justifyLeft")}
+        {toolbarButton("Align center", TextAlignCenter, "justifyCenter")}
+        {toolbarButton("Align right", TextAlignRight, "justifyRight")}
+        <button type="button" aria-label="Add link" title="Add link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><LinkSimple weight="bold" /></button>
+        {toolbarButton("Clear formatting", Eraser, "removeFormat")}
+      </> : <span className="editor-toolbar__source-label"><Code weight="bold" /> HTML source</span>}
+      <button type="button" className={`editor-source-toggle${mode === "html" ? " active" : ""}`} aria-label={mode === "html" ? "Return to visual editor" : "Edit HTML source"} aria-pressed={mode === "html"} title={mode === "html" ? "Return to visual editor" : "Edit HTML source"} onClick={() => switchMode(mode === "html" ? "visual" : "html")}><Code weight="bold" /></button>
+    </div>
+    {mode === "visual" ? <div
+      ref={rootRef}
+      className="message-editor token-message-editor"
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-multiline="true"
+      aria-label="Message body"
+      data-placeholder={placeholder}
+      onFocus={(event) => { saveRange(); onFocus?.(event); }}
+      onKeyUp={saveRange}
+      onMouseUp={saveRange}
+      onInput={() => { saveRange(); emitVisualChange(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); insertPlainText("\n"); }
+      }}
+      onPaste={(event) => {
+        event.preventDefault();
+        const pastedHtml = event.clipboardData.getData("text/html");
+        if (pastedHtml) {
+          const safeHtml = sanitizeTemplateHtml(pastedHtml);
+          insertHtml(safeHtml);
+          return;
+        }
+        insertPlainText(event.clipboardData.getData("text/plain"));
+      }}
+    /> : <>
+      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
+      <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
+    </>}
+  </div>;
 });
 
 function splitFixedAddresses(value) {
@@ -661,7 +813,8 @@ function TemplatePage() {
   const dynamicOptions = columnOptions(table);
   const dynamicFields = dynamicOptions.map((option) => option.value);
   const editingExisting = Boolean(editingFlowId) && !table;
-  const canSave = Boolean(draft.name.trim() && draft.subject.trim() && draft.body.trim() && mapping.toField);
+  const sanitizedDraftBody = useMemo(() => sanitizeTemplateHtml(bodyHtmlFromDraft(draft.body)), [draft.body]);
+  const canSave = Boolean(draft.name.trim() && draft.subject.trim() && sanitizedDraftBody.trim() && mapping.toField);
 
   const editDraft = (key, value) => {
     updateDraft(key, value);
@@ -682,7 +835,8 @@ function TemplatePage() {
     setSaveState("saving"); setSaveError(""); setNameError("");
     let flowNameSaved = false;
     try {
-      const bodyHtml = bodyHtmlFromDraft(draft.body);
+      const bodyHtml = sanitizedDraftBody;
+      updateDraft("body", bodyHtml);
       const recipientConfiguration = mappingToRecipientConfiguration(mapping);
       const templatePayload = { subjectTemplate: draft.subject, bodyHtml, placeholderManifest: extractPlaceholders(draft.subject, bodyHtml), recipientConfiguration };
       if (!flowId) {
@@ -718,7 +872,7 @@ function TemplatePage() {
         {saveError && <div className="notice notice--warn template-save-error" role="alert"><WarningCircle weight="fill" /><span><strong>Changes were not fully saved.</strong>{saveError}</span></div>}
         <Field label="Flow name" error={nameError} errorId="flow-name-error"><input value={draft.name} onChange={(event) => editDraft("name", event.target.value)} placeholder="For example, Event invitation" aria-invalid={Boolean(nameError)} aria-describedby={nameError ? "flow-name-error" : undefined} /></Field>
         <Field label="Subject"><input value={draft.subject} onChange={(event) => editDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field>
-        <Field label="Message body" hint="Select text to replace it with a dynamic value, or place the cursor where it should appear."><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => editDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /></Field>
+        <div className="field"><span>Message body</span><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => editDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /><small>Use the code button to switch between visual formatting and the sanitized HTML source.</small></div>
       </section>
       <aside className="panel dynamic-panel"><h2>Dynamic values</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert ${dynamicFieldLabel(key, dynamicOptions)}`}><DynamicValueChip value={key} options={dynamicOptions} /></button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Click a value to insert it in the message. Highlighted text is replaced.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside>
     </div>
@@ -1090,7 +1244,7 @@ function ReviewPage() {
     return <AppShell><div className="route-gate" role="status"><WarningCircle weight="fill" /><h1>Import a recipient file first.</h1><p>Review only becomes available after Data, Template, and Recipients are complete.</p><Link className="button button--coral" to="/flows/new/data">Start with data</Link></div></AppShell>;
   }
 
-  const previewDocument = message?.bodyHtml || "";
+  const previewDocument = message ? buildPreviewSrcDoc(message.bodyHtml) : "";
   return <WizardShell current={3} title="Review every detail before it leaves." subtitle="Check representative rows, send a test to yourself, then confirm the paced campaign." actions={<><button className="button button--outline" onClick={() => navigate("/flows/new/recipients")}><ArrowLeft /> Back</button><button className="button button--outline" onClick={() => void sendTest()} disabled={testState === "sending" || !message || !state.campaignValidation?.ok} title={blockingIssues.length ? actionBlocker : undefined} aria-describedby={blockingIssues.length ? "review-blockers" : undefined}>{testState === "sending" ? <SpinnerGap className="spin" /> : <Envelope />} Send test to me</button><button className="button button--coral" disabled={!ready} onClick={() => void start()} title={actionBlocker || undefined} aria-describedby={actionBlocker ? "review-blockers" : undefined}>Confirm &amp; start <PaperPlaneTilt weight="fill" /></button></>}><div className="review-layout"><aside className="panel sample-card"><span className="section-kicker">SAMPLE ROWS</span><h2>Who are you checking?</h2>{previews.slice(0, 3).map((preview, index) => <button key={`${preview.position}-${preview.sourceRow}`} className={index === safeIndex ? "selected" : ""} onClick={() => setSampleIndex(index)}><span>{["First", "Middle", "Last"][index]}</span><strong>{preview.to}</strong><small>Row {preview.sourceRow}</small></button>)}{previews.length === 0 && <p className="empty-state">No valid recipient rows are available yet.</p>}<footer><button aria-label="Previous sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + previews.length - 1) % previews.length)}><CaretLeft /></button><span>{previews.length ? `${safeIndex + 1} of ${Math.min(3, previews.length)}` : "0 of 0"}</span><button aria-label="Next sample" disabled={previews.length < 2} onClick={() => setSampleIndex((safeIndex + 1) % previews.length)}><CaretRight /></button></footer></aside><section className="panel mailbox-preview">{message ? <><div className="mail-toolbar"><span>Personalized preview</span></div><div className="mail-meta"><span className="avatar">{displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><span><strong>{displayName}</strong><small>{sender}</small></span><StatusChip status="ready">Preview</StatusChip></div><dl><div><dt>To</dt><dd>{message.to}</dd></div>{message.cc.length > 0 && <div><dt>CC</dt><dd>{message.cc.join(", ")}</dd></div>}{message.bcc.length > 0 && <div><dt>BCC</dt><dd>{message.bcc.join(", ")}</dd></div>}{message.replyTo.length > 0 && <div><dt>Reply-to</dt><dd>{message.replyTo.join(", ")}</dd></div>}<div><dt>Subject</dt><dd>{message.subject}</dd></div></dl><iframe title={`Email preview for ${message.to}`} sandbox="allow-same-origin" srcDoc={previewDocument} /></> : <div className="empty-state">Resolve the recipient issues to generate a preview.</div>}</section><aside className="panel review-summary"><span className="section-kicker">FINAL CHECK</span><h2>Review summary</h2>{[[Envelope, "Sender", sender], [Users, "Recipients", `${state.validation?.validRecipientCount ?? 0} valid, ${state.validation?.skippedRecipientCount ?? 0} skipped`], [Envelope, "CC", state.draft.cc || "None"], [Gauge, "Pacing", `${state.draft.pace} messages per minute`], [Clock, "Estimated duration", `About ${Math.ceil((state.validation?.validRecipientCount ?? 0) / state.draft.pace)} minutes`], [CheckCircle, "Validation", state.campaignValidation?.ok ? "Ready to queue" : `${blockingIssues.length} issues to review`]].map(([Icon, label, value]) => <div className="fact" key={label}><span><Icon weight="fill" /></span><div><small>{label}</small><strong>{value}</strong></div></div>)}{blockingIssues.length > 0 && <section className="review-blockers" id="review-blockers" role="alert"><div><WarningCircle weight="fill" /><h3>Fix these before sending</h3></div><ul>{blockingIssues.map((issue) => { const action = validationIssueAction(issue); return <li key={`${issue.code}:${issue.field || ""}:${issue.row || ""}:${issue.message}`}><span>{issue.message}</span><Link to={action.to}>{action.label}</Link></li>; })}</ul></section>}{canSkip && <label className="ack"><input type="checkbox" checked={state.skipInvalidRows} onChange={(event) => state.setSkipInvalidRows(event.target.checked)} /><span>Skip the flagged rows and continue with valid recipients only.</span></label>}<label className="ack"><input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} /><span>I have checked the sender, recipients, and personalized message.</span></label><div className="accepted-note"><Info weight="fill" /> Microsoft acceptance means the request was received. It is not a delivery receipt.</div><p className="test-status" aria-live="polite">{testState === "accepted" && <><CheckCircle weight="fill" /> Test accepted by Microsoft</>}{testState === "sending" && "Sending one message to your mailbox..."}{testState === "error" && <><WarningCircle weight="fill" /> {actionError}</>}{actionError && testState !== "error" && <><WarningCircle weight="fill" /> {actionError}</>}</p></aside></div></WizardShell>;
 }
 

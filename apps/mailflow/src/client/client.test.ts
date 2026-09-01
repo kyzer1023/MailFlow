@@ -330,6 +330,32 @@ describe("safe template rendering and representative previews", () => {
     expect(sanitizeTemplateHtml("<svg><script>alert(1)</script></svg>")).toBe("");
   });
 
+  it("preserves email-safe table formatting and cleans preview-only CSS hazards", () => {
+    const safe = sanitizeTemplateHtml('<table width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><td style="border:1px solid #d9d9d9;background-color:#f5f6f7;padding:12px"><mark>Judge</mark></td></tr></table>');
+    expect(safe).toContain("<table");
+    expect(safe).toContain("border:1px solid #d9d9d9");
+    expect(safe).toContain("padding:12px");
+    expect(safe).toContain("<mark>Judge</mark>");
+    expect(safe).toContain("background-color:#f5f6f7");
+    expect(buildPreviewSrcDoc(safe)).toContain("border:1px solid #d9d9d9");
+
+    const legacyTable = sanitizeTemplateHtml('<table border="1" cellspacing="0" cellpadding="12" style="border-collapse:collapse;width:80%"><tr><td style="padding-top:14px">Label</td><td>Value</td></tr></table>');
+    expect(legacyTable).toContain("border: 1px solid");
+    expect(legacyTable).toContain("border-spacing: 0px");
+    const legacyContainer = document.createElement("div");
+    legacyContainer.innerHTML = legacyTable;
+    const firstLegacyCell = legacyContainer.querySelector<HTMLTableCellElement>("td");
+    expect(firstLegacyCell?.style.paddingTop).toBe("14px");
+    expect(firstLegacyCell?.style.paddingRight).toBe("12px");
+    expect(firstLegacyCell?.style.paddingBottom).toBe("12px");
+    expect(firstLegacyCell?.style.paddingLeft).toBe("12px");
+    expect(buildPreviewSrcDoc(legacyTable)).toContain("border: 1px solid");
+
+    const unsafeCss = sanitizeTemplateHtml('<td style="background:url(https://private.example/image.png);padding:12px">Cell</td>');
+    expect(unsafeCss).not.toContain("style=");
+    expect(unsafeCss).not.toContain("private.example");
+  });
+
   it("returns first, middle, and last previews and an isolated srcDoc", () => {
     const rows: NormalizedRecipientRow[] = [1, 2, 3, 4, 5].map((number) => ({
       sourceRow: number + 1,

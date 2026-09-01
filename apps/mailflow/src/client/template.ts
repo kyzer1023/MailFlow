@@ -19,6 +19,7 @@ export const TEMPLATE_SANITIZATION_POLICY: DOMPurifyConfig = {
     "colgroup",
     "div",
     "em",
+    "font",
     "h1",
     "h2",
     "h3",
@@ -29,6 +30,7 @@ export const TEMPLATE_SANITIZATION_POLICY: DOMPurifyConfig = {
     "i",
     "img",
     "li",
+    "mark",
     "ol",
     "p",
     "pre",
@@ -51,16 +53,20 @@ export const TEMPLATE_SANITIZATION_POLICY: DOMPurifyConfig = {
     "align",
     "alt",
     "border",
+    "bgcolor",
     "cellpadding",
     "cellspacing",
     "class",
     "colspan",
     "color",
+    "dir",
+    "face",
     "height",
     "href",
     "rel",
     "role",
     "rowspan",
+    "size",
     "src",
     "style",
     "target",
@@ -116,6 +122,55 @@ function escapeHtmlValue(value: string): string {
 /** Escape a spreadsheet value before it enters HTML. */
 export const escapeMergeValue = escapeHtmlValue;
 
+function parseLegacyPixelValue(value: string | null): number | null {
+  if (!value || !/^\d{1,4}$/u.test(value.trim())) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Convert legacy table presentation attributes into inline CSS before
+ * sanitization. Email HTML still commonly uses border/cellpadding/cellspacing,
+ * but DOMPurify removes those obsolete attributes even when they are named in
+ * ALLOWED_ATTR. Inline equivalents also render more consistently in the
+ * contenteditable editor and in mail clients.
+ */
+function normalizeLegacyTablePresentation(html: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+
+  template.content.querySelectorAll<HTMLTableElement>("table").forEach((table) => {
+    const border = parseLegacyPixelValue(table.getAttribute("border"));
+    const cellPadding = parseLegacyPixelValue(table.getAttribute("cellpadding"));
+    const cellSpacing = parseLegacyPixelValue(table.getAttribute("cellspacing"));
+    const cells = [...table.querySelectorAll<HTMLTableCellElement>("td, th")]
+      .filter((cell) => cell.closest("table") === table);
+
+    if (border !== null && border > 0) {
+      if (!table.style.border) table.style.border = `${border}px solid`;
+      cells.forEach((cell) => {
+        if (!cell.style.border && !cell.style.borderWidth) cell.style.border = `${border}px solid`;
+      });
+    }
+
+    if (cellSpacing !== null && !table.style.borderSpacing) {
+      table.style.borderSpacing = `${cellSpacing}px`;
+    }
+
+    if (cellPadding !== null) {
+      const padding = `${cellPadding}px`;
+      cells.forEach((cell) => {
+        if (!cell.style.paddingTop) cell.style.paddingTop = padding;
+        if (!cell.style.paddingRight) cell.style.paddingRight = padding;
+        if (!cell.style.paddingBottom) cell.style.paddingBottom = padding;
+        if (!cell.style.paddingLeft) cell.style.paddingLeft = padding;
+      });
+    }
+  });
+
+  return template.innerHTML;
+}
+
 /**
  * Sanitize user-authored template HTML. This function fails closed when it is
  * accidentally called outside a DOM-capable browser, rather than returning
@@ -123,7 +178,18 @@ export const escapeMergeValue = escapeHtmlValue;
  */
 export function sanitizeTemplateHtml(html: string): string {
   if (!DOMPurify.isSupported) return "";
-  return DOMPurify.sanitize(html, TEMPLATE_SANITIZATION_POLICY);
+  const normalized = normalizeLegacyTablePresentation(html);
+  const sanitized = DOMPurify.sanitize(normalized, TEMPLATE_SANITIZATION_POLICY);
+  const template = document.createElement("template");
+  template.innerHTML = sanitized;
+  // Keep the browser preview aligned with the Worker boundary. The Worker
+  // rejects every CSS url(), escape, import, expression, or legacy binding,
+  // so remove the entire affected declaration block before preview or save.
+  const unsafeCss = /(?:expression\s*\(|url\s*\(|\\|@import|-moz-binding|behavior\s*:)/iu;
+  template.content.querySelectorAll<HTMLElement>("[style]").forEach((element) => {
+    if (unsafeCss.test(element.getAttribute("style") ?? "")) element.removeAttribute("style");
+  });
+  return template.innerHTML;
 }
 
 function renderString(

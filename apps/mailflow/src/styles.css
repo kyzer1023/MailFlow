@@ -229,10 +229,37 @@ textarea { resize: vertical; }
 .editor-toolbar .mode.active { background: var(--ink); color: white; }
 .editor-toolbar select { min-height: 34px; width: auto; padding: .3rem .55rem; border: 0; background: transparent; font-size: .74rem; }
 .message-editor { min-height: 335px; font-family: var(--font-display); line-height: 1.55; }
-.token-message-editor { width: 100%; border: 1px solid #bfc1bc; border-radius: 8px; background: #fffefa; color: var(--ink); padding: .82rem; white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; cursor: text; }
+.token-message-editor { width: 100%; border: 1px solid #bfc1bc; border-radius: 8px; background: #fffefa; color: var(--ink); padding: .82rem; white-space: normal; overflow-wrap: anywhere; overflow-y: auto; cursor: text; }
 .token-message-editor:hover { border-color: #929891; }
 .token-message-editor:focus { border-color: var(--moss); outline: 3px solid rgba(81,106,89,.15); }
 .token-message-editor:empty::before { content: attr(data-placeholder); color: #7e8781; pointer-events: none; }
+.html-message-composer { width: 100%; overflow: hidden; border: 1px solid #bfc1bc; border-radius: 8px; background: #fffefa; transition: border-color .15s ease, box-shadow .15s ease; }
+.html-message-composer:hover { border-color: #929891; }
+.html-message-composer:focus-within { border-color: var(--moss); box-shadow: 0 0 0 3px rgba(81,106,89,.15); }
+.html-message-composer .editor-toolbar { min-width: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; flex-wrap: wrap; background: #f4f1ea; }
+.html-message-composer .editor-toolbar select { width: auto; min-height: 32px; padding: .25rem .38rem; border-radius: 5px; color: var(--ink); }
+.html-message-composer .editor-toolbar select:hover { background: #fffefa; }
+.html-message-composer .editor-toolbar button { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #34413b; cursor: pointer; }
+.html-message-composer .editor-toolbar button:hover { background: #fffefa; color: var(--ink); }
+.html-message-composer .editor-toolbar button:focus-visible { outline: 2px solid var(--moss); outline-offset: 1px; }
+.html-message-composer .editor-toolbar button svg { width: 1rem; height: 1rem; }
+.editor-toolbar__divider { width: 1px; height: 22px; margin-inline: 2px; background: var(--line); }
+.editor-toolbar__source-label { min-height: 32px; padding-inline: .42rem; display: inline-flex; align-items: center; gap: .42rem; color: var(--moss-dark); font: 750 .72rem/1 var(--font-mono); }
+.editor-toolbar__source-label svg { width: 1rem; height: 1rem; }
+.html-message-composer .editor-toolbar .editor-source-toggle { margin-left: auto; border-left: 1px solid var(--line); border-radius: 0 4px 4px 0; }
+.html-message-composer .editor-toolbar .editor-source-toggle.active { background: var(--ink); color: white; }
+.html-message-composer .token-message-editor, .html-source-editor { min-height: 335px; border: 0; border-radius: 0; outline: 0; box-shadow: none; }
+.html-message-composer .token-message-editor:hover, .html-message-composer .token-message-editor:focus { border: 0; outline: 0; box-shadow: none; }
+.html-source-editor { display: block; width: 100%; padding: 14px 16px; resize: vertical; background: #fffefa; color: var(--ink); font: 500 .78rem/1.6 var(--font-mono); white-space: pre; tab-size: 2; }
+.html-source-status { min-height: 38px; padding: .55rem .72rem; border-top: 1px solid var(--line); display: flex; align-items: center; gap: .45rem; background: #edf3ee; color: var(--moss-dark); font-size: .7rem; }
+.html-source-status--cleaned { background: #fff3df; color: #705326; }
+.html-source-status svg { width: .95rem; height: .95rem; flex: 0 0 auto; }
+/* App table styles must not create formatting that is absent from the email.
+   Inline template styles still win and therefore match Review and Graph. */
+.token-message-editor table { width: auto; border-collapse: separate; border-spacing: 2px; font-size: inherit; }
+.token-message-editor th { padding: 0; text-align: initial; color: inherit; font-size: inherit; letter-spacing: normal; text-transform: none; border: 0; }
+.token-message-editor td { padding: 0; border: 0; vertical-align: middle; }
+.token-message-editor tbody tr:last-child td { border: 0; }
 .dynamic-inline-token, .dynamic-value-chip { display: inline-flex; align-items: center; gap: .32rem; max-width: 100%; border: 1px solid var(--token-border); border-radius: 6px; background: var(--token-bg); color: var(--token-text); font: 700 .74rem/1.2 var(--font-display); }
 .dynamic-inline-token { margin-inline: .1rem; padding: .28rem .46rem; vertical-align: .05em; cursor: default; user-select: all; }
 .dynamic-value-chip { padding: .42rem .55rem; }

@@ -342,6 +342,107 @@ describe("authenticated information architecture", () => {
     expect(screen.queryByText("Changes were not fully saved.")).not.toBeInTheDocument();
   });
 
+  it("round-trips a styled email table between visual and HTML source modes", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const flow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Invitation flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlow.mockResolvedValue({
+      flow,
+      templateVersion: {
+        id: "template-original",
+        flowId: flow.id,
+        version: 1,
+        subjectTemplate: "Invitation",
+        bodyHtml: '<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid #d9d9d9;padding:12px"><mark>Judging Period</mark></td><td style="border:1px solid #d9d9d9;padding:12px">{{name}}</td></tr></tbody></table>',
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto", placeholderMappings: { name: "name" } },
+        placeholderManifest: ["name"],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+
+    render(<App />);
+
+    expect(await screen.findByRole("toolbar", { name: "Message formatting" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message body" }).querySelector("table")).not.toBeNull());
+    const visualEditor = screen.getByRole("textbox", { name: "Message body" });
+    expect(visualEditor.querySelector("td")?.style.border).toContain("1px solid");
+    expect(visualEditor.querySelector("mark")).toHaveTextContent("Judging Period");
+    expect(visualEditor.querySelector("[data-dynamic-field='name']")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
+    const sourceEditor = screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement;
+    expect(sourceEditor.value).toContain("border:1px solid #d9d9d9");
+    fireEvent.change(sourceEditor, { target: { value: '<table style="border-collapse:collapse"><tr><td style="border:1px solid #d9d9d9;padding:14px"><mark>Updated</mark></td></tr></table><script>alert(1)</script>' } });
+    expect(screen.getByText(/Unsupported or unsafe markup is removed/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to visual editor" }));
+    const cleanedVisualEditor = screen.getByRole("textbox", { name: "Message body" });
+    await waitFor(() => expect(cleanedVisualEditor.querySelector("mark")).toHaveTextContent("Updated"));
+    expect(cleanedVisualEditor.querySelector("script")).toBeNull();
+    expect(cleanedVisualEditor.querySelector("td")?.style.border).toContain("1px solid");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockedCreateTemplateVersion).toHaveBeenCalled());
+    const savedPayload = mockedCreateTemplateVersion.mock.calls.at(-1)?.[1];
+    expect(savedPayload?.bodyHtml).toContain("border:");
+    expect(savedPayload?.bodyHtml).toContain("padding:");
+    expect(savedPayload?.bodyHtml).not.toContain("<script");
+  });
+
+  it("preserves sanitized rich HTML when it is pasted into the visual editor", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const flow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Invitation flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlow.mockResolvedValue({
+      flow,
+      templateVersion: {
+        id: "template-original",
+        flowId: flow.id,
+        version: 1,
+        subjectTemplate: "Invitation",
+        bodyHtml: "<p>Opening</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+
+    render(<App />);
+
+    const visualEditor = await screen.findByRole("textbox", { name: "Message body" });
+    fireEvent.focus(visualEditor);
+    fireEvent.paste(visualEditor, {
+      clipboardData: {
+        getData: (type: string) => type === "text/html"
+          ? '<table style="width:100%;border-collapse:collapse"><tr><td style="border:1px solid #d9d9d9;background-color:#f5f6f7;padding:12px">Pasted table</td></tr></table>'
+          : "Pasted table",
+      },
+    });
+
+    await waitFor(() => expect(visualEditor.querySelector("table")).not.toBeNull());
+    expect(visualEditor.querySelector("td")?.style.border).toContain("1px solid");
+    fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
+    expect((screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement).value).toContain("Pasted table");
+  });
+
   it("requires confirmation before removing a flow and then archives it", async () => {
     window.history.replaceState({}, "", "/flows");
     const activeFlow = {
