@@ -79,6 +79,9 @@ export function delegatedGraphMailProvider(
 ): MailProvider {
   return {
     async send(message: MailMessage, _options): Promise<MailSendResult> {
+      if (message.attachments?.length) {
+        return { kind: "failed", category: "invalid_message", message: "The Graph fallback does not support attachments in this release" };
+      }
       try {
         const bearer = typeof accessToken === "function" ? await accessToken() : accessToken;
         const result = await graph.sendMail(bearer, {

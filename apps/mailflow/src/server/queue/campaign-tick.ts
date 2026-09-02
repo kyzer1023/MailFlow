@@ -1,5 +1,5 @@
 import { parseRetryAfterSeconds, paceDelaySeconds, MAX_QUEUE_DELAY_SECONDS } from "../../domain/pacing";
-import type { MailProvider, MailSendResult } from "../../domain/mail-provider";
+import type { MailAttachment, MailProvider, MailSendResult } from "../../domain/mail-provider";
 import { makeSendKey } from "../../domain/state";
 import type { CampaignRecord } from "../../domain/types";
 import type { CampaignTickDependencies, CampaignTickMessage, TickResult } from "./contracts";
@@ -76,11 +76,43 @@ export async function processCampaignTick(
   }
   if (campaign.state !== "running") return { kind: "ignored", reason: "not_runnable" };
 
+  // Attachment bytes are deliberately loaded and checksum-verified before a
+  // recipient claim. This keeps a missing or corrupt OneDrive object from being
+  // mistaken for an ambiguous provider outcome and prevents any row from being
+  // marked sending when the campaign snapshot is no longer deliverable.
+  let attachments: readonly MailAttachment[];
+  try {
+    attachments = await dependencies.attachmentLoader(campaign);
+  } catch {
+    const failed = await dependencies.campaigns.fail(
+      campaign.id,
+      now,
+      "The campaign attachments could not be verified. No additional message was sent.",
+    );
+    const latestAfterFailure = failed ? null : await dependencies.campaigns.getById(campaign.id);
+    if (failed || latestAfterFailure?.state === "completed" || latestAfterFailure?.state === "failed") {
+      try {
+        await dependencies.attachmentCleanup(campaign.id);
+      } catch {
+        // Scheduled cleanup will retry an unavailable object store.
+      }
+    }
+    return { kind: "failed", campaignId: campaign.id, reason: "attachments_unavailable" };
+  }
+
   const claimToken = (dependencies.claimToken ?? defaultClaimToken)(campaign.id, nowDate);
   const job = await dependencies.recipientJobs.claimNextPending(campaign.id, now, claimToken);
   if (!job) {
     const completed = await dependencies.campaigns.completeIfExhausted(campaign.id, now);
-    return completed ? { kind: "completed", campaignId: campaign.id } : { kind: "ignored", reason: "claim_lost" };
+    if (completed) {
+      try {
+        await dependencies.attachmentCleanup(campaign.id);
+      } catch {
+        // Scheduled cleanup will retry an unavailable object store.
+      }
+      return { kind: "completed", campaignId: campaign.id };
+    }
+    return { kind: "ignored", reason: "claim_lost" };
   }
 
   const markedSending = await dependencies.recipientJobs.markSending(job.id, claimToken, now);
@@ -98,6 +130,7 @@ export async function processCampaignTick(
         importance: job.importance ?? "normal",
         subject: job.renderedSubject,
         htmlBody: job.renderedBodyHtml,
+        attachments,
       },
       { sendKey: job.sendKey || makeSendKey(campaign.id, job.sourceRow) },
     );

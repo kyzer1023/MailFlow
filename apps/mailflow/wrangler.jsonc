@@ -18,6 +18,9 @@
       "migrations_dir": "migrations"
     }
   ],
+  "triggers": {
+    "crons": ["15 * * * *"]
+  },
   "queues": {
     "producers": [
       {
@@ -38,6 +41,7 @@
     "PUBLIC_ORIGIN": "https://mailflow.kyzer-hono-test.workers.dev",
     "ENTRA_TENANT_ID": "0ad0fbf8-69ca-4e5e-afad-cd70424ac626",
     "ENTRA_CLIENT_ID": "20936b15-0b73-47f5-912f-737eab3de293",
+    "MAIL_TRANSPORT": "smtp",
     "DEFAULT_CAMPAIGN_PACE": "12",
     "MAX_CAMPAIGN_RECIPIENTS": "300"
   }

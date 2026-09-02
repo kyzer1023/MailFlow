@@ -233,8 +233,123 @@ describe("MicrosoftAuthService", () => {
     expect(completed.user).toMatchObject({ id: "user-1", objectId: "object-123", mailboxAddress: "member@example.test" });
     expect(completed.returnTo).toBe("/campaigns/new");
     expect(completed.sessionCookie).toContain("HttpOnly");
+    expect(tokenStore.record?.resource).toBe("graph_mail");
     expect(tokenStore.record?.encryptedRefreshToken).not.toContain("refresh-fixture");
     expect(await decryptRefreshToken(tokenStore.record?.encryptedRefreshToken ?? "", "token secret")).toBe("refresh-fixture");
     expect(await service.refreshUserAccessToken("user-1")).toMatchObject({ accessToken: "access-fixture", refreshToken: "refresh-fixture" });
+  });
+
+  it("identifies an SMTP-mode mailbox from the verified ID token without calling Graph", async () => {
+    const tokenStore = new MemoryTokenStore();
+    const userStore = new MemoryUserStore();
+    const sessionStore = new MemorySessionStore();
+    const stateStore = new OneTimeStateStore();
+    const claims = {
+      tid: "tenant-123",
+      aud: "client-123",
+      iss: "https://login.microsoftonline.com/tenant-123/v2.0",
+      oid: "object-123",
+      nonce: "placeholder",
+      preferred_username: "member@example.test",
+      name: "Fixture Member",
+      exp: 2_000_000_000,
+    };
+    const fetchImpl: FetchLike = async () => new Response(JSON.stringify({
+      access_token: "smtp-access-fixture",
+      refresh_token: "smtp-refresh-fixture",
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "openid offline_access https://outlook.office.com/SMTP.Send",
+      id_token: unsignedJwt(claims),
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const service = new MicrosoftAuthService({
+      tenantId: "tenant-123",
+      clientId: "client-123",
+      clientSecret: "client secret fixture",
+      redirectUri: "https://mailflow.example.test/auth/microsoft/callback",
+      scopes: ["openid", "profile", "email", "offline_access", "https://outlook.office.com/SMTP.Send"],
+    }, null, {
+      userStore,
+      sessionStore,
+      tokenStore,
+      stateStore,
+      stateSecret: "state secret",
+      tokenEncryptionSecret: "token secret",
+      secureCookies: false,
+      fetchImpl,
+      now: () => 1_000,
+      verifyIdTokenSignature: false,
+    });
+    const started = await service.beginSignIn();
+    claims.nonce = started.nonce;
+    const completed = await service.completeSignIn({ code: "auth-code", state: started.state, stateCookieValue: parseCookie(started.stateCookie, OAUTH_STATE_COOKIE_NAME) });
+    expect(completed.user).toMatchObject({ objectId: "object-123", mailboxAddress: "member@example.test", displayName: "Fixture Member" });
+    expect(tokenStore.record?.resource).toBe("smtp");
+    expect(tokenStore.record?.grantedScopes).toContain("https://outlook.office.com/SMTP.Send");
+  });
+
+  it("stores a separate OneDrive grant only for the already signed-in Microsoft identity", async () => {
+    const tokenStore = new MemoryTokenStore();
+    const userStore = new MemoryUserStore();
+    const sessionStore = new MemorySessionStore();
+    const stateStore = new OneTimeStateStore();
+    const expectedUser: AuthenticatedUser = {
+      id: "user-1",
+      tenantId: "tenant-123",
+      objectId: "object-123",
+      displayName: "Fixture Member",
+      principalName: "member@example.test",
+      mailboxAddress: "member@example.test",
+    };
+    const claims = {
+      tid: "tenant-123",
+      aud: "client-123",
+      iss: "https://login.microsoftonline.com/tenant-123/v2.0",
+      oid: "object-123",
+      nonce: "placeholder",
+      preferred_username: "member@example.test",
+      exp: 2_000_000_000,
+    };
+    const fetchImpl: FetchLike = async () => new Response(JSON.stringify({
+      access_token: "onedrive-access-fixture",
+      refresh_token: "onedrive-refresh-fixture",
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "openid offline_access Files.ReadWrite.AppFolder",
+      id_token: unsignedJwt(claims),
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const service = new MicrosoftAuthService({
+      tenantId: "tenant-123",
+      clientId: "client-123",
+      clientSecret: "client secret fixture",
+      redirectUri: "https://mailflow.example.test/auth/microsoft/callback",
+      scopes: ["openid", "profile", "email", "offline_access", "Files.ReadWrite.AppFolder"],
+    }, null, {
+      userStore,
+      sessionStore,
+      tokenStore,
+      stateStore,
+      stateSecret: "state secret",
+      tokenEncryptionSecret: "token secret",
+      secureCookies: false,
+      fetchImpl,
+      now: () => 1_000,
+      verifyIdTokenSignature: false,
+    });
+    const started = await service.beginSignIn("/flows/new/recipients", "onedrive");
+    expect(started.state).toMatch(/^onedrive\./u);
+    claims.nonce = started.nonce;
+
+    const completed = await service.completeResourceConsent({
+      code: "auth-code",
+      state: started.state,
+      stateCookieValue: parseCookie(started.stateCookie, OAUTH_STATE_COOKIE_NAME),
+    }, expectedUser);
+
+    expect(completed.returnTo).toBe("/flows/new/recipients");
+    expect(tokenStore.record?.resource).toBe("onedrive");
+    expect(tokenStore.record?.grantedScopes).toContain("Files.ReadWrite.AppFolder");
+    expect(userStore.users).toHaveLength(0);
+    expect(sessionStore.records.size).toBe(0);
   });
 });

@@ -7,6 +7,7 @@ import type {
   TemplateVersionRecord,
   UserRecord,
 } from "../../domain/types";
+import type { AttachmentRepository } from "../attachments/contracts";
 
 /**
  * Structural D1 types. Keeping these local avoids making the domain depend on
@@ -72,7 +73,11 @@ export interface CampaignRepository {
   getByIdForOwner(id: string, ownerUserId: string): Promise<CampaignRecord | null>;
   getByIdempotencyKey(ownerUserId: string, idempotencyKey: string): Promise<CampaignRecord | null>;
   listByOwner(ownerUserId: string, limit?: number): Promise<CampaignRecord[]>;
-  create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[]): Promise<void>;
+  /**
+   * Creates the campaign snapshot, recipient jobs, and (when present) the
+   * owner-matching attachment-set association in one D1 batch.
+   */
+  create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[], attachmentSetId?: string | null): Promise<void>;
   /** Conditional lifecycle transitions return false when a concurrent update won. */
   markValidated(id: string, ownerUserId: string, now: string): Promise<boolean>;
   queue(id: string, ownerUserId: string, now: string): Promise<boolean>;
@@ -139,4 +144,5 @@ export interface Repositories {
   campaigns: CampaignRepository;
   recipientJobs: RecipientJobRepository;
   audit: AuditRepository;
+  attachments: AttachmentRepository;
 }

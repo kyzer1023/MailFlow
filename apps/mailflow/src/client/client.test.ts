@@ -1,11 +1,12 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { buildMessagePreviews, createCampaignPayload, representativeRows } from "./campaign";
+import { buildMessagePreviews, createCampaignPayload, formatAttachmentSize, representativeRows, validateAttachmentSelection } from "./campaign";
 import { mapSpreadsheetRows, mappingToRecipientConfiguration, mappingsForCurrentTable, recipientConfigurationToClientMapping } from "./mapping";
 import { resultsToCsv } from "./results-export";
 import { parseAndSelectSpreadsheet, parseCsvText, parseSpreadsheet, parseXlsx, selectSpreadsheetTable } from "./spreadsheet";
 import { buildPreviewSrcDoc, escapeMergeValue, renderTemplate, replaceTextSelection, sanitizeTemplateHtml } from "./template";
 import type { MappedRecipientRow, NormalizedRecipientRow, SpreadsheetTable } from "./types";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES } from "./types";
 import { extractPlaceholders, parseEmailList, validateClientCampaign, validateMappedRecipientRows } from "./validation";
 
 function makeTable(rows: readonly { sourceRow: number; values: readonly string[] }[]): SpreadsheetTable {
@@ -396,6 +397,7 @@ describe("campaign payload and result export", () => {
       validation,
     });
     expect(payload).not.toHaveProperty("senderAddress");
+    expect(payload.attachmentSetId).toBeNull();
     expect(payload.idempotencyKey).toBe("campaign-request-1");
     expect(payload.rows[0]).toMatchObject({ to: "a@example.com", renderedSubject: "Hi Ada", renderedBodyHtml: "<p>Ada</p>" });
     expect(payload.validRecipients).toBe(1);
@@ -409,6 +411,54 @@ describe("campaign payload and result export", () => {
       rows,
       validation: { ...validation, ok: false, issues: [{ code: "blocked", message: "blocked" }] },
     })).toThrow();
+  });
+
+  it("validates supported campaign attachment types, empty files, and duplicates", () => {
+    const pdf = new File(["pdf"], "agenda.pdf", { type: "application/pdf" });
+    const empty = new File([], "empty.txt", { type: "text/plain" });
+    const unsupported = new File(["binary"], "run.exe", { type: "application/octet-stream" });
+    const result = validateAttachmentSelection([pdf, empty, unsupported, new File(["same"], "agenda.pdf", { type: "application/pdf" })]);
+    expect(result.accepted).toEqual([pdf]);
+    expect(result.rejected.map((item) => item.code)).toEqual(["empty", "unsupported", "duplicate"]);
+  });
+
+  it("enforces five files and a two MiB combined raw limit", () => {
+    const existing = Array.from({ length: ATTACHMENT_MAX_FILES - 1 }, (_, index) => ({
+      id: `file-${index}`,
+      name: `file-${index}.txt`,
+      mediaType: "text/plain",
+      byteSize: 1,
+      status: "ready" as const,
+    }));
+    const last = new File(["last"], "last.txt", { type: "text/plain" });
+    const tooMany = new File(["extra"], "extra.txt", { type: "text/plain" });
+    const countResult = validateAttachmentSelection([last, tooMany], existing);
+    expect(countResult.accepted).toEqual([last]);
+    expect(countResult.rejected[0].code).toBe("too_many");
+
+    const almostFull = [{ ...existing[0], byteSize: ATTACHMENT_MAX_BYTES - 2 }];
+    const tooLarge = new File(["123"], "too-large.txt", { type: "text/plain" });
+    expect(validateAttachmentSelection([tooLarge], almostFull).rejected[0].code).toBe("too_large");
+    expect(formatAttachmentSize(ATTACHMENT_MAX_BYTES)).toBe("20 MB");
+  });
+
+  it("serializes only an opaque attachment set ID and never a browser File", () => {
+    const row = mappedRow(2, "a@example.com", "Ada");
+    const validation = validateClientCampaign({ senderAddress: "sender@example.com", subjectTemplate: "Hello", bodyHtml: "<p>Hello</p>", rows: [row] });
+    const payload = createCampaignPayload({
+      idempotencyKey: "campaign-with-attachments",
+      attachmentSetId: "set-1",
+      flowId: "flow-1",
+      subjectTemplate: "Hello",
+      bodyHtml: "<p>Hello</p>",
+      mapping: { toField: "email" },
+      pacePerMinute: 12,
+      rows: [row],
+      validation,
+    });
+    expect(payload.attachmentSetId).toBe("set-1");
+    expect(Object.values(payload).some((value) => value instanceof File)).toBe(false);
+    expect(payload).not.toHaveProperty("attachments");
   });
 
   it("exports result rows with quoting and formula-injection protection", () => {

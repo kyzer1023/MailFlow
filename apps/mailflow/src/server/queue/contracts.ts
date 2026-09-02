@@ -1,5 +1,5 @@
 import type { CampaignRecord } from "../../domain/types";
-import type { MailProvider } from "../../domain/mail-provider";
+import type { MailAttachment, MailProvider } from "../../domain/mail-provider";
 import type { CampaignRepository, RecipientJobRepository } from "../database/contracts";
 
 export interface CampaignTickMessage {
@@ -26,6 +26,14 @@ export interface CampaignTickDependencies {
   recipientJobs: RecipientJobRepository;
   queue: CampaignQueue;
   mailProvider: MailProvider | ((campaign: CampaignRecord) => Promise<MailProvider> | MailProvider);
+  /**
+   * Resolves the immutable campaign-wide attachment set before a recipient is
+   * claimed.  A missing or corrupt set must reject the campaign before Graph
+   * receives any request.
+   */
+  attachmentLoader: (campaign: CampaignRecord) => Promise<readonly MailAttachment[]>;
+  /** Best-effort terminal cleanup. Scheduled cleanup retries failed deletes. */
+  attachmentCleanup: (campaignId: string) => Promise<void>;
   now?: () => Date;
   claimToken?: (campaignId: string, now: Date) => string;
 }
@@ -33,6 +41,7 @@ export interface CampaignTickDependencies {
 export type TickResult =
   | { kind: "ignored"; reason: "missing_campaign" | "paused" | "terminal" | "not_runnable" | "claim_lost" | "send_claim_lost" }
   | { kind: "completed"; campaignId: string }
+  | { kind: "failed"; campaignId: string; reason: "attachments_unavailable" }
   | { kind: "scheduled"; campaignId: string; jobId: string; delaySeconds: number; outcome: "accepted" | "failed" | "retry_scheduled" | "unknown" }
   | { kind: "persistence_error"; campaignId: string; jobId: string; outcome: "accepted" | "failed" | "retry_scheduled" | "unknown" };
 
@@ -47,4 +56,3 @@ export function cloudflareQueueAdapter(producer: CloudflareQueueProducer): Campa
     },
   };
 }
-

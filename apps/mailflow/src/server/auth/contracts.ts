@@ -24,6 +24,7 @@ export interface UserStore {
 
 export interface OAuthTokenRecord {
   userId: string;
+  resource: OAuthTokenResource;
   encryptedRefreshToken: string;
   accessTokenExpiresAt: number;
   grantedScopes: string[];
@@ -31,10 +32,12 @@ export interface OAuthTokenRecord {
   updatedAt: number;
 }
 
+export type OAuthTokenResource = "graph_mail" | "smtp" | "onedrive";
+
 export interface OAuthTokenStore {
   save(record: OAuthTokenRecord): Promise<void>;
-  findByUserId(userId: string): Promise<OAuthTokenRecord | null>;
-  deleteByUserId?(userId: string): Promise<void>;
+  findByUserId(userId: string, resource: OAuthTokenResource): Promise<OAuthTokenRecord | null>;
+  deleteByUserId?(userId: string, resource?: OAuthTokenResource): Promise<void>;
 }
 
 export interface OAuthStatePayload {

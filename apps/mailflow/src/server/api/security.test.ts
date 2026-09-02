@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isCampaignTickMessage } from "./contracts";
 import { safeSourceFilename, validateTemplateHtml, validateTemplateSubject } from "./security";
-import { campaignCreateSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
+import { attachmentSetCreateSchema, campaignCreateSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
 
 describe("Worker API security boundaries", () => {
   it("rejects active HTML and accepts a simple email template", () => {
@@ -107,6 +107,24 @@ describe("Worker API security boundaries", () => {
       rows: [{ sourceRow: 2, to: "member@example.test", cc: [], bcc: [], replyTo: [], mergeData: {}, renderedSubject: "Subject", renderedBodyHtml: "<p>Hello</p>" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts only an opaque attachment-set identifier on campaign creation", () => {
+    const result = campaignCreateSchema.safeParse({
+      flowId: "flow_1",
+      attachmentSetId: "attachment_set_1",
+      subjectTemplate: "Subject",
+      bodyHtml: "<p>Hello</p>",
+      placeholderManifest: [],
+      recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+      totalRecipients: 1,
+      validRecipients: 1,
+      skippedRecipients: 0,
+      rows: [{ sourceRow: 2, to: "member@example.test", cc: [], bcc: [], replyTo: [], mergeData: {}, renderedSubject: "Subject", renderedBodyHtml: "<p>Hello</p>" }],
+      idempotencyKey: "campaign-request-1",
+    });
+    expect(result.success).toBe(true);
+    expect(attachmentSetCreateSchema.safeParse({ idempotencyKey: "upload-1", objectKey: "private" }).success).toBe(false);
   });
 
   it("accepts bounded recipient metadata for test sends", () => {

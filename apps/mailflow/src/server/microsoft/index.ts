@@ -3,5 +3,8 @@ export * from "./adapter";
 export * from "./errors";
 export * from "./graph";
 export * from "./oauth";
+export * from "./smtp";
+export * from "./smtp-adapter";
+export * from "./smtp-mime";
 export * from "./test-send";
 export * from "./token-crypto";

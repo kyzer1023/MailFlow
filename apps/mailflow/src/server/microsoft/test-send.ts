@@ -1,6 +1,7 @@
 import { GraphApiError } from "./graph";
 import type { GraphMailProviderContract } from "./graph";
 import type { MailImportance } from "../../domain/types";
+import type { MailAttachment, MailProvider } from "../../domain/mail-provider";
 
 export interface TestSendInput {
   subject: string;
@@ -9,6 +10,7 @@ export interface TestSendInput {
   bcc?: readonly string[];
   replyTo?: readonly string[];
   importance?: MailImportance;
+  attachments?: readonly MailAttachment[];
 }
 
 export interface TestSendResult {
@@ -16,7 +18,8 @@ export interface TestSendResult {
   userMessage: "Accepted by Microsoft";
   senderAddress: string;
   recipientAddress: string;
-  graphStatus: number;
+  graphStatus?: number;
+  smtpStatus?: number;
   requestId?: string;
 }
 
@@ -49,6 +52,9 @@ export class TestSendService {
     const user = await this.provider.getCurrentUser(accessToken);
     const self = mailboxAddress(user.mail, user.userPrincipalName);
     if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+    if (input.attachments?.length) {
+      throw new TestSendError("Attachments require the SMTP transport");
+    }
 
     try {
       const result = await this.provider.sendMail(accessToken, {
@@ -82,4 +88,34 @@ export async function sendTestToSelf(
   input: TestSendInput,
 ): Promise<TestSendResult> {
   return new TestSendService(provider).sendToSelf(accessToken, input);
+}
+
+export async function sendProviderTestToSelf(
+  provider: MailProvider,
+  senderAddress: string,
+  input: TestSendInput,
+): Promise<TestSendResult> {
+  const self = mailboxAddress(senderAddress, null);
+  if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+  if (!input || typeof input.subject !== "string" || typeof input.bodyHtml !== "string" || !input.subject.trim()) {
+    throw new TestSendError("Add a subject and message before sending a test");
+  }
+  const result = await provider.send({
+    to: self,
+    cc: [...(input.cc ?? [])],
+    bcc: [...(input.bcc ?? [])],
+    replyTo: [...(input.replyTo ?? [])],
+    importance: input.importance ?? "normal",
+    subject: input.subject,
+    htmlBody: input.bodyHtml,
+    attachments: input.attachments,
+  }, { sendKey: `test:${crypto.randomUUID()}` });
+  if (result.kind !== "accepted") throw new TestSendError(result.message);
+  return {
+    status: "accepted",
+    userMessage: "Accepted by Microsoft",
+    senderAddress: self,
+    recipientAddress: self,
+    smtpStatus: 250,
+  };
 }

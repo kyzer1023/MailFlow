@@ -8,11 +8,12 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | --- | --- |
 | Worker and static site | `mailflow` |
 | D1 database | `mailflow-db`, binding `DB` |
+| Private attachment storage | Each member's OneDrive `Apps/MailFlow` folder |
 | Queue | `mailflow-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
 | Public origin | `https://mailflow.kyzer-hono-test.workers.dev` |
 | OAuth callback | `<PUBLIC_ORIGIN>/auth/microsoft/callback` |
 | Entra application | Existing single-tenant application named `MailFlow` |
-| Graph permissions | Delegated `User.Read` and delegated `Mail.Send` |
+| Microsoft permissions | SMTP target: delegated `SMTP.Send`; attachment storage: delegated `Files.ReadWrite.AppFolder`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
 
 The source configuration is `../apps/mailflow/wrangler.jsonc`. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
 
@@ -33,7 +34,8 @@ Then confirm:
 - `.env` and `.dev.vars` are ignored.
 - No password, token, client secret, or account address is staged in Git.
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
-- The Entra app remains single tenant and uses only delegated Graph permissions.
+- The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
+- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
 
 ## Local full-stack development
@@ -47,6 +49,7 @@ Before testing sign-in locally:
 3. Confirm that `http://localhost:5173/auth/microsoft/callback` remains registered as a Web redirect URI in the existing Entra application.
 4. Run `npm run db:migrate:local` once for a fresh local D1 state.
 5. Run `npm run dev`, then verify `/api/me` returns `401` before sign-in and that Microsoft sign-in returns to the local callback.
+6. In SMTP mode, verify `/api/me` reports attachments enabled after consent and that a synthetic multi-file upload appears in Review. Do not start a campaign unless its test recipients are explicitly authorized.
 
 If `/auth/microsoft/start` returns `503`, the Worker is running but one or more required values are missing from the app-local `.env` or `.dev.vars`. A successful landing-page response does not by itself prove local OAuth is configured.
 
@@ -60,7 +63,7 @@ These actions create persistent external resources and require action-time user 
 4. Create Queue `mailflow-campaign-ticks`.
 5. Deploy once to obtain the `workers.dev` origin, or confirm the intended custom domain.
 6. Set `PUBLIC_ORIGIN` to that exact HTTPS origin.
-7. Apply production D1 migrations.
+7. Apply production D1 migrations, including `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`.
 8. Store every secret using Wrangler secret storage, never `vars` or a committed file.
 9. Deploy the verified build.
 
@@ -76,7 +79,12 @@ These actions change tenant state and require action-time user confirmation.
 4. Keep the local callback only while local OAuth testing is needed.
 5. Create one confidential client credential with the shortest practical lifetime.
 6. Copy the credential value directly into the Worker secret prompt. Do not save it in `.env`, notes, chat, or screenshots.
-7. Confirm delegated `User.Read` and `Mail.Send`; do not add application `Mail.Send`.
+7. OneDrive consent reuses the existing `/auth/microsoft/callback` registration. A purpose-prefixed OAuth state dispatches the shared callback without another Entra redirect URI.
+8. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; for attachment storage, request delegated `Files.ReadWrite.AppFolder`. Never use SMTP Basic authentication or application-level mail or file access.
+
+The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
+
+The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
 
@@ -84,14 +92,15 @@ These actions change tenant state and require action-time user confirmation.
 2. Primary account sign-in, tenant identity, dashboard, and logout.
 3. Secondary account sign-in through the same application.
 4. One test-send to the authenticated mailbox.
-5. One five-recipient campaign from the primary account.
-6. Queue progress after closing the browser.
-7. Pause and resume.
-8. Result CSV export.
-9. Gmail receipt observation and Outlook Sent Items observation.
-10. A small campaign from the secondary account, proving the sender is locked to that mailbox.
+5. One attachment test-send to the authenticated mailbox with two small synthetic files; verify exact filenames and downloaded hashes in Sent Items.
+6. One five-recipient campaign from the primary account.
+7. Queue progress after closing the browser.
+8. Pause and resume.
+9. Result CSV export.
+10. Gmail receipt observation and Outlook Sent Items observation.
+11. A small campaign from the secondary account, proving the sender is locked to that mailbox.
 
-Graph `202 Accepted` is recorded as `Accepted by Microsoft`. It is not proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
+Graph `202 Accepted` or SMTP's final post-DATA `250` is recorded as `Accepted by Microsoft`. Neither is proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
 
 ## Sanitized evidence template
 
@@ -102,7 +111,7 @@ Timestamp (MYT):
 Deployment URL:
 Sender alias: primary | secondary
 Recipient count:
-Graph result: accepted | failed | unknown
+Provider result: accepted | failed | unknown
 Campaign result:
 Sent Items observed: yes | no | not checked
 Inbox receipt observed: yes | no | partial | not checked
@@ -115,5 +124,6 @@ Notes without addresses, tokens, or message content:
 - Never reset an `unknown` row to pending automatically.
 - A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.
 - Preserve D1 and Queue resources when rolling back application code.
+- Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
 - If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.
 - If a session or token-encryption secret is exposed, rotate it and invalidate affected sessions. Follow the token-key rotation path before changing the encryption key.

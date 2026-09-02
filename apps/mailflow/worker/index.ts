@@ -1,4 +1,4 @@
-import { fetchMailFlow, processQueueBatch } from "../src/server/api/app";
+import { fetchMailFlow, processAttachmentCleanup, processQueueBatch } from "../src/server/api/app";
 import type { MailFlowBindings, MailFlowExecutionContext, QueueBatch } from "../src/server/api/contracts";
 import type { CampaignTickMessage } from "../src/server/queue/contracts";
 
@@ -27,6 +27,10 @@ const worker = {
 
   async queue(batch: QueueBatch<CampaignTickMessage>, env: MailFlowBindings): Promise<void> {
     await processQueueBatch(batch as QueueBatch<unknown>, env);
+  },
+
+  async scheduled(_controller: unknown, env: MailFlowBindings): Promise<void> {
+    await processAttachmentCleanup(env);
   },
 };
 

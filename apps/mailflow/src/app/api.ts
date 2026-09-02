@@ -6,7 +6,7 @@ import type {
   RecipientJobRecord,
   TemplateVersionRecord,
 } from "../domain/types";
-import type { CampaignCreatePayload } from "../client/types";
+import type { AttachmentFileRecord, AttachmentSetRecord, CampaignCreatePayload } from "../client/types";
 
 export interface ApiUser {
   readonly id: string;
@@ -18,6 +18,13 @@ export interface ApiUser {
 export interface ApiConfig {
   readonly defaultPacePerMinute: number;
   readonly maxCampaignRecipients: number;
+  readonly mailTransport?: "graph" | "smtp";
+  readonly attachmentsEnabled?: boolean;
+  readonly attachmentsReauthorizationRequired?: boolean;
+  readonly attachmentsSmtpAuthorizationRequired?: boolean;
+  readonly attachmentsOneDriveAuthorizationRequired?: boolean;
+  readonly maxAttachmentFiles?: number;
+  readonly maxAttachmentBytes?: number;
 }
 
 export interface MeResponse {
@@ -49,7 +56,8 @@ export interface TestSendResponse {
     readonly userMessage: "Accepted by Microsoft";
     readonly senderAddress: string;
     readonly recipientAddress: string;
-    readonly graphStatus: number;
+    readonly graphStatus?: number;
+    readonly smtpStatus?: number;
     readonly requestId?: string;
   };
 }
@@ -81,6 +89,10 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   readonly csrfToken?: string | null;
 };
 
+type FormDataRequestOptions = Omit<RequestInit, "body" | "method"> & {
+  readonly csrfToken?: string | null;
+};
+
 async function readError(response: Response): Promise<ApiErrorBody | null> {
   try {
     const value = await response.json() as unknown;
@@ -93,7 +105,8 @@ async function readError(response: Response): Promise<ApiErrorBody | null> {
 /** Same-origin API client. Credentials stay in cookies and never enter JSON. */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body !== undefined) headers.set("Content-Type", "application/json");
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body !== undefined && !isFormData) headers.set("Content-Type", "application/json");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
   const method = options.method?.toUpperCase() ?? "GET";
   const response = await fetch(path, {
@@ -101,7 +114,26 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     credentials: "same-origin",
     cache: options.cache ?? (method === "GET" ? "no-store" : undefined),
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : isFormData ? options.body as FormData : JSON.stringify(options.body),
+  });
+  if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
+  if (response.status === 204) return undefined as T;
+  const contentType = response.headers.get("Content-Type") || "";
+  if (contentType.toLowerCase().includes("json")) return await response.json() as T;
+  return await response.text() as T;
+}
+
+/** Submit multipart data without setting Content-Type, preserving the browser boundary. */
+export async function apiRequestFormData<T>(path: string, body: FormData, csrfToken?: string | null, options: FormDataRequestOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  const response = await fetch(path, {
+    ...options,
+    method: "POST",
+    credentials: "same-origin",
+    cache: options.cache ?? "no-store",
+    headers,
+    body,
   });
   if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
   if (response.status === 204) return undefined as T;
@@ -179,6 +211,36 @@ export function getCampaigns(): Promise<{ campaigns: readonly Omit<CampaignRecor
 
 export function createCampaign(payload: CampaignCreatePayload, csrfToken: string): Promise<CampaignResponse> {
   return apiRequest<CampaignResponse>("/api/campaigns", { method: "POST", body: payload, csrfToken });
+}
+
+export interface AttachmentSetResponse {
+  readonly attachmentSet: AttachmentSetRecord;
+}
+
+export interface AttachmentFileResponse {
+  readonly file: AttachmentFileRecord;
+  readonly attachmentSet?: AttachmentSetRecord;
+}
+
+export function createAttachmentSet(idempotencyKey: string, csrfToken: string): Promise<AttachmentSetResponse> {
+  return apiRequest<AttachmentSetResponse>("/api/attachment-sets", {
+    method: "POST",
+    body: { idempotencyKey },
+    csrfToken,
+  });
+}
+
+export function uploadAttachmentFile(setId: string, file: File, csrfToken: string): Promise<AttachmentFileResponse> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  return apiRequestFormData<AttachmentFileResponse>(`/api/attachment-sets/${encodeURIComponent(setId)}/files`, body, csrfToken);
+}
+
+export function deleteAttachmentFile(setId: string, fileId: string, csrfToken: string): Promise<void> {
+  return apiRequest<void>(`/api/attachment-sets/${encodeURIComponent(setId)}/files/${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+    csrfToken,
+  });
 }
 
 export function getCampaign(campaignId: string): Promise<CampaignResponse> {
