@@ -68,3 +68,29 @@
 - [P3] A future iteration could add syntax highlighting to source mode. It is not necessary for the requested Power Automate-style toggle or accurate HTML rendering.
 
 final result: passed
+
+## 2026-09-03 - Review attachment metadata alignment
+
+- Source visual truth: `C:/Users/kyzer/AppData/Local/Temp/codex-clipboard-c1d5540a-c257-40df-91f1-264fb7eda885.png` at 821 x 114 pixels.
+- Browser-rendered implementation: `C:/Users/kyzer/.codex/visualizations/2026/09/01/01a05e0c-6089-7f83-bf22-f6f0f8dd171e/mailflow-review-attachments-after.jpg` at 820 x 105 pixels, CSS scale 1.
+- Combined comparison: `C:/Users/kyzer/.codex/visualizations/2026/09/01/01a05e0c-6089-7f83-bf22-f6f0f8dd171e/mailflow-review-attachments-comparison.png`.
+- State: focused review-message metadata with two campaign attachments.
+
+### Comparison history
+
+- Pass 1, P1: the fixed 58px label track was narrower than `Attachments`, so the label collided with the first filename and made the row difficult to scan.
+- Fix: the definition list now owns a content-sized label column and a flexible value column; each row participates through CSS subgrid. Labels do not wrap, while long values wrap safely.
+- Pass 2: desktop browser measurements show a consistent 12px label-to-value gap on all three rows and no horizontal overflow. A focused 390px-width check also shows the same 12px gap with no horizontal overflow.
+
+### Required fidelity surfaces
+
+- Typography: existing family, weight, size, line height, and hierarchy are unchanged; the attachment value remains readable when it wraps.
+- Spacing and layout: To, Subject, and Attachments share one aligned label track and a 12px inter-column gap.
+- Colors and tokens: existing Paper, Deep Ink, muted label, and divider tokens are unchanged.
+- Image quality and assets: this metadata region contains no image assets; no icons or imagery changed.
+- Copy and content: labels, recipient, subject, filenames, and sizes are unchanged.
+- Browser console warnings and errors: none in the focused verification page.
+
+No actionable P0, P1, or P2 findings remain.
+
+final result: passed
