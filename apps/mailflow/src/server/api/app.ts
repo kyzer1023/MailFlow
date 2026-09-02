@@ -27,7 +27,19 @@ import { AuthFlowError, MicrosoftAuthService } from "../auth/service";
 import { createD1AuthStores } from "../database/d1-auth";
 import { createD1Repositories } from "../database/d1";
 import type { Repositories } from "../database/contracts";
-import { delegatedGraphMailProvider, GraphApiError, GraphMailProvider, sendTestToSelf } from "../microsoft";
+import {
+  delegatedGraphMailProvider,
+  delegatedSmtpMailProvider,
+  ExchangeOnlineSmtpClient,
+  GraphApiError,
+  GraphMailProvider,
+  resolveMailTransport,
+  sendProviderTestToSelf,
+  sendTestToSelf,
+  SMTP_ENTRA_SCOPES,
+  TestSendError,
+} from "../microsoft";
+import type { MailTransport } from "../microsoft";
 import { OAuthProviderError } from "../microsoft/oauth";
 import { handleCampaignQueueMessage, cloudflareQueueAdapter } from "../queue";
 import {
@@ -232,7 +244,7 @@ async function requireMutationSession(context: MailFlowContext): Promise<{ user:
   return authenticated;
 }
 
-function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: GraphMailProvider; auth: MicrosoftAuthService } {
+function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: GraphMailProvider; smtp: ExchangeOnlineSmtpClient; auth: MicrosoftAuthService; mailTransport: MailTransport } {
   const tenantId = textEnv(context.env.ENTRA_TENANT_ID);
   const clientId = textEnv(context.env.ENTRA_CLIENT_ID);
   const clientSecret = textEnv(context.env.ENTRA_CLIENT_SECRET);
@@ -241,15 +253,18 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
   if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
   const origin = redirectOrigin ?? applicationOrigin(context);
   const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
+  const mailTransport = resolveMailTransport(context.env.MAIL_TRANSPORT);
   const config = {
     tenantId,
     clientId,
     clientSecret,
     redirectUri,
+    ...(mailTransport === "smtp" ? { scopes: SMTP_ENTRA_SCOPES } : {}),
   };
   const graph = new GraphMailProvider({ requestTimeoutMs: 30_000 });
+  const smtp = new ExchangeOnlineSmtpClient({ timeoutMs: 30_000 });
   const stores = createD1AuthStores(context.env.DB);
-  const auth = new MicrosoftAuthService(config, graph, {
+  const auth = new MicrosoftAuthService(config, mailTransport === "graph" ? graph : null, {
     userStore: stores.userStore,
     sessionStore: stores.sessionStore,
     tokenStore: stores.tokenStore,
@@ -260,7 +275,7 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
     sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
     sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
   });
-  return { graph, auth };
+  return { graph, smtp, auth, mailTransport };
 }
 
 function routeParam(context: MailFlowContext, name: string): string {
@@ -780,19 +795,22 @@ app.post("/api/campaigns/:id/test-send", async (context) => {
   const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
   try {
-    const { auth, graph } = configFor(context);
+    const { auth, graph, smtp, mailTransport } = configFor(context);
     const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
-    const result = await sendTestToSelf(graph, tokens.accessToken, {
+    const inputValue = {
       subject: subject.subject,
       bodyHtml: body.html,
       cc: input.cc,
       bcc: input.bcc,
       replyTo: input.replyTo,
       importance: input.importance,
-    });
+    };
+    const result = mailTransport === "smtp"
+      ? await sendProviderTestToSelf(delegatedSmtpMailProvider(smtp, tokens.accessToken, authenticated.user.mailboxAddress), authenticated.user.mailboxAddress, inputValue)
+      : await sendTestToSelf(graph, tokens.accessToken, inputValue);
     return context.json({ result });
   } catch (errorValue) {
-    const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError
+    const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError || errorValue instanceof TestSendError
       ? errorValue.message
       : "The test message could not be accepted by Microsoft.";
     const status = errorValue instanceof GraphApiError && errorValue.category === "unauthorized"
@@ -896,8 +914,9 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
         recipientJobs: repo.recipientJobs,
         queue: cloudflareQueueAdapter(bindings.CAMPAIGN_QUEUE),
         mailProvider: async (campaign) => {
-          const tokens = await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId);
-          return delegatedGraphMailProvider(authServices!.graph, tokens.accessToken);
+          return authServices!.mailTransport === "smtp"
+            ? delegatedSmtpMailProvider(authServices!.smtp, async () => (await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId)).accessToken, campaign.senderAddress)
+            : delegatedGraphMailProvider(authServices!.graph, async () => (await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId)).accessToken);
         },
       });
       if (result.kind === "persistence_error") message.retry({ delaySeconds: 60 });

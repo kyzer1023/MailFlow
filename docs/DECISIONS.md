@@ -2,7 +2,7 @@
 
 ## ADR-001 - Use Microsoft Graph instead of SMTP
 
-Status: accepted.
+Status: superseded by ADR-008.
 
 Mail Flow sends through delegated Microsoft Graph `Mail.Send`. This preserves the signed-in student's Outlook identity and avoids mailbox password storage, Basic SMTP authentication, and university-domain sender verification with an external provider.
 
@@ -42,3 +42,12 @@ Status: accepted.
 
 The root `.env` helps authorized local testing only. Passwords are never bundled, uploaded, stored in D1, copied to Cloudflare secrets, or used as an authentication architecture. Production authentication is interactive OAuth.
 
+## ADR-008 - Migrate mail transport from Graph to delegated OAuth SMTP
+
+Status: accepted for staged implementation.
+
+Mail Flow will use Exchange Online SMTP submission on port 587 with STARTTLS and delegated OAuth `SMTP.Send` as its target mail transport. This preserves the authenticated student's mailbox as the sender, creates a normal Sent Items copy, and supports MIME attachments without delegated `Mail.ReadWrite`. Mailbox passwords and SMTP Basic authentication remain prohibited.
+
+The rollout is deployment-selectable rather than an automatic per-message fallback. Microsoft access tokens are resource-specific, so Graph scopes and the Outlook SMTP scope cannot be treated as one interchangeable bearer token. Production remains on Graph until a Cloudflare-hosted SMTP test passes; switching to SMTP requires users to complete OAuth consent again. Graph code remains available for rollback during the validation period.
+
+SMTP transport must preserve ADR-005. A connection failure after the terminating DATA marker may have submitted the message and therefore becomes `unknown`; it is never automatically retried. Explicit pre-submission failures and explicit transient SMTP replies may be retried only when the provider can prove that no message was accepted.

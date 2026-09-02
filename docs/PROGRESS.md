@@ -8,7 +8,7 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Git: initialized on `main`; the initial implementation commit was created after the local verification and secret-history gate.
 - Visual references: seven approved PNG files present, desktop comparisons are stored under `qa/`, and responsive Chrome evidence is stored locally under ignored `output/playwright/`.
 - Local test environment: root `.env` present and ignored; passwords and secret values are not stored in source control.
-- Quality: TypeScript, 78 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
+- Quality: TypeScript, 81 unit and integration tests, production build, live Chrome smoke checks, responsive Playwright captures, and Wrangler deployment pass.
 - Deployment: live at `https://mailflow.kyzer-hono-test.workers.dev` with D1, Queues, Workers Static Assets, and Worker secrets.
 - Real Graph send: primary and secondary sender tests completed; each campaign recorded 5 accepted, 0 failed, 0 skipped, and 0 unknown.
 - Delivery observation: both distinct campaign subjects were found in all five approved Gmail inboxes. This is test evidence, not a general delivery guarantee.
@@ -321,3 +321,76 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Deployed Worker version `41f6518f-fb1f-48b1-82f7-fa060d535d19` to `https://mailflow.kyzer-hono-test.workers.dev` with the existing D1 and Queue bindings.
 - Post-deployment smoke checks returned `200 text/html` for the landing page and the expected unauthenticated `401 application/json` for `/api/me`.
 - No production data was changed and no real message was sent.
+
+### 2026-09-02 - OneDrive App Folder attachment feasibility
+
+- Investigated the stopped, undeployed R2 attachment workstream against the current authentication, Graph mail adapter, D1 repositories, campaign queue, and Cloudflare configuration.
+- Verified from current official Microsoft documentation that Graph App Folder is documented across OneDrive work/school and home, while delegated `Files.ReadWrite.AppFolder` remains preview and tenant consent policy can still require administrator approval.
+- Determined that direct `sendMail` is safe only when every attachment is under 3 MB and the complete serialized request remains below Graph's 4 MB write limit. The 3 MB to product-limit path requires per-recipient drafts, Outlook attachment upload sessions, delegated `Mail.ReadWrite`, and the existing `Mail.Send` for the final send.
+- Confirmed Workers Free constraints of 10 ms CPU, 128 MB memory, 50 external subrequests, and 100 MB request bodies, plus Queues Free's 128 KB messages, 10,000 daily operations, and 24-hour retention. The proposed design uses direct browser-to-OneDrive uploads, ID-only queue messages, and streamed range forwarding.
+- Identified Outlook's 150 MB per five-minute per-app/mailbox upload throttle as a required attachment-aware pacing constraint; the current 12 messages per minute is unsafe for large attachments.
+- Recorded the conditional go recommendation, architecture, permissions, migration plan, risks, manual USM tenant test, acceptance criteria, and 12 to 17 engineer-day estimate in `docs/ONEDRIVE_APP_FOLDER_FEASIBILITY.md`.
+- Documentation verification passed with `git diff --check`. Application tests were not rerun because this checkpoint changes documentation only.
+- Live tenant testing stopped before the authorization boundary because the current Entra app and stored refresh tokens do not include `Files.ReadWrite.AppFolder` or `Mail.ReadWrite`; adding them would change external tenant state and require interactive consent. No production configuration, storage, deployment, data, or mail was changed.
+
+### 2026-09-02 - USM delegated-permission consent probes
+
+- Used separate read-only OAuth authorization requests against the primary USM student identity to test `Files.ReadWrite.AppFolder` and `Mail.ReadWrite` independently. The permissions were requested dynamically and were not added to the live app registration.
+- `Files.ReadWrite.AppFolder` reached the ordinary Microsoft user-consent screen. This scope is not tenant-blocked for the tested account.
+- `Mail.ReadWrite` reached Microsoft's administrator-approval screen. The effective USM tenant policy prevents the tested ordinary student from consenting to that scope.
+- No consent button was accepted, no permission grant or app-registration change was made, no OneDrive folder or file was created, and no mail was sent.
+- This result narrows the production blocker: card-free App Folder storage can advance to an authorized API test, while attachments requiring Outlook drafts and upload sessions still require USM administrator approval for `Mail.ReadWrite`.
+
+### 2026-09-02 - Power Automate attachment-path clarification
+
+- Confirmed from the supplied flow captures that Google Drive file bytes are mapped into the Office 365 Outlook `Send an email (V2)` attachment `ContentBytes` field, producing ordinary file attachments rather than drive links.
+- Verified in the authenticated USM Power Automate environment that the tested student already has working Office 365 Outlook and Google Drive connector connections and that Power Automate is assigned in the tenant. No flow, connection, consent, or message was changed.
+- Corrected the earlier blanket feasibility statement: the 4 MB write ceiling and `Mail.ReadWrite` draft blocker apply to MailFlow's direct public Graph path, while Microsoft's managed Outlook connector documents a separate 49 MB maximum mail-content length.
+- Recorded the two Power Automate integration models and their tradeoffs. Run-only user connections preserve the invoking sender but require a Power Automate interaction; an HTTP-triggered central flow uses an embedded connection and does not automatically become the signed-in MailFlow member.
+- Identified the connector's default timeout retry behavior as incompatible with MailFlow's ambiguous-send no-retry rule unless explicitly overridden and tested.
+- Documentation verification passed with `git diff --check`. Application tests were not rerun because this checkpoint changes documentation only.
+
+### 2026-09-02 - Power Automate transport prototype and attachment E2E
+
+- Created two isolated flows in the current USM Power Automate environment without altering existing flows: `MailFlow Prototype - HTTP Outlook Delivery` and `MailFlow Prototype - Manual Attachment E2E`.
+- Configured the HTTP prototype for tenant-authenticated requests, one base64 attachment, explicit post-send success response, secure trigger/action inputs and outputs, and `None` retry policy on the Outlook action.
+- Confirmed the HTTP endpoint rejects unauthenticated requests with 401. The current local Entra credential returns `invalid_client` before it can obtain the required `https://service.flow.microsoft.com/` token, so no HTTP-triggered message was sent.
+- Confirmed the environment marks the HTTP flow `Activity suspended` and displays that premium flows are turned off. No license was purchased, no admin consent was requested, and no tenant or production configuration was changed.
+- Ran one authorized manual E2E send through the existing Office 365 Outlook connection to the single Gmail inbox visible in Chrome. Power Automate reported success, and Gmail showed the unique subject, synthetic HTML body, and `mailflow-prototype-proof.txt` attachment.
+- Inspected `EMAIL.xlsx` and found 831 unique official-email values. The workbook was not used to launch a campaign, and no other recipient was contacted.
+- Added a provider-neutral Power Automate adapter and nine unit tests. The adapter requires explicit flow confirmation and preserves the no-automatic-retry rule for ambiguous sends.
+- Recorded the architecture boundary, promotion gates, evidence, and operational constraints in `docs/POWER_AUTOMATE_PROTOTYPE.md`, `docs/ARCHITECTURE.md`, and ADR-008.
+- Verification passed: `npm test` completed type checking, both production builds, and 90 unit tests across 12 files. The existing chunk-size warning remains unchanged. No production deployment was performed.
+
+### 2026-09-02 - Power Automate HTML-body correction
+
+- The first Gmail delivery exposed the manually entered `<p>` element as literal text because it had been typed into the Outlook action's visual editor.
+- Replaced the entire Outlook `Body` value in source mode, removing both the escaped original paragraph and an intermediate duplicate created while diagnosing the editor behavior.
+- Ran a final bounded send to the same authorized Gmail inbox. Power Automate completed successfully; Gmail rendered exactly one paragraph with no visible HTML tags and retained `mailflow-prototype-proof.txt` as a normal attachment.
+- No existing user flow, additional recipient, license, admin consent, tenant configuration, or production deployment was changed.
+
+### 2026-09-02 - Power Automate prototype retirement
+
+- Retired the isolated Power Automate transport experiment after OAuth SMTP attachment delivery proved viable for the primary USM student account.
+- Removed the unwired application adapter, its nine dedicated tests, the prototype design note, the experimental architecture section, and the experimental ADR. Removed the managed-connector alternative from the separate OneDrive feasibility note while preserving the historical progress record.
+- `npm test` passes after cleanup with TypeScript, both production builds, 11 test files, and all 81 remaining unit and integration tests. The existing client chunk-size warning remains unchanged.
+- Permanently deleted only the two isolated cloud flows created for the experiment: `MailFlow Prototype - HTTP Outlook Delivery` and `MailFlow Prototype - Manual Attachment E2E`. The remaining pre-existing flows and connector connections were left unchanged.
+- Attempted an authentication-only SMTP recheck using the first student account and stopped before contacting SMTP because the ignored local Entra client-secret value was rejected during OAuth token exchange. The portal shows the application's single deployment credential remains active, but its value is intentionally unrecoverable and does not match the stale local copy. No email was created or sent.
+- After explicit authorization, created a separate one-day client secret inside the existing MailFlow Entra application and kept its value only in the in-memory probe. OAuth token exchange returned 200 for the first student account with delegated `SMTP.Send` present.
+- Completed an authentication-only Exchange Online SMTP session: greeting `220`, pre- and post-TLS `EHLO` `250`, `STARTTLS` `220`, XOAUTH2 advertised, `AUTH XOAUTH2` `235`, and `QUIT` `221`. The probe never issued `MAIL FROM`, `RCPT TO`, or `DATA`, so it could not create or send a message.
+- Deleted the temporary client secret immediately after the probe and verified that the credentials page returned to one client secret with the original `MailFlow Cloudflare Worker` credential still present. This confirms OAuth SMTP AUTH availability for the tested first student account only; it does not establish tenant-wide mailbox availability.
+- No production deployment, D1 data, Queue configuration, existing deployment credential, connector connection, or pre-existing user flow was changed.
+
+### 2026-09-02 - Staged OAuth SMTP transport implementation
+
+- Superseded the Graph-only architecture decision with a staged delegated OAuth SMTP target. Graph remains the default deployment transport and rollback path; no automatic per-message fallback is attempted because Microsoft Graph and Outlook SMTP access tokens are resource-specific.
+- Added a Cloudflare Workers-compatible Exchange Online SMTP client using outbound TCP, STARTTLS, and XOAUTH2. The client records acceptance only after the final post-DATA `250`, treats a lost final response as `unknown`, and allows safe retry only for failures proven to occur before acceptance or for explicit transient SMTP replies.
+- Added deterministic MIME generation for HTML, CC, Reply-To, importance, BCC envelope privacy, Unicode filenames, and up to 20 attachments with a conservative 20 MiB combined raw-byte cap. The current product UI and durable attachment storage remain out of scope; this prepares the transport boundary without presenting an unfinished attachment feature.
+- Added SMTP-mode OAuth configuration and ID-token mailbox identity so the SMTP resource token does not require Graph `/me`. Existing users must complete SMTP-specific OAuth consent before a future transport switch.
+- Added unit coverage for resource-scope separation, ID-token identity, authentication-only probing, multiple byte-exact attachments, BCC privacy, OAuth rejection, transient rejection, Graph fallback attachment refusal, and ambiguous post-DATA failure handling.
+- Verification passed: `npm test` completed type checking, both production builds, 12 test files, and all 89 unit and integration tests. `npx wrangler deploy --dry-run` also passed with the existing Graph-default production configuration.
+- After action-time confirmation, completed the second-student Cloudflare-hosted authentication-only probe using the existing MailFlow Entra application. The account reached ordinary delegated consent for `SMTP.Send` without an administrator-approval prompt, and the issued Outlook access token contained `SMTP.Send`.
+- The temporary Worker observed Exchange Online SMTP greeting `220`, `STARTTLS` `220`, XOAUTH2 authentication `235`, and `QUIT` `221`. Its probe implementation could issue only greeting, TLS, authentication, and quit operations; it never issued `MAIL FROM`, `RCPT TO`, or `DATA`, so it could not create or send a message.
+- Deleted the one-day Entra credential immediately and verified the credentials page returned to one secret with the original `MailFlow Cloudflare Worker` credential intact. Deleted the temporary Cloudflare Worker, verified its former endpoint returned `404`, and removed its local probe files and generated cache.
+- Combined with the earlier first-student probe, this establishes OAuth SMTP AUTH compatibility for both tested USM student mailboxes. It is strong evidence for the intended student cohort but not a tenant-wide guarantee; onboarding should retain the authentication-only compatibility check because SMTP AUTH can still be overridden per mailbox.
+- No email, production deployment, D1 data, Queue state, existing deployment credential, connector connection, or pre-existing flow was created or changed by the second-account probe.

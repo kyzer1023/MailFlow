@@ -32,7 +32,7 @@ When sources conflict, use this order:
 
 - Cloudflare is the only application hosting platform.
 - Microsoft Entra ID is the only user identity provider.
-- Microsoft Graph delegated `Mail.Send` is the only mail transport.
+- Microsoft Graph delegated `Mail.Send` remains the rollback transport during the staged migration. Delegated OAuth SMTP with `SMTP.Send` is the target transport after Cloudflare-hosted verification.
 - The first release accepts `.csv` and `.xlsx` uploads. It does not connect directly to Google Sheets.
 - Every spreadsheet row produces a separate message.
 - The sender is always the authenticated USM mailbox.
@@ -43,11 +43,11 @@ When sources conflict, use this order:
 - Domain modules must not import Cloudflare runtime types.
 - Database access goes through repository functions or interfaces.
 - Queue publishing goes through a campaign queue adapter.
-- Microsoft Graph calls go through a mail provider adapter.
+- Microsoft mail calls go through a mail provider adapter.
 - Parsing workbooks happens in the browser, not in a Worker request.
 - Database migrations, bindings, and operational configuration live in Git.
 - Use conditional state transitions for recipient jobs. Queue delivery is at least once.
-- A Graph request with an ambiguous network outcome becomes `unknown`; it is not retried automatically.
+- A provider request with an ambiguous network outcome becomes `unknown`; it is not retried automatically.
 
 ## Frontend rules
 
@@ -76,4 +76,4 @@ When sources conflict, use this order:
 
 ## Completion standard
 
-A task is complete only when relevant type checks, tests, build checks, and visual or integration checks pass. Record commands and results in `docs/PROGRESS.md`. Do not claim real mail delivery from Graph acceptance alone.
+A task is complete only when relevant type checks, tests, build checks, and visual or integration checks pass. Record commands and results in `docs/PROGRESS.md`. Do not claim real mail delivery from provider acceptance alone.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAuthorizationUrl, exchangeAuthorizationCode, refreshAccessToken } from "./oauth";
+import { resolveEntraConfig, SMTP_ENTRA_SCOPES } from "./config";
 import { classifyGraphError, GraphApiError } from "./errors";
 import { GraphMailProvider } from "./graph";
 import { sendTestToSelf } from "./test-send";
@@ -51,6 +52,11 @@ describe("Microsoft OAuth", () => {
     const fetchImpl: FetchLike = async () => jsonResponse({ error: "invalid_grant", error_description: "fixture details that must not be surfaced" }, 400);
     await expect(refreshAccessToken(config, { refreshToken: "refresh-fixture", fetchImpl })).rejects.toMatchObject({ category: "invalid_grant", status: 400 });
     await expect(refreshAccessToken(config, { refreshToken: "refresh-fixture", fetchImpl })).rejects.toThrow("Sign-in expired");
+  });
+
+  it("supports the Outlook SMTP resource but rejects mixed Graph and SMTP tokens", () => {
+    expect(resolveEntraConfig({ ...config, scopes: SMTP_ENTRA_SCOPES }).scopes).toContain("https://outlook.office.com/SMTP.Send");
+    expect(() => resolveEntraConfig({ ...config, scopes: [...SMTP_ENTRA_SCOPES, "User.Read", "Mail.Send"] })).toThrow("resource-specific");
   });
 });
 
@@ -147,6 +153,9 @@ describe("provider-neutral Graph adapter", () => {
     const ambiguous = new GraphMailProvider({ fetchImpl: async () => { throw new Error("network fixture"); } });
     const unknownResult = await delegatedGraphMailProvider(ambiguous, "access-fixture").send({ to: "recipient@example.test", cc: [], bcc: [], replyTo: [], subject: "Fixture", htmlBody: "<p>Fixture</p>" }, { sendKey: "send-key-fixture" });
     expect(unknownResult).toMatchObject({ kind: "unknown", category: "ambiguous" });
+
+    const attachmentResult = await delegatedGraphMailProvider(accepted, "access-fixture").send({ to: "recipient@example.test", cc: [], bcc: [], replyTo: [], subject: "Fixture", htmlBody: "<p>Fixture</p>", attachments: [{ filename: "proof.txt", contentType: "text/plain", content: new Uint8Array([1]) }] });
+    expect(attachmentResult).toMatchObject({ kind: "failed", category: "invalid_message" });
   });
 });
 

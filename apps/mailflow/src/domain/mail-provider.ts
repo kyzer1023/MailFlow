@@ -1,6 +1,12 @@
 import type { MailImportance } from "./types";
 
-/** The provider-neutral message passed to the Microsoft Graph adapter. */
+export interface MailAttachment {
+  filename: string;
+  contentType: string;
+  content: Uint8Array;
+}
+
+/** The provider-neutral message passed to the selected Microsoft mail adapter. */
 export interface MailMessage {
   to: string;
   cc: readonly string[];
@@ -9,6 +15,7 @@ export interface MailMessage {
   importance?: MailImportance;
   subject: string;
   htmlBody: string;
+  attachments?: readonly MailAttachment[];
 }
 
 export interface MailSendAccepted {
@@ -19,7 +26,7 @@ export interface MailSendAccepted {
 
 export interface MailSendRetryable {
   kind: "retryable";
-  /** Must be true only when the adapter knows Graph did not receive the send. */
+  /** Must be true only when the adapter knows Microsoft did not accept the send. */
   safeToRetry: true;
   category: "throttle" | "pre_send_temporary" | "network_before_send";
   message: string;
@@ -51,9 +58,9 @@ export interface MailSendUnknown {
 export type MailSendResult = MailSendAccepted | MailSendRetryable | MailSendFailed | MailSendUnknown;
 
 /**
- * Microsoft Graph is kept behind this interface. In particular, a Graph
- * adapter must return `unknown` if a request may have reached Graph but the
- * response was lost. The queue must never infer a retry from a thrown error.
+ * Microsoft transports are kept behind this interface. An adapter must return
+ * `unknown` if a request may have been accepted but the response was lost.
+ * The queue must never infer a retry from a thrown error.
  */
 export interface MailProvider {
   send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult>;

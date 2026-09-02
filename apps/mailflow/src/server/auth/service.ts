@@ -81,7 +81,7 @@ export class MicrosoftAuthService {
 
   constructor(
     config: EntraConfig,
-    private readonly provider: GraphMailProviderContract,
+    private readonly provider: GraphMailProviderContract | null,
     private readonly deps: AuthServiceDependencies,
   ) {
     this.config = resolveEntraConfig(config);
@@ -148,16 +148,20 @@ export class MicrosoftAuthService {
       verifySignature: this.deps.verifyIdTokenSignature ?? true,
       now: Math.floor(this.now() / 1000),
     });
-    const graphUser = await this.provider.getCurrentUser(tokens.accessToken);
-    if (claims.oid && graphUser.id !== claims.oid) throw new AuthFlowError("identity", "Microsoft identity did not match the signed-in mailbox");
-    const principalCandidate = typeof claims.preferred_username === "string" ? claims.preferred_username : typeof claims.email === "string" ? claims.email : graphUser.userPrincipalName ?? "";
-    const mailbox = mailboxAddress(graphUser.mail, graphUser.userPrincipalName, principalCandidate);
+    const graphUser = this.provider ? await this.provider.getCurrentUser(tokens.accessToken) : null;
+    if (graphUser && claims.oid && graphUser.id !== claims.oid) throw new AuthFlowError("identity", "Microsoft identity did not match the signed-in mailbox");
+    const principalCandidate = typeof claims.preferred_username === "string"
+      ? claims.preferred_username
+      : typeof claims.email === "string"
+        ? claims.email
+        : graphUser?.userPrincipalName ?? "";
+    const mailbox = mailboxAddress(graphUser?.mail ?? null, graphUser?.userPrincipalName ?? null, principalCandidate);
     const principalName = principalCandidate.trim() || mailbox || "";
     if (!mailbox || !claims.oid) throw new AuthFlowError("identity", "The signed-in Microsoft mailbox could not be identified");
     const user: AuthenticatedUser = await this.deps.userStore.upsert({
       tenantId: claims.tid,
       objectId: claims.oid,
-      displayName: graphUser.displayName ?? (typeof claims.name === "string" ? claims.name : null),
+      displayName: graphUser?.displayName ?? (typeof claims.name === "string" ? claims.name : null),
       principalName,
       mailboxAddress: mailbox,
       lastLoginAt: this.now(),

@@ -13,11 +13,11 @@ Workstreams are intentionally broad enough to produce coherent results. Coordina
 
 Acceptance: installs reproducibly, type checks, tests run, and other workstreams have stable contracts.
 
-### W2 Authentication and Microsoft Graph
+### W2 Authentication and Microsoft mail transport
 
-- Entra authorization-code flow with PKCE.
-- Session handling, tenant restriction, token encryption, refresh, Graph adapter, and test send.
-- Human-readable Graph error mapping.
+- Entra authorization-code flow with PKCE and resource-specific Graph or SMTP scopes.
+- Session handling, tenant restriction, token encryption, refresh, Graph fallback, OAuth SMTP adapter, MIME generation, and test send.
+- Human-readable provider error mapping.
 
 Acceptance: mocked integration tests pass, then both student accounts can authenticate and send a controlled test.
 
@@ -50,7 +50,7 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 1. Repository and durable documentation.
 2. Local runnable shell matching the mocks.
 3. Domain and persistence contracts.
-4. Authentication plus one-message Graph feasibility test.
+4. Authentication plus one-message Microsoft transport feasibility test.
 5. Complete local campaign journey with simulated mail.
 6. Cloudflare resource provisioning and deployment.
 7. Real-mail verification with both senders.

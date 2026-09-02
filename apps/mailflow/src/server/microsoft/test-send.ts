@@ -1,6 +1,7 @@
 import { GraphApiError } from "./graph";
 import type { GraphMailProviderContract } from "./graph";
 import type { MailImportance } from "../../domain/types";
+import type { MailProvider } from "../../domain/mail-provider";
 
 export interface TestSendInput {
   subject: string;
@@ -16,7 +17,8 @@ export interface TestSendResult {
   userMessage: "Accepted by Microsoft";
   senderAddress: string;
   recipientAddress: string;
-  graphStatus: number;
+  graphStatus?: number;
+  smtpStatus?: number;
   requestId?: string;
 }
 
@@ -82,4 +84,33 @@ export async function sendTestToSelf(
   input: TestSendInput,
 ): Promise<TestSendResult> {
   return new TestSendService(provider).sendToSelf(accessToken, input);
+}
+
+export async function sendProviderTestToSelf(
+  provider: MailProvider,
+  senderAddress: string,
+  input: TestSendInput,
+): Promise<TestSendResult> {
+  const self = mailboxAddress(senderAddress, null);
+  if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+  if (!input || typeof input.subject !== "string" || typeof input.bodyHtml !== "string" || !input.subject.trim()) {
+    throw new TestSendError("Add a subject and message before sending a test");
+  }
+  const result = await provider.send({
+    to: self,
+    cc: [...(input.cc ?? [])],
+    bcc: [...(input.bcc ?? [])],
+    replyTo: [...(input.replyTo ?? [])],
+    importance: input.importance ?? "normal",
+    subject: input.subject,
+    htmlBody: input.bodyHtml,
+  }, { sendKey: `test:${crypto.randomUUID()}` });
+  if (result.kind !== "accepted") throw new TestSendError(result.message);
+  return {
+    status: "accepted",
+    userMessage: "Accepted by Microsoft",
+    senderAddress: self,
+    recipientAddress: self,
+    smtpStatus: 250,
+  };
 }

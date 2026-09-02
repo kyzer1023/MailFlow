@@ -2,7 +2,7 @@
 
 ## Product
 
-Mail Flow replaces unreliable Power Automate mail-merge processes used by USM student society members. It is not an SMTP server and is not tied to one society. It is a narrow web application that prepares personalized campaign email and asks Microsoft Graph to send it from the signed-in member's student Outlook mailbox.
+Mail Flow replaces unreliable Power Automate mail-merge processes used by USM student society members. It is not an SMTP server and is not tied to one society. It is a narrow web application that prepares personalized campaign email and submits it through the signed-in member's student Outlook mailbox.
 
 ## Intended users
 
@@ -21,7 +21,7 @@ A society member can safely turn a spreadsheet and reusable HTML message into in
 - Cloudflare D1 for users, sessions, flows, template versions, campaigns, recipient jobs, and audit events.
 - Cloudflare Queues for background campaign ticks.
 - Microsoft Entra ID single-tenant authentication.
-- Microsoft Graph delegated `Mail.Send` for sending.
+- Delegated OAuth SMTP is the target mail transport. Microsoft Graph delegated `Mail.Send` remains the deployment fallback until Cloudflare-hosted verification passes.
 - Browser-side `.xlsx` and `.csv` parsing.
 - A free `workers.dev` URL for the first deployment. A custom domain can be attached later.
 
@@ -49,7 +49,7 @@ The prototype is successful when:
 
 1. Both USM test users can authenticate through the same Entra application.
 2. A member can complete the accepted flow from file import through campaign monitoring.
-3. Real test messages can be accepted by Graph from both student mailboxes and observed in the intended Gmail inboxes.
+3. Real test messages can be accepted by the selected Microsoft transport from both student mailboxes and observed in the intended Gmail inboxes.
 4. Queue processing continues without an open browser and prevents obvious duplicate sends.
 5. The visible implementation closely matches the approved mock at comparable desktop viewports and remains usable on mobile.
 6. The project is deployed on Cloudflare and has a working public URL.

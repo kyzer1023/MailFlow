@@ -6,7 +6,7 @@ This document converts the approved discussion into testable product behavior. I
 
 - Member: an authenticated USM student society member who creates flows and sends campaigns from their own student mailbox.
 - Administrator: a member with additional society configuration visibility. The prototype may seed this role rather than expose full role management.
-- Microsoft Graph: accepts send requests and returns success or error responses.
+- Microsoft mail transport: accepts Graph or delegated OAuth SMTP submissions and returns success or error responses.
 - Queue worker: advances campaigns independently of the browser.
 
 ## UC-01 Sign in with a USM Microsoft account
@@ -110,7 +110,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 
 - A Queue consumer advances the campaign after the browser closes.
 - Default pace is 12 messages per minute and can be reduced by configuration.
-- Each job records status, attempts, timestamps, Graph response category, and a human-readable note.
+- Each job records status, attempts, timestamps, provider response category, and a human-readable note.
 - Campaigns can be paused and resumed.
 - A resume starts from the first eligible unsent row.
 
@@ -120,7 +120,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - A conditional database transition claims only a pending job.
 - A duplicate Queue delivery that finds a claimed or terminal job stops.
 - A known throttle or pre-send temporary failure can retry after a delay.
-- A timeout or lost response after contacting Graph becomes `unknown` and is never automatically resent.
+- A timeout or lost response after the selected provider may have accepted a message becomes `unknown` and is never automatically resent.
 
 ## UC-12 Understand results
 

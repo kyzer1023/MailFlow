@@ -3,9 +3,9 @@
 ## Principles
 
 - Prefer deterministic tests for domain and state transitions.
-- Use mocked Graph responses before any real send.
+- Use mocked Graph and scripted SMTP responses before any real send.
 - Keep real-mail tests small, intentional, and traceable.
-- A Graph `202` proves acceptance by Microsoft, not delivery.
+- A Graph `202` or SMTP's final post-DATA `250` proves acceptance by Microsoft, not delivery.
 - Never put credentials, tokens, full private email addresses, or message bodies into committed test evidence.
 
 ## Automated checks
@@ -20,7 +20,7 @@
 - HTML sanitization policy.
 - Campaign duration and pacing.
 - State transition guards and unique send keys.
-- Graph error classification.
+- Graph and SMTP error classification, MIME structure, envelope privacy, and STARTTLS/XOAUTH2 state transitions.
 
 ### Integration
 
@@ -62,14 +62,14 @@ Run only after mocked and local integration tests pass.
 
 1. Primary USM account signs in and sends a test to self.
 2. Primary USM account sends one small campaign to the five authorized Gmail recipients.
-3. Verify Graph acceptance, Sent Items, and inbox receipt where available.
+3. Verify provider acceptance, Sent Items, and inbox receipt where available.
 4. Sign out completely.
 5. Secondary USM account signs in through the same Entra application.
 6. Secondary account sends a test to self and a small external campaign.
 7. Verify sender identity is locked to the secondary mailbox.
 8. Confirm accepted recipients cannot be sent again through a duplicate queue delivery.
 
-Record sanitized evidence: test timestamp, sender alias such as `primary` or `secondary`, recipient count, Graph result category, campaign status, and whether inbox receipt was observed. Do not commit account addresses or credentials.
+Record sanitized evidence: test timestamp, sender alias such as `primary` or `secondary`, recipient count, provider result category, campaign status, and whether inbox receipt was observed. Do not commit account addresses or credentials.
 
 ## Deployment checks
 

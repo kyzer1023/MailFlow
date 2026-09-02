@@ -20,6 +20,7 @@ export interface MailFlowBindings {
   PUBLIC_ORIGIN?: string;
   DEFAULT_CAMPAIGN_PACE?: string;
   MAX_CAMPAIGN_RECIPIENTS?: string;
+  MAIL_TRANSPORT?: string;
 }
 
 export interface MailFlowVariables {

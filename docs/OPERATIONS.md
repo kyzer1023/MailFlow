@@ -12,7 +12,7 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | Public origin | `https://mailflow.kyzer-hono-test.workers.dev` |
 | OAuth callback | `<PUBLIC_ORIGIN>/auth/microsoft/callback` |
 | Entra application | Existing single-tenant application named `MailFlow` |
-| Graph permissions | Delegated `User.Read` and delegated `Mail.Send` |
+| Mail permissions | Current fallback: delegated Graph `User.Read` and `Mail.Send`; SMTP target: delegated `SMTP.Send` |
 
 The source configuration is `../apps/mailflow/wrangler.jsonc`. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
 
@@ -33,7 +33,7 @@ Then confirm:
 - `.env` and `.dev.vars` are ignored.
 - No password, token, client secret, or account address is staged in Git.
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
-- The Entra app remains single tenant and uses only delegated Graph permissions.
+- The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
 - Real-mail recipients and message content have been explicitly approved for the test.
 
 ## Local full-stack development
@@ -76,7 +76,9 @@ These actions change tenant state and require action-time user confirmation.
 4. Keep the local callback only while local OAuth testing is needed.
 5. Create one confidential client credential with the shortest practical lifetime.
 6. Copy the credential value directly into the Worker secret prompt. Do not save it in `.env`, notes, chat, or screenshots.
-7. Confirm delegated `User.Read` and `Mail.Send`; do not add application `Mail.Send`.
+7. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; never use SMTP Basic authentication or application-level mail access.
+
+`MAIL_TRANSPORT` is intentionally omitted during SMTP validation and therefore defaults to `graph`. Set it to `smtp` only after the Cloudflare-hosted STARTTLS/XOAUTH2 probe succeeds. Because Microsoft access tokens are resource-specific, existing members must sign out and complete consent again after the switch.
 
 ## Smoke test order
 
@@ -91,7 +93,7 @@ These actions change tenant state and require action-time user confirmation.
 9. Gmail receipt observation and Outlook Sent Items observation.
 10. A small campaign from the secondary account, proving the sender is locked to that mailbox.
 
-Graph `202 Accepted` is recorded as `Accepted by Microsoft`. It is not proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
+Graph `202 Accepted` or SMTP's final post-DATA `250` is recorded as `Accepted by Microsoft`. Neither is proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
 
 ## Sanitized evidence template
 
@@ -102,7 +104,7 @@ Timestamp (MYT):
 Deployment URL:
 Sender alias: primary | secondary
 Recipient count:
-Graph result: accepted | failed | unknown
+Provider result: accepted | failed | unknown
 Campaign result:
 Sent Items observed: yes | no | not checked
 Inbox receipt observed: yes | no | partial | not checked
