@@ -9,6 +9,8 @@ const OAUTH_STATE_AAD = "mailflow:oauth-state:v1";
 export interface OAuthStateStartOptions {
   secret: string;
   returnTo?: string;
+  /** Opaque route-purpose prefix used only to dispatch a shared callback. */
+  statePrefix?: string;
   now?: number;
   ttlSeconds?: number;
   secure?: boolean;
@@ -59,8 +61,10 @@ export async function createOAuthState(options: OAuthStateStartOptions): Promise
     throw new RangeError("Invalid OAuth state lifetime");
   }
   const pkce = await generatePkcePair();
+  const generatedState = generateOAuthStateValue();
+  const statePrefix = options.statePrefix?.trim();
   const payload: OAuthStatePayload = {
-    state: generateOAuthStateValue(),
+    state: statePrefix ? `${statePrefix}.${generatedState}` : generatedState,
     codeVerifier: pkce.verifier,
     nonce: generateOAuthNonce(),
     returnTo: safeReturnTo(options.returnTo),

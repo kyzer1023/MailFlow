@@ -79,10 +79,10 @@ These actions change tenant state and require action-time user confirmation.
 4. Keep the local callback only while local OAuth testing is needed.
 5. Create one confidential client credential with the shortest practical lifetime.
 6. Copy the credential value directly into the Worker secret prompt. Do not save it in `.env`, notes, chat, or screenshots.
-7. Register `/auth/microsoft/onedrive/callback` for both the production origin and localhost development origin.
+7. OneDrive consent reuses the existing `/auth/microsoft/callback` registration. A purpose-prefixed OAuth state dispatches the shared callback without another Entra redirect URI.
 8. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; for attachment storage, request delegated `Files.ReadWrite.AppFolder`. Never use SMTP Basic authentication or application-level mail or file access.
 
-The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and register the OneDrive callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
+The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
 
 The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 

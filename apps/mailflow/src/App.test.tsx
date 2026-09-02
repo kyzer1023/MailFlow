@@ -568,6 +568,19 @@ describe("campaign attachments", () => {
   });
 
   it("uploads multiple files, reports invalid files, supports retry, and removes ready files", async () => {
+    let releaseFirstUpload!: () => void;
+    const firstUpload = new Promise<void>((resolve) => { releaseFirstUpload = resolve; });
+    mockedUploadAttachmentFile.mockImplementation(async (_setId, file) => {
+      if (file.name === "agenda.pdf") await firstUpload;
+      return {
+        file: {
+          id: `server-${file.name}`,
+          originalFilename: file.name,
+          mediaType: file.type || "application/octet-stream",
+          byteSize: file.size,
+        },
+      };
+    });
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /Drop files here or choose files/ })).toBeInTheDocument();
@@ -578,6 +591,9 @@ describe("campaign attachments", () => {
 
     expect(screen.getByText("agenda.pdf")).toBeInTheDocument();
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    await waitFor(() => expect(mockedUploadAttachmentFile).toHaveBeenCalledTimes(1));
+    expect(mockedUploadAttachmentFile.mock.calls[0][1].name).toBe("agenda.pdf");
+    releaseFirstUpload();
     await waitFor(() => expect(screen.getAllByText("Ready")).toHaveLength(2));
     expect(mockedCreateAttachmentSet).toHaveBeenCalledTimes(1);
     expect(mockedCreateAttachmentSet.mock.calls[0]?.[0]).toMatch(/^attachment-/u);

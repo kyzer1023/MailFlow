@@ -98,11 +98,12 @@ export class MicrosoftAuthService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  async beginSignIn(returnTo = "/dashboard"): Promise<AuthorizationStart> {
+  async beginSignIn(returnTo = "/dashboard", statePrefix?: string): Promise<AuthorizationStart> {
     const state = await createOAuthState({
       secret: this.deps.stateSecret,
       stateStore: this.deps.stateStore,
       returnTo,
+      statePrefix,
       now: this.now(),
       secure: this.deps.secureCookies ?? true,
     });

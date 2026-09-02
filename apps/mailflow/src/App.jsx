@@ -847,9 +847,11 @@ function DraftProvider({ children }) {
   // campaign payload.
   const [attachments, setAttachments] = useState([]);
   const [attachmentSetId, setAttachmentSetId] = useState(null);
+  const attachmentSetIdRef = useRef(null);
   const [attachmentSetRequestKey, setAttachmentSetRequestKey] = useState(() => `attachment-${requestKey()}`);
   const attachmentSourcesRef = useRef(new Map());
   const attachmentSetPromiseRef = useRef(null);
+  const attachmentUploadQueueRef = useRef(Promise.resolve());
   const attachmentGenerationRef = useRef(0);
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
   const [campaignRequestKey, setCampaignRequestKey] = useState(requestKey);
@@ -891,13 +893,14 @@ function DraftProvider({ children }) {
   }, [validation, skipInvalidRows]);
   const updateDraft = useCallback((key, value) => setDraft((current) => ({ ...current, [key]: value })), []);
   const ensureAttachmentSet = useCallback(async () => {
-    if (attachmentSetId) return attachmentSetId;
+    if (attachmentSetIdRef.current) return attachmentSetIdRef.current;
     const generation = attachmentGenerationRef.current;
     const currentRequest = attachmentSetPromiseRef.current;
     if (currentRequest && currentRequest.generation === generation) return currentRequest.promise;
     const promise = createAttachmentSetRequest(attachmentSetRequestKey, csrfToken).then((response) => {
       const id = response?.attachmentSet?.id;
       if (!id || attachmentGenerationRef.current !== generation) throw new Error("The attachment upload was cancelled. Choose the files again.");
+      attachmentSetIdRef.current = id;
       setAttachmentSetId(id);
       return id;
     }).finally(() => {
@@ -905,15 +908,18 @@ function DraftProvider({ children }) {
     });
     attachmentSetPromiseRef.current = { generation, promise };
     return promise;
-  }, [attachmentSetId, attachmentSetRequestKey, csrfToken]);
-  const uploadAttachment = useCallback(async (localId, file) => {
+  }, [attachmentSetRequestKey, csrfToken]);
+  const performAttachmentUpload = useCallback(async (localId, file, generation) => {
+    if (attachmentGenerationRef.current !== generation) return;
     setAttachments((current) => current.map((attachment) => attachment.id === localId
       ? { ...attachment, status: "uploading", error: undefined }
       : attachment));
     attachmentSourcesRef.current.set(localId, file);
     try {
       const setId = await ensureAttachmentSet();
+      if (attachmentGenerationRef.current !== generation) return;
       const response = await uploadAttachmentFileRequest(setId, file, csrfToken);
+      if (attachmentGenerationRef.current !== generation) return;
       const next = attachmentFileFromResponse(response, file, localId);
       attachmentSourcesRef.current.delete(localId);
       setAttachments((current) => current.map((attachment) => attachment.id === localId ? next : attachment));
@@ -924,6 +930,15 @@ function DraftProvider({ children }) {
         : attachment));
     }
   }, [csrfToken, ensureAttachmentSet]);
+  const uploadAttachment = useCallback((localId, file) => {
+    // One attachment set has one conditional file-count update. Serializing
+    // the bounded five uploads prevents two browser requests from choosing
+    // the same next position or racing that counter in D1.
+    const generation = attachmentGenerationRef.current;
+    const queued = attachmentUploadQueueRef.current.then(() => performAttachmentUpload(localId, file, generation));
+    attachmentUploadQueueRef.current = queued.catch(() => undefined);
+    return queued;
+  }, [performAttachmentUpload]);
   const retryAttachment = useCallback((localId) => {
     const file = attachmentSourcesRef.current.get(localId);
     if (file) void uploadAttachment(localId, file);
@@ -946,8 +961,10 @@ function DraftProvider({ children }) {
   const resetAttachmentState = useCallback(() => {
     attachmentGenerationRef.current += 1;
     attachmentSetPromiseRef.current = null;
+    attachmentUploadQueueRef.current = Promise.resolve();
     attachmentSourcesRef.current.clear();
     setAttachments([]);
+    attachmentSetIdRef.current = null;
     setAttachmentSetId(null);
     setAttachmentSetRequestKey(`attachment-${requestKey()}`);
   }, []);

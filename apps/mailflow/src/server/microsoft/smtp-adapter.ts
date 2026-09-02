@@ -47,6 +47,13 @@ export function delegatedSmtpMailProvider(
           }
           return { kind: "failed", category: "authentication", message: error.message };
         }
+        if (error && typeof error === "object" && "code" in error && error.code === "refresh_token_crypto_failed") {
+          return { kind: "failed", category: "authentication", message: "Reconnect Microsoft before sending this campaign" };
+        }
+        console.warn("Unexpected SMTP adapter failure", {
+          name: error instanceof Error ? error.name : "unknown",
+          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+        });
         return { kind: "unknown", category: "transport", message: "The SMTP transport ended without a safe outcome" };
       }
     },

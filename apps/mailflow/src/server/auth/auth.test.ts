@@ -322,7 +322,7 @@ describe("MicrosoftAuthService", () => {
       tenantId: "tenant-123",
       clientId: "client-123",
       clientSecret: "client secret fixture",
-      redirectUri: "https://mailflow.example.test/auth/microsoft/onedrive/callback",
+      redirectUri: "https://mailflow.example.test/auth/microsoft/callback",
       scopes: ["openid", "profile", "email", "offline_access", "Files.ReadWrite.AppFolder"],
     }, null, {
       userStore,
@@ -336,7 +336,8 @@ describe("MicrosoftAuthService", () => {
       now: () => 1_000,
       verifyIdTokenSignature: false,
     });
-    const started = await service.beginSignIn("/flows/new/recipients");
+    const started = await service.beginSignIn("/flows/new/recipients", "onedrive");
+    expect(started.state).toMatch(/^onedrive\./u);
     claims.nonce = started.nonce;
 
     const completed = await service.completeResourceConsent({

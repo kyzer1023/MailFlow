@@ -203,4 +203,18 @@ describe("Exchange Online SMTP client", () => {
     await expect(delegatedSmtpMailProvider(denied.client, "access-token-fixture", "sender@example.test").send(message())).resolves.toMatchObject({ kind: "failed", category: "authentication" });
     expect(denied.script.commands.some((command) => command.startsWith("MAIL FROM"))).toBe(false);
   });
+
+  it("treats an unreadable stored refresh token as authentication failure before SMTP", async () => {
+    const test = fixture();
+    const provider = delegatedSmtpMailProvider(test.client, async () => {
+      throw Object.assign(new Error("Stored Microsoft sign-in could not be opened"), { code: "refresh_token_crypto_failed" });
+    }, "sender@example.test");
+
+    await expect(provider.send(message())).resolves.toEqual({
+      kind: "failed",
+      category: "authentication",
+      message: "Reconnect Microsoft before sending this campaign",
+    });
+    expect(test.script.commands).toEqual([]);
+  });
 });

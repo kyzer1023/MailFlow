@@ -20,6 +20,18 @@ function safeStorageKey(key: string): string {
 }
 
 async function errorFrom(response: Response): Promise<AttachmentError> {
+  let graphCode = "unknown";
+  try {
+    const payload = await response.clone().json() as { error?: { code?: unknown } };
+    if (typeof payload.error?.code === "string" && payload.error.code) graphCode = payload.error.code;
+  } catch {
+    // Some download hosts and proxies return a non-JSON error response.
+  }
+  console.warn("OneDrive attachment request failed", {
+    status: response.status,
+    graphCode,
+    requestId: response.headers.get("request-id") ?? response.headers.get("x-ms-request-id") ?? undefined,
+  });
   if (response.status === 401 || response.status === 403) {
     return new AttachmentError("storage_error", "Reconnect OneDrive before using campaign attachments");
   }
@@ -38,7 +50,9 @@ export class OneDriveAppFolderAttachmentStore implements AttachmentObjectStore {
     options: OneDriveAttachmentStoreOptions = {},
   ) {
     this.baseUrl = (options.graphBaseUrl ?? "https://graph.microsoft.com/v1.0").replace(/\/$/u, "");
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    // Cloudflare's fetch is runtime-bound and throws an illegal-invocation
+    // TypeError when stored and called as a detached function.
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
   private async token(ownerUserId: string): Promise<string> {

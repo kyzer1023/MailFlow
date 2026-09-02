@@ -119,7 +119,17 @@ function attachmentServiceFor(context: MailFlowContext, repo = repositories(cont
   const { storageAuth } = configFor(context);
   return createAttachmentService(
     repo.attachments,
-    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
+    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => {
+      try {
+        return (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken;
+      } catch (error) {
+        console.warn("OneDrive token refresh failed", {
+          name: error instanceof Error ? error.name : "unknown",
+          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+        });
+        throw error;
+      }
+    }),
   );
 }
 
@@ -299,6 +309,10 @@ function responseError(
 
 function attachmentErrorResponse(context: MailFlowContext, error: unknown): Response {
   if (!(error instanceof AttachmentError)) {
+    console.warn("Attachment request failed", {
+      name: error instanceof Error ? error.name : "unknown",
+      code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+    });
     return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
   }
   const status: 400 | 404 | 409 | 413 | 422 | 503 =
@@ -385,7 +399,6 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
   if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
   const origin = redirectOrigin ?? applicationOrigin(context);
   const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
-  const storageRedirectUri = new URL("/auth/microsoft/onedrive/callback", origin).toString();
   const mailTransport = resolveMailTransport(context.env.MAIL_TRANSPORT);
   const config = {
     tenantId,
@@ -412,7 +425,7 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
     tenantId,
     clientId,
     clientSecret,
-    redirectUri: storageRedirectUri,
+    redirectUri,
     scopes: ONEDRIVE_ENTRA_SCOPES,
   }, null, {
     userStore: stores.userStore,
@@ -574,9 +587,24 @@ app.get("/auth/microsoft/start", async (context) => {
 app.get("/auth/microsoft/callback", async (context) => {
   const query = new URL(context.req.url).searchParams;
   const error = query.get("error");
-  if (error) return context.redirect("/?auth=cancelled", 302);
   const code = query.get("code");
   const state = query.get("state");
+  const isOneDriveConsent = state?.startsWith("onedrive.") ?? false;
+  if (isOneDriveConsent) {
+    const authenticated = await requireSession(context);
+    if (authenticated instanceof Response) return context.redirect("/?auth=session_expired", 302);
+    if (error) return context.redirect("/flows/new/recipients?onedrive=cancelled", 302);
+    if (!code || !state) return context.redirect("/flows/new/recipients?onedrive=invalid", 302);
+    try {
+      const { storageAuth } = configFor(context);
+      const completed = await storageAuth.completeResourceConsent({ code, state, cookieHeader: context.req.header("Cookie") }, authenticated.user);
+      context.header("Set-Cookie", completed.stateCookie, { append: true });
+      return context.redirect(completed.returnTo, 302);
+    } catch {
+      return context.redirect("/flows/new/recipients?onedrive=failed", 302);
+    }
+  }
+  if (error) return context.redirect("/?auth=cancelled", 302);
   if (!code || !state) return context.redirect("/?auth=invalid", 302);
   try {
     const { auth } = configFor(context);
@@ -597,29 +625,11 @@ app.get("/auth/microsoft/onedrive/start", async (context) => {
   try {
     const returnTo = new URL(context.req.url).searchParams.get("returnTo") ?? "/flows/new/recipients";
     const { storageAuth } = configFor(context);
-    const started = await storageAuth.beginSignIn(returnTo);
+    const started = await storageAuth.beginSignIn(returnTo, "onedrive");
     context.header("Set-Cookie", started.stateCookie);
     return context.redirect(started.authorizationUrl, 302);
   } catch {
     return responseError(context, 503, "onedrive_auth_unavailable", "OneDrive authorization is not configured yet.");
-  }
-});
-
-app.get("/auth/microsoft/onedrive/callback", async (context) => {
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return context.redirect("/?auth=session_expired", 302);
-  const query = new URL(context.req.url).searchParams;
-  if (query.get("error")) return context.redirect("/flows/new/recipients?onedrive=cancelled", 302);
-  const code = query.get("code");
-  const state = query.get("state");
-  if (!code || !state) return context.redirect("/flows/new/recipients?onedrive=invalid", 302);
-  try {
-    const { storageAuth } = configFor(context);
-    const completed = await storageAuth.completeResourceConsent({ code, state, cookieHeader: context.req.header("Cookie") }, authenticated.user);
-    context.header("Set-Cookie", completed.stateCookie, { append: true });
-    return context.redirect(completed.returnTo, 302);
-  } catch {
-    return context.redirect("/flows/new/recipients?onedrive=failed", 302);
   }
 });
 
