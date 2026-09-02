@@ -33,6 +33,7 @@ import {
   ExchangeOnlineSmtpClient,
   GraphApiError,
   GraphMailProvider,
+  ONEDRIVE_ENTRA_SCOPES,
   resolveMailTransport,
   sendProviderTestToSelf,
   sendTestToSelf,
@@ -45,6 +46,7 @@ import {
   ATTACHMENT_MAX_FILES,
   AttachmentError,
   createAttachmentService,
+  OneDriveAppFolderAttachmentStore,
   type AttachmentPayload,
   type AttachmentService,
   type AttachmentFileRecord,
@@ -113,12 +115,16 @@ function repositories(context: MailFlowContext): Repositories {
 }
 
 function attachmentServiceFor(context: MailFlowContext, repo = repositories(context)): AttachmentService | null {
-  if (!context.env.ATTACHMENTS) return null;
-  return createAttachmentService(repo.attachments, context.env.ATTACHMENTS);
+  if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return null;
+  const { storageAuth } = configFor(context);
+  return createAttachmentService(
+    repo.attachments,
+    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
+  );
 }
 
 function attachmentInfrastructureAvailable(context: MailFlowContext): boolean {
-  return resolveMailTransport(context.env.MAIL_TRANSPORT) === "smtp" && Boolean(context.env.ATTACHMENTS);
+  return resolveMailTransport(context.env.MAIL_TRANSPORT) === "smtp";
 }
 
 function hasSmtpSendScope(scopes: readonly string[]): boolean {
@@ -130,8 +136,20 @@ function hasSmtpSendScope(scopes: readonly string[]): boolean {
 
 async function smtpAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
   if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return false;
-  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId);
+  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "smtp");
   return Boolean(token && hasSmtpSendScope(token.grantedScopes));
+}
+
+function hasOneDriveAppFolderScope(scopes: readonly string[]): boolean {
+  return scopes.some((scope) => {
+    const normalized = scope.trim().toLowerCase();
+    return normalized === "files.readwrite.appfolder" || normalized.endsWith("/files.readwrite.appfolder");
+  });
+}
+
+async function oneDriveAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
+  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "onedrive");
+  return Boolean(token && hasOneDriveAppFolderScope(token.grantedScopes));
 }
 
 function publicAttachmentSet(set: AttachmentSetRecord): Record<string, unknown> {
@@ -146,7 +164,7 @@ function publicAttachmentSet(set: AttachmentSetRecord): Record<string, unknown> 
 }
 
 function publicAttachmentFile(file: AttachmentFileRecord): Record<string, unknown> {
-  // Never expose the private R2 object key through any API response.
+  // Never expose the private OneDrive locator through any API response.
   return {
     id: file.id,
     originalFilename: file.originalFilename,
@@ -358,7 +376,7 @@ async function requireMutationSession(context: MailFlowContext): Promise<{ user:
   return authenticated;
 }
 
-function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: GraphMailProvider; smtp: ExchangeOnlineSmtpClient; auth: MicrosoftAuthService; mailTransport: MailTransport } {
+function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: GraphMailProvider; smtp: ExchangeOnlineSmtpClient; auth: MicrosoftAuthService; storageAuth: MicrosoftAuthService; mailTransport: MailTransport } {
   const tenantId = textEnv(context.env.ENTRA_TENANT_ID);
   const clientId = textEnv(context.env.ENTRA_CLIENT_ID);
   const clientSecret = textEnv(context.env.ENTRA_CLIENT_SECRET);
@@ -367,6 +385,7 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
   if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
   const origin = redirectOrigin ?? applicationOrigin(context);
   const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
+  const storageRedirectUri = new URL("/auth/microsoft/onedrive/callback", origin).toString();
   const mailTransport = resolveMailTransport(context.env.MAIL_TRANSPORT);
   const config = {
     tenantId,
@@ -389,7 +408,24 @@ function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: 
     sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
     sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
   });
-  return { graph, smtp, auth, mailTransport };
+  const storageAuth = new MicrosoftAuthService({
+    tenantId,
+    clientId,
+    clientSecret,
+    redirectUri: storageRedirectUri,
+    scopes: ONEDRIVE_ENTRA_SCOPES,
+  }, null, {
+    userStore: stores.userStore,
+    sessionStore: stores.sessionStore,
+    tokenStore: stores.tokenStore,
+    stateStore: stores.stateStore,
+    stateSecret: sessionSecret,
+    tokenEncryptionSecret: tokenSecret,
+    secureCookies: new URL(context.req.url).protocol === "https:",
+    sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+    sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
+  });
+  return { graph, smtp, auth, storageAuth, mailTransport };
 }
 
 function routeParam(context: MailFlowContext, name: string): string {
@@ -555,6 +591,38 @@ app.get("/auth/microsoft/callback", async (context) => {
   }
 });
 
+app.get("/auth/microsoft/onedrive/start", async (context) => {
+  const authenticated = await requireSession(context);
+  if (authenticated instanceof Response) return authenticated;
+  try {
+    const returnTo = new URL(context.req.url).searchParams.get("returnTo") ?? "/flows/new/recipients";
+    const { storageAuth } = configFor(context);
+    const started = await storageAuth.beginSignIn(returnTo);
+    context.header("Set-Cookie", started.stateCookie);
+    return context.redirect(started.authorizationUrl, 302);
+  } catch {
+    return responseError(context, 503, "onedrive_auth_unavailable", "OneDrive authorization is not configured yet.");
+  }
+});
+
+app.get("/auth/microsoft/onedrive/callback", async (context) => {
+  const authenticated = await requireSession(context);
+  if (authenticated instanceof Response) return context.redirect("/?auth=session_expired", 302);
+  const query = new URL(context.req.url).searchParams;
+  if (query.get("error")) return context.redirect("/flows/new/recipients?onedrive=cancelled", 302);
+  const code = query.get("code");
+  const state = query.get("state");
+  if (!code || !state) return context.redirect("/flows/new/recipients?onedrive=invalid", 302);
+  try {
+    const { storageAuth } = configFor(context);
+    const completed = await storageAuth.completeResourceConsent({ code, state, cookieHeader: context.req.header("Cookie") }, authenticated.user);
+    context.header("Set-Cookie", completed.stateCookie, { append: true });
+    return context.redirect(completed.returnTo, 302);
+  } catch {
+    return context.redirect("/flows/new/recipients?onedrive=failed", 302);
+  }
+});
+
 app.post("/auth/logout", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
@@ -571,6 +639,7 @@ app.get("/api/me", async (context) => {
   if (authenticated instanceof Response) return authenticated;
   const attachmentInfrastructure = attachmentInfrastructureAvailable(context);
   const smtpAuthorized = await smtpAuthorizedFor(context, authenticated.user.id);
+  const oneDriveAuthorized = await oneDriveAuthorizedFor(context, authenticated.user.id);
   return context.json({
     user: publicUser(authenticated.user),
     csrfToken: authenticated.csrfToken,
@@ -578,8 +647,10 @@ app.get("/api/me", async (context) => {
       defaultPacePerMinute: integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600),
       maxCampaignRecipients: integerEnv(context.env.MAX_CAMPAIGN_RECIPIENTS, 300, 1, 300),
       mailTransport: resolveMailTransport(context.env.MAIL_TRANSPORT),
-      attachmentsEnabled: attachmentInfrastructure && smtpAuthorized,
-      attachmentsReauthorizationRequired: attachmentInfrastructure && !smtpAuthorized,
+      attachmentsEnabled: attachmentInfrastructure && smtpAuthorized && oneDriveAuthorized,
+      attachmentsReauthorizationRequired: attachmentInfrastructure && (!smtpAuthorized || !oneDriveAuthorized),
+      attachmentsSmtpAuthorizationRequired: attachmentInfrastructure && !smtpAuthorized,
+      attachmentsOneDriveAuthorizationRequired: attachmentInfrastructure && smtpAuthorized && !oneDriveAuthorized,
       maxAttachmentFiles: ATTACHMENT_MAX_FILES,
       maxAttachmentBytes: ATTACHMENT_MAX_BYTES,
     },
@@ -592,10 +663,13 @@ app.post("/api/attachment-sets", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
   if (!attachmentInfrastructureAvailable(context)) {
-    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery and private attachment storage.");
+    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery.");
   }
   if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
     return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+  }
+  if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before adding attachments.");
   }
   const input = await parseOrError(context, attachmentSetCreateSchema);
   if (input instanceof Response) return input;
@@ -614,10 +688,13 @@ app.post("/api/attachment-sets/:id/files", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
   if (!attachmentInfrastructureAvailable(context)) {
-    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery and private attachment storage.");
+    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery.");
   }
   if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
     return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+  }
+  if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before adding attachments.");
   }
   const contentLengthHeader = context.req.header("Content-Length");
   if (contentLengthHeader) {
@@ -667,6 +744,9 @@ app.post("/api/attachment-sets/:id/files", async (context) => {
 app.delete("/api/attachment-sets/:id/files/:fileId", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
+  if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before changing attachments.");
+  }
   const repo = repositories(context);
   const service = attachmentServiceFor(context, repo);
   if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
@@ -879,6 +959,9 @@ app.post("/api/campaigns", async (context) => {
     }
     if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
       return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before creating an attachment campaign.");
+    }
+    if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+      return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before creating an attachment campaign.");
     }
     const service = attachmentServiceFor(context, repo);
     if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
@@ -1105,6 +1188,9 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   if (attachmentSet && !(await smtpAuthorizedFor(context, authenticated.user.id))) {
     return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before starting this attachment campaign.");
   }
+  if (attachmentSet && !(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before starting this attachment campaign.");
+  }
   const attachmentService = attachmentServiceFor(context, repo);
   if (attachmentSet && !attachmentService) {
     const error = new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
@@ -1209,17 +1295,23 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
     req: { url: textEnv(bindings.PUBLIC_ORIGIN, "https://mailflow.invalid") } as MailFlowContext["req"],
   } as MailFlowContext;
   const repo = createD1Repositories(bindings.DB);
-  const attachmentService = bindings.ATTACHMENTS
-    ? createAttachmentService(repo.attachments, bindings.ATTACHMENTS)
-    : null;
   let authServices: ReturnType<typeof configFor> | null = null;
+  let attachmentService: AttachmentService | null = null;
   for (const message of batch.messages) {
     if (!isCampaignTickMessage(message.body)) {
       message.ack();
       continue;
     }
     try {
-      if (!authServices) authServices = configFor(queueContext);
+      if (!authServices) {
+        authServices = configFor(queueContext);
+        attachmentService = authServices.mailTransport === "smtp"
+          ? createAttachmentService(
+              repo.attachments,
+              new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await authServices!.storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
+            )
+          : null;
+      }
       const result = await handleCampaignQueueMessage(message.body, {
         campaigns: repo.campaigns,
         recipientJobs: repo.recipientJobs,
@@ -1247,11 +1339,19 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
   }
 }
 
-/** Run the hourly private-object retention sweep for orphan and terminal sets. */
+/** Run the hourly OneDrive App Folder retention sweep for orphan sets. */
 export async function processAttachmentCleanup(bindings: MailFlowBindings): Promise<void> {
-  if (!bindings.ATTACHMENTS) return;
+  if (resolveMailTransport(bindings.MAIL_TRANSPORT) !== "smtp") return;
   const repo = createD1Repositories(bindings.DB);
-  const service = createAttachmentService(repo.attachments, bindings.ATTACHMENTS);
+  const queueContext = {
+    env: bindings,
+    req: { url: textEnv(bindings.PUBLIC_ORIGIN, "https://mailflow.invalid") } as MailFlowContext["req"],
+  } as MailFlowContext;
+  const { storageAuth } = configFor(queueContext);
+  const service = createAttachmentService(
+    repo.attachments,
+    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
+  );
   await service.cleanupExpiredOrphans(100);
 }
 

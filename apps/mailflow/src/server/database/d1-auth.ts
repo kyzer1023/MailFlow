@@ -4,6 +4,7 @@ import type {
   OAuthStatePayload,
   OAuthStateStore,
   OAuthTokenRecord,
+  OAuthTokenResource,
   OAuthTokenStore,
   UserStore,
   UserUpsert,
@@ -72,6 +73,7 @@ export class D1AuthUserStore implements UserStore {
 
 interface OAuthTokenRow {
   user_id: string;
+  resource: OAuthTokenResource;
   encrypted_refresh_token: string;
   access_token_expires_at: number;
   granted_scopes: string;
@@ -91,6 +93,7 @@ function parseScopes(value: string): string[] {
 function authToken(row: OAuthTokenRow): OAuthTokenRecord {
   return {
     userId: row.user_id,
+    resource: row.resource,
     encryptedRefreshToken: row.encrypted_refresh_token,
     accessTokenExpiresAt: Number(row.access_token_expires_at),
     grantedScopes: parseScopes(row.granted_scopes),
@@ -105,26 +108,30 @@ export class D1AuthTokenStore implements OAuthTokenStore {
   async save(record: OAuthTokenRecord): Promise<void> {
     await bind(
       this.db,
-      `INSERT INTO oauth_tokens
-       (user_id, encrypted_refresh_token, access_token_expires_at, granted_scopes, encryption_version, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-       ON CONFLICT(user_id) DO UPDATE SET
+      `INSERT INTO oauth_resource_tokens
+       (user_id, resource, encrypted_refresh_token, access_token_expires_at, granted_scopes, encryption_version, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+       ON CONFLICT(user_id, resource) DO UPDATE SET
          encrypted_refresh_token = excluded.encrypted_refresh_token,
          access_token_expires_at = excluded.access_token_expires_at,
          granted_scopes = excluded.granted_scopes,
          encryption_version = excluded.encryption_version,
          updated_at = excluded.updated_at`,
-      [record.userId, record.encryptedRefreshToken, record.accessTokenExpiresAt, JSON.stringify(record.grantedScopes), record.encryptionVersion, record.updatedAt],
+      [record.userId, record.resource, record.encryptedRefreshToken, record.accessTokenExpiresAt, JSON.stringify(record.grantedScopes), record.encryptionVersion, record.updatedAt],
     ).run();
   }
 
-  async findByUserId(userIdValue: string): Promise<OAuthTokenRecord | null> {
-    const row = await bind(this.db, "SELECT * FROM oauth_tokens WHERE user_id = ?1", [userIdValue]).first<OAuthTokenRow>();
+  async findByUserId(userIdValue: string, resource: OAuthTokenResource): Promise<OAuthTokenRecord | null> {
+    const row = await bind(this.db, "SELECT * FROM oauth_resource_tokens WHERE user_id = ?1 AND resource = ?2", [userIdValue, resource]).first<OAuthTokenRow>();
     return row ? authToken(row) : null;
   }
 
-  async deleteByUserId(userIdValue: string): Promise<void> {
-    await bind(this.db, "DELETE FROM oauth_tokens WHERE user_id = ?1", [userIdValue]).run();
+  async deleteByUserId(userIdValue: string, resource?: OAuthTokenResource): Promise<void> {
+    if (resource) {
+      await bind(this.db, "DELETE FROM oauth_resource_tokens WHERE user_id = ?1 AND resource = ?2", [userIdValue, resource]).run();
+      return;
+    }
+    await bind(this.db, "DELETE FROM oauth_resource_tokens WHERE user_id = ?1", [userIdValue]).run();
   }
 }
 

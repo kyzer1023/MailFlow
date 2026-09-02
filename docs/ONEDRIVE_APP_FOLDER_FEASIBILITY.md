@@ -2,20 +2,20 @@
 
 Date: 2026-09-02
 
-Status: superseded by the delegated OAuth SMTP plus private R2 implementation in ADR-009. This document remains as historical evidence for the rejected Graph draft-upload path.
+Status: storage direction accepted by ADR-009. The Graph draft and `Mail.ReadWrite` delivery path below is historical; delegated OAuth SMTP now handles delivery while OneDrive App Folder supplies per-user storage.
 
 ## Recommendation
 
-**Conditional go for a tenant-scoped prototype. No-go for production rollout until the USM tenant test passes.**
+**Accepted for implementation, with production rollout gated on a real OneDrive upload, refresh, download, and delete test in the USM tenant.**
 
 OneDrive App Folder is the best card-free storage candidate for MailFlow because Microsoft documents the Graph app-folder feature across OneDrive for work or school and OneDrive for home, and the bytes count against the signed-in user's existing OneDrive quota. The delegated `Files.ReadWrite.AppFolder` scope limits the application to its own folder and does not require administrator consent in the Microsoft permission catalog.
 
 The gate remains conditional for four reasons:
 
 1. The delegated `Files.ReadWrite.AppFolder` permission is still labeled **preview**.
-2. A read-only OAuth probe confirmed that the primary USM student can reach an ordinary consent screen for delegated `Files.ReadWrite.AppFolder`, but delegated `Mail.ReadWrite` is blocked by tenant policy and requires administrator approval.
-3. Files of 3 MB or more require per-recipient Outlook drafts and attachment upload sessions, which adds the tenant-blocked delegated `Mail.ReadWrite` scope alongside the existing `Mail.Send`.
-4. MailFlow has not proved App Folder creation, background refresh-token access, permanent deletion, the secondary-account consent result, or the end-to-end large-attachment send path in the USM tenant.
+2. A read-only OAuth probe confirmed that the primary USM student can reach an ordinary consent screen for delegated `Files.ReadWrite.AppFolder`.
+3. MailFlow stores an independent Graph refresh grant because Outlook SMTP and Microsoft Graph access tokens are resource-specific.
+4. MailFlow has not yet proved App Folder creation, background refresh-token access, deletion, the secondary-account consent result, or the combined OneDrive-to-SMTP attachment path in the USM tenant.
 
 This investigation made no Entra, Cloudflare, deployment, D1, OneDrive, or mail changes.
 
@@ -27,7 +27,7 @@ This investigation made no Entra, Cloudflare, deployment, D1, OneDrive, or mail 
 - Tenant policy remains authoritative. An organization can disable user consent or limit it to selected low-impact permissions, in which case a user sees an approval requirement even for a delegated permission whose catalog entry says no administrator consent is required: [User and admin consent overview](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/user-admin-consent-overview).
 - App-folder content consumes the user's existing OneDrive quota. MailFlow must read the drive `quota` values instead of assuming a USM allocation: [App Folder considerations](https://learn.microsoft.com/en-us/graph/onedrive-sharepoint-appfolder#other-considerations) and [quota resource](https://learn.microsoft.com/en-us/graph/api/resources/quota?view=graph-rest-1.0).
 
-## Required permissions
+## Historical Graph-mail permissions (superseded by SMTP delivery)
 
 | Capability | Delegated permission | Why |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ Adding the scopes to the Entra registration is not enough by itself. Existing us
 - Extra OneDrive capacity, if ever required, is a tenant licensing decision. MailFlow must not initiate a purchase or require the member to bind a payment card.
 - Workers Free currently includes 100,000 Worker invocations per day and Queues Free includes 10,000 operations per day. A 300-recipient tick campaign is roughly 900 Queue operations before retries, because delivery normally costs one write, one read, and one delete operation per tick.
 
-## Proposed architecture
+## Historical Graph-mail architecture (superseded by SMTP delivery)
 
 ```text
 Browser

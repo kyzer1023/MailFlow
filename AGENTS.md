@@ -36,7 +36,7 @@ When sources conflict, use this order:
 - The first release accepts `.csv` and `.xlsx` uploads. It does not connect directly to Google Sheets.
 - Every spreadsheet row produces a separate message.
 - The sender is always the authenticated USM mailbox.
-- Campaign-wide attachments are limited to five files and 20 MiB combined, use private R2 storage, and require SMTP mode plus delegated `SMTP.Send`.
+- Campaign-wide attachments are limited to five files and 20 MiB combined, use each signed-in student's OneDrive App Folder through delegated `Files.ReadWrite.AppFolder`, and require SMTP mode plus delegated `SMTP.Send`.
 - Shared mailboxes, arbitrary From addresses, and application-level Microsoft permissions are out of scope for the prototype.
 
 ## Architecture boundaries

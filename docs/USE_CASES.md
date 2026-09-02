@@ -91,8 +91,8 @@ Flagged rows are visible and excluded until corrected or explicitly skipped. No 
 - The member may add up to five PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG files.
 - The combined raw file size may not exceed 20 MiB.
 - Every valid recipient receives the same immutable attachment set.
-- Uploads require SMTP mode and a stored delegated `SMTP.Send` grant. The interface asks an older Graph-authorized session to reconnect before it exposes uploads.
-- The browser sends files only to the same-origin authenticated API. D1 stores ownership and integrity metadata; private R2 stores the bytes.
+- Uploads require SMTP mode plus stored delegated `SMTP.Send` and `Files.ReadWrite.AppFolder` grants. The interface asks an older session to reconnect for SMTP, then offers a one-time Connect OneDrive action before it exposes uploads.
+- The browser sends files only to the same-origin authenticated API. D1 stores ownership and integrity metadata; the signed-in student's OneDrive App Folder stores the bytes against that student's existing quota.
 - Executable signatures, empty files, duplicate content, mismatched extensions and media types, and unsupported formats are rejected.
 - Review displays filenames and sizes. Campaign creation sends only an opaque attachment-set identifier, never file bytes or private object keys.
 - Abandoned uploads expire after 24 hours. Campaign attachment bytes are deleted after the campaign reaches a terminal state while audit metadata remains.
@@ -170,7 +170,7 @@ Included:
 - Subject and HTML placeholders.
 - Fixed or mapped recipient metadata.
 - Test send, review, paced background queue, pause, resume, status, and result export.
-- Up to five campaign-wide attachments totaling at most 20 MiB through delegated OAuth SMTP and private temporary R2 storage.
+- Up to five campaign-wide attachments totaling at most 20 MiB through delegated OAuth SMTP and temporary per-user OneDrive App Folder storage.
 
 Later:
 

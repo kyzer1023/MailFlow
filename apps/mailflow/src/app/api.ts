@@ -21,6 +21,8 @@ export interface ApiConfig {
   readonly mailTransport?: "graph" | "smtp";
   readonly attachmentsEnabled?: boolean;
   readonly attachmentsReauthorizationRequired?: boolean;
+  readonly attachmentsSmtpAuthorizationRequired?: boolean;
+  readonly attachmentsOneDriveAuthorizationRequired?: boolean;
   readonly maxAttachmentFiles?: number;
   readonly maxAttachmentBytes?: number;
 }

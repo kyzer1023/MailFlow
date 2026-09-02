@@ -8,12 +8,12 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | --- | --- |
 | Worker and static site | `mailflow` |
 | D1 database | `mailflow-db`, binding `DB` |
-| Private attachment storage | `mailflow-attachments`, binding `ATTACHMENTS` |
+| Private attachment storage | Each member's OneDrive `Apps/MailFlow` folder |
 | Queue | `mailflow-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
 | Public origin | `https://mailflow.kyzer-hono-test.workers.dev` |
 | OAuth callback | `<PUBLIC_ORIGIN>/auth/microsoft/callback` |
 | Entra application | Existing single-tenant application named `MailFlow` |
-| Mail permissions | SMTP target: delegated `SMTP.Send`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
+| Microsoft permissions | SMTP target: delegated `SMTP.Send`; attachment storage: delegated `Files.ReadWrite.AppFolder`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
 
 The source configuration is `../apps/mailflow/wrangler.jsonc`. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
 
@@ -35,7 +35,7 @@ Then confirm:
 - No password, token, client secret, or account address is staged in Git.
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
 - The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
-- `MAIL_TRANSPORT=smtp`, the `ATTACHMENTS` binding, and migration `0004_campaign_attachments.sql` move together. Do not enable only part of this set.
+- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
 
 ## Local full-stack development
@@ -61,12 +61,11 @@ These actions create persistent external resources and require action-time user 
 2. Create D1 database `mailflow-db`.
 3. Add the returned `database_id` to the existing `DB` entry in `wrangler.jsonc`.
 4. Create Queue `mailflow-campaign-ticks`.
-5. Create a private R2 bucket named `mailflow-attachments`. Do not configure a public development URL or custom domain for it.
-6. Deploy once to obtain the `workers.dev` origin, or confirm the intended custom domain.
-7. Set `PUBLIC_ORIGIN` to that exact HTTPS origin.
-8. Apply production D1 migrations, including `0004_campaign_attachments.sql`.
-9. Store every secret using Wrangler secret storage, never `vars` or a committed file.
-10. Deploy the verified build.
+5. Deploy once to obtain the `workers.dev` origin, or confirm the intended custom domain.
+6. Set `PUBLIC_ORIGIN` to that exact HTTPS origin.
+7. Apply production D1 migrations, including `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`.
+8. Store every secret using Wrangler secret storage, never `vars` or a committed file.
+9. Deploy the verified build.
 
 Generate `TOKEN_ENCRYPTION_KEY_B64` from 32 cryptographically random bytes and make `SESSION_SECRET` an independent high-entropy value. Record neither value here. Rotating the token key requires the rotation procedure described in the auth implementation; rotating blindly makes stored refresh tokens unreadable.
 
@@ -80,11 +79,12 @@ These actions change tenant state and require action-time user confirmation.
 4. Keep the local callback only while local OAuth testing is needed.
 5. Create one confidential client credential with the shortest practical lifetime.
 6. Copy the credential value directly into the Worker secret prompt. Do not save it in `.env`, notes, chat, or screenshots.
-7. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; never use SMTP Basic authentication or application-level mail access.
+7. Register `/auth/microsoft/onedrive/callback` for both the production origin and localhost development origin.
+8. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; for attachment storage, request delegated `Files.ReadWrite.AppFolder`. Never use SMTP Basic authentication or application-level mail or file access.
 
-The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, confirm the R2 bucket exists and the attachment migration is applied. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must sign out or use the Reconnect Microsoft action before attachments become available.
+The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and register the OneDrive callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
 
-The scheduled handler runs hourly at minute 15 and deletes unassociated attachment sets after their 24-hour expiry. Terminal campaign paths also request immediate byte deletion. Monitor scheduled-run failures and R2 storage growth; repeated growth with no active campaigns indicates cleanup needs investigation.
+The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
 
@@ -124,6 +124,6 @@ Notes without addresses, tokens, or message content:
 - Never reset an `unknown` row to pending automatically.
 - A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.
 - Preserve D1 and Queue resources when rolling back application code.
-- Preserve D1 attachment metadata and the private R2 bucket during a code rollback. Graph mode must reject campaigns that reference attachment sets.
+- Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
 - If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.
 - If a session or token-encryption secret is exposed, rotate it and invalidate affected sessions. Follow the token-key rotation path before changing the encryption key.

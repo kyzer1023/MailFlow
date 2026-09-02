@@ -21,8 +21,8 @@ Cloudflare Worker
         |    campaigns, recipient jobs, attachment metadata,
         |    audit events, encrypted tokens
         |
-        +--> private R2
-        |    temporary campaign attachment bytes
+        +--> Microsoft Graph / OneDrive App Folder
+        |    temporary attachment bytes in the signed-in student's drive
         |
         +--> Cloudflare Queue
              one campaign tick at a time
@@ -42,7 +42,7 @@ Cloudflare Worker
 - `api`: HTTP routes, input validation, session checks, and orchestration.
 - `domain`: pure campaign states, validation rules, template rendering, pace calculations, and contracts.
 - `database`: D1 schema, SQL migrations, and repositories.
-- `attachments`: file policy, private object storage coordination, checksum verification, locking, and cleanup.
+- `attachments`: file policy, per-user OneDrive App Folder coordination, checksum verification, locking, and cleanup.
 - `queue`: Cloudflare Queue adapter and campaign tick consumer.
 - `microsoft`: OAuth, encrypted token storage, refresh, Graph fallback, SMTP adapter, MIME generation, and provider error mapping.
 
@@ -54,7 +54,8 @@ Domain modules must have no Cloudflare imports. Adapters depend on domain contra
 - Server-side authorization-code flow with PKCE.
 - Graph fallback scopes: `openid`, `profile`, `email`, `offline_access`, `User.Read`, and delegated `Mail.Send`.
 - SMTP target scopes: `openid`, `profile`, `email`, `offline_access`, and delegated `https://outlook.office.com/SMTP.Send`.
-- OAuth access tokens are resource-specific. A deployment selects Graph or SMTP before authorization; it does not use one token for both transports.
+- Attachment storage scopes: `openid`, `profile`, `email`, `offline_access`, and delegated Graph `Files.ReadWrite.AppFolder`.
+- OAuth access tokens are resource-specific. SMTP delivery and OneDrive storage use separate encrypted refresh-token records for the same user.
 - In SMTP mode, the validated ID token supplies the tenant object identity, display name, principal name, and mailbox address. Graph mode retains the `/me` cross-check during the rollback period.
 - Redirect route: `/auth/microsoft/callback` on local and deployed origins.
 - Session cookie: `HttpOnly`, `Secure` in production, `SameSite=Lax`, rotated after login, and renewed on authenticated use with a 365-day rolling lifetime. Microsoft revocation and browser cookie clearing still end access.
@@ -92,9 +93,9 @@ The campaign-create API requires the idempotency key. D1 enforces uniqueness per
 
 ### attachment_sets and attachment_files
 
-An attachment set belongs to one user and at most one campaign. D1 stores the sanitized original filename, media type, byte count, SHA-256 digest, private object key, immutable ordering, lifecycle state, and expiry metadata. Attachment bytes live only in the private `ATTACHMENTS` R2 bucket.
+An attachment set belongs to one user and at most one campaign. D1 stores the sanitized original filename, media type, byte count, SHA-256 digest, private OneDrive locator, immutable ordering, lifecycle state, and expiry metadata. Attachment bytes live only in that user's OneDrive `Apps/MailFlow` folder and count against their OneDrive quota.
 
-The product limit is five files and 20 MiB combined raw bytes. Open sets may be edited. Test-send locks a set, and campaign creation atomically associates an open set with one owner-matching campaign. Abandoned unassociated sets expire after 24 hours. Terminal campaign cleanup deletes R2 bytes and retains metadata for audit.
+The product limit is five files and 20 MiB combined raw bytes. Open sets may be edited. Test-send locks a set, and campaign creation atomically associates an open set with one owner-matching campaign. Abandoned unassociated sets expire after 24 hours. Terminal campaign cleanup removes active OneDrive items and retains metadata for audit. Ordinary Graph deletion uses the user's recycle bin unless the scoped `permanentDelete` path is separately proven in the tenant.
 
 ### recipient_jobs
 
@@ -159,13 +160,12 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 ## Cloudflare bindings
 
 - `DB`: D1 database.
-- `ATTACHMENTS`: private R2 bucket for temporary attachment bytes. Public access is not configured.
 - `CAMPAIGN_QUEUE`: Queue producer.
 - Queue consumer in the same Worker deployment unless operational evidence calls for a split Worker.
 - Static assets binding for the Vite client.
 - Secrets for Entra client secret, token-encryption key, and session integrity.
 - Plain variables for tenant ID, client ID, public origin, campaign limit, and default pace.
-- `MAIL_TRANSPORT` selects `graph` or `smtp`. Attachments are exposed and accepted only in `smtp` mode when the user's stored grant includes `SMTP.Send`.
+- `MAIL_TRANSPORT` selects `graph` or `smtp`. Attachments are exposed and accepted only in `smtp` mode when the user's stored grants include both `SMTP.Send` and `Files.ReadWrite.AppFolder`.
 - An hourly scheduled handler removes attachment sets that remain unassociated past their 24-hour expiry. Campaign terminal paths also request immediate cleanup.
 
 ## Security boundaries
@@ -176,7 +176,7 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 - Preview content is sanitized and isolated in an iframe.
 - Campaign ownership is checked on every read and write.
 - Attachment APIs require the same authenticated owner, CSRF protection, same-origin mutation checks, bounded multipart bodies, approved file types, and content-signature validation.
-- Queue messages and campaign JSON carry only opaque attachment-set identifiers. They never contain attachment bytes, user filenames as object keys, or private R2 keys.
-- R2 bytes are rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed.
+- Queue messages and campaign JSON carry only opaque attachment-set identifiers. They never contain attachment bytes, user filenames as storage keys, or private OneDrive locators.
+- OneDrive bytes are rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed.
 - User-facing errors do not reveal tokens, Graph response bodies, or internal stack traces.
 - Production configuration is reproducible from `wrangler` configuration, migration files, and documented secret names.

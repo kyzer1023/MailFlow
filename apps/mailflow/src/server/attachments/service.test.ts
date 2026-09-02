@@ -15,11 +15,11 @@ class MemoryObjectStore implements AttachmentObjectStore {
   readonly deleted: string[] = [];
   failDelete = false;
 
-  async put(key: string, value: ArrayBuffer): Promise<void> {
+  async put(_ownerUserId: string, key: string, value: ArrayBuffer): Promise<void> {
     this.values.set(key, new Uint8Array(value.slice(0)));
   }
 
-  async get(key: string): Promise<AttachmentObjectBody | null> {
+  async get(_ownerUserId: string, key: string): Promise<AttachmentObjectBody | null> {
     const value = this.values.get(key);
     if (!value) return null;
     return {
@@ -30,7 +30,7 @@ class MemoryObjectStore implements AttachmentObjectStore {
     };
   }
 
-  async delete(key: string | string[]): Promise<void> {
+  async delete(_ownerUserId: string, key: string | string[]): Promise<void> {
     if (this.failDelete) throw new Error("temporary object-store failure");
     for (const entry of Array.isArray(key) ? key : [key]) {
       this.deleted.push(entry);
@@ -38,7 +38,7 @@ class MemoryObjectStore implements AttachmentObjectStore {
     }
   }
 
-  async list(options: { prefix: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean }> {
+  async list(_ownerUserId: string, options: { prefix: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean }> {
     const keys = [...this.values.keys()].filter((key) => key.startsWith(options.prefix));
     const limit = options.limit ?? 1000;
     return { objects: keys.slice(0, limit).map((key) => ({ key })), truncated: keys.length > limit };
@@ -231,7 +231,7 @@ describe("attachment service", () => {
     const { service, repository, objectStore } = createService(now);
     const { set } = await service.createSet("user-1", "orphan-object-request");
     await service.lockForSnapshot("user-1", set.id);
-    objectStore.values.set(`attachment-sets/${set.id}/untracked`, new Uint8Array([1, 2, 3]));
+    objectStore.values.set(`mailflow-${set.id}-attachment_file_untracked.bin`, new Uint8Array([1, 2, 3]));
     now.value = "2026-09-03T00:00:01.000Z";
     const cleanup = await service.cleanupExpiredOrphans();
     expect(cleanup.deleted).toBe(1);

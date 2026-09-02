@@ -1,9 +1,9 @@
 /**
- * Attachment persistence and object-store contracts.
+ * Attachment persistence and byte-store contracts.
  *
  * These are deliberately structural. The application can pass a Cloudflare
- * R2 binding to the adapter without importing Cloudflare runtime types into
- * the domain or attachment policy modules.
+ * OneDrive adapter without importing Cloudflare runtime types into the
+ * domain or attachment policy modules.
  */
 
 export const ATTACHMENT_MAX_FILES = 5;
@@ -42,7 +42,7 @@ export interface AttachmentFileRecord {
   sha256: string;
   position: number;
   createdAt: string;
-  /** Set after the private object bytes have been deleted. */
+  /** Set after the private OneDrive bytes have been deleted. */
   deletedAt: string | null;
 }
 
@@ -64,12 +64,12 @@ export interface AttachmentObjectBody {
   readonly size?: number;
 }
 
-/** Narrow structural subset implemented by a private R2 bucket adapter. */
+/** Per-user private byte storage implemented by the OneDrive App Folder adapter. */
 export interface AttachmentObjectStore {
-  put(key: string, value: ArrayBuffer, options?: AttachmentObjectPutOptions): Promise<unknown>;
-  get(key: string): Promise<AttachmentObjectBody | null>;
-  delete(key: string | string[]): Promise<unknown>;
-  list(options: { prefix: string; limit?: number }): Promise<{ objects: readonly { key: string }[]; truncated: boolean }>;
+  put(ownerUserId: string, key: string, value: ArrayBuffer, options?: AttachmentObjectPutOptions): Promise<unknown>;
+  get(ownerUserId: string, key: string): Promise<AttachmentObjectBody | null>;
+  delete(ownerUserId: string, key: string | string[]): Promise<unknown>;
+  list(ownerUserId: string, options: { prefix: string; limit?: number }): Promise<{ objects: readonly { key: string }[]; truncated: boolean }>;
 }
 
 export interface AttachmentRepository {

@@ -77,7 +77,7 @@ export async function processCampaignTick(
   if (campaign.state !== "running") return { kind: "ignored", reason: "not_runnable" };
 
   // Attachment bytes are deliberately loaded and checksum-verified before a
-  // recipient claim.  This keeps a missing or corrupt R2 object from being
+  // recipient claim. This keeps a missing or corrupt OneDrive object from being
   // mistaken for an ambiguous provider outcome and prevents any row from being
   // marked sending when the campaign snapshot is no longer deliverable.
   let attachments: readonly MailAttachment[];

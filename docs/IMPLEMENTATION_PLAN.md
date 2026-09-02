@@ -25,7 +25,7 @@ Acceptance: mocked integration tests pass, then both student accounts can authen
 
 - SQL migrations and repositories.
 - Flow, template version, campaign, recipient job, attachment metadata, and audit persistence.
-- Private R2 attachment bytes, integrity checks, immutable association, and retention cleanup.
+- Per-user OneDrive App Folder attachment bytes, integrity checks, immutable association, and retention cleanup.
 - Queue tick pacing, pause, resume, conditional claims, retries, and unknown outcomes.
 
 Acceptance: local D1 and queue tests cover state transitions and duplicate deliveries.
@@ -41,7 +41,7 @@ Acceptance: primary journey works locally and visual comparison matches the appr
 ### W5 Verification and deployment
 
 - Unit, integration, security, accessibility, and visual QA.
-- Cloudflare D1, Queue, and private R2 setup, Worker secrets, Entra redirects, and deployment.
+- Cloudflare D1 and Queue setup, Worker secrets, Entra redirects, OneDrive App Folder consent, and deployment.
 - Real email tests across both USM senders and five Gmail recipients.
 
 Acceptance: deployed URL works, real acceptance is recorded accurately, and test evidence is documented without secrets.
@@ -61,7 +61,7 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 ## Cross-workstream gates
 
 - No real sending before test-send confirmation and a visible recipient summary.
-- No attachment deployment unless SMTP mode, private R2, migration `0004`, and `SMTP.Send` reauthorization are ready together.
+- No attachment deployment unless SMTP mode, migrations `0004` and `0005`, `SMTP.Send` reauthorization, the OneDrive callback, and `Files.ReadWrite.AppFolder` consent are ready together.
 - No deployment before `.env` and `.dev.vars` are ignored and Git history is checked for secrets.
 - No automatic retry for `unknown` outcomes.
 - No visual handoff before `design-qa.md` says `final result: passed` or accurately records a blocker.

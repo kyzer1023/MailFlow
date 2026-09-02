@@ -34,8 +34,8 @@
 - Safe retry for explicit throttles.
 - `unknown` behavior for ambiguous transport failures.
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
-- Attachment-set ownership, idempotent creation, immutable association, R2 byte integrity, terminal cleanup, and 24-hour orphan cleanup.
-- Campaign creation and test-send reject attachment sets unless SMTP mode, R2, and a stored `SMTP.Send` grant are all present.
+- Attachment-set ownership, idempotent creation, immutable association, OneDrive byte integrity, terminal cleanup, and 24-hour orphan cleanup.
+- Campaign creation and test-send reject attachment sets unless SMTP mode plus stored `SMTP.Send` and `Files.ReadWrite.AppFolder` grants are present.
 
 ### Frontend
 
@@ -71,11 +71,12 @@ Run only after mocked and local integration tests pass.
 2. Primary USM account sends one small campaign to the five authorized Gmail recipients.
 3. Verify provider acceptance, Sent Items, and inbox receipt where available.
 4. Verify each attachment filename, downloaded byte count, SHA-256 digest, and content independently in Sent Items and the authorized inbox.
-5. Sign out completely.
-6. Secondary USM account signs in through the same Entra application.
-7. Secondary account sends a test to self and a small external campaign.
-8. Verify sender identity is locked to the secondary mailbox.
-9. Confirm accepted recipients cannot be sent again through a duplicate queue delivery.
+5. Verify app-folder cleanup, recycle-bin behavior, and whether `permanentDelete` succeeds with only delegated `Files.ReadWrite.AppFolder` before claiming immediate quota reclamation.
+6. Sign out completely.
+7. Secondary USM account signs in through the same Entra application.
+8. Secondary account sends a test to self and a small external campaign.
+9. Verify sender identity is locked to the secondary mailbox.
+10. Confirm accepted recipients cannot be sent again through a duplicate queue delivery.
 
 Record sanitized evidence: test timestamp, sender alias such as `primary` or `secondary`, recipient count, provider result category, campaign status, and whether inbox receipt was observed. Do not commit account addresses or credentials.
 
@@ -83,8 +84,8 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 
 - Production D1 migrations applied.
 - Queue producer and consumer bound.
-- Private R2 attachment bucket bound with no public access.
-- Attachment migration applied and hourly cleanup trigger registered.
+- Attachment and resource-token migrations applied and hourly cleanup trigger registered.
+- Production and local OneDrive callback URIs registered on the existing Entra application.
 - Static assets served by the Worker.
 - Production origin and both local and production Entra redirect URIs configured.
 - Worker secrets present without appearing in `wrangler` files or Git.

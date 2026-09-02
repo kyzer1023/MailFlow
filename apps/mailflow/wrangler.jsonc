@@ -18,12 +18,6 @@
       "migrations_dir": "migrations"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "ATTACHMENTS",
-      "bucket_name": "mailflow-attachments"
-    }
-  ],
   "triggers": {
     "crons": ["15 * * * *"]
   },

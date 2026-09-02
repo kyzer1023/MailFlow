@@ -19,7 +19,7 @@ A society member can safely turn a spreadsheet and reusable HTML message into in
 - React, TypeScript, and Vite for the client.
 - Cloudflare Worker for same-origin API and OAuth callbacks.
 - Cloudflare D1 for users, sessions, flows, template versions, campaigns, recipient jobs, attachment metadata, and audit events.
-- Private Cloudflare R2 storage for temporary campaign attachment bytes.
+- Each signed-in student's OneDrive App Folder for temporary campaign attachment bytes.
 - Cloudflare Queues for background campaign ticks.
 - Microsoft Entra ID single-tenant authentication.
 - Delegated OAuth SMTP is the target mail transport and the only transport that supports attachments. Microsoft Graph delegated `Mail.Send` remains a temporary deployment rollback path.
@@ -29,7 +29,7 @@ A society member can safely turn a spreadsheet and reusable HTML message into in
 ## Existing prerequisites
 
 - A single-tenant Microsoft Entra application named `MailFlow` already exists in the USM tenant.
-- The application has delegated Microsoft Graph `Mail.Send` and `User.Read` configured for rollback. SMTP deployments request delegated `https://outlook.office.com/SMTP.Send` during OAuth.
+- The application has delegated Microsoft Graph `Mail.Send` and `User.Read` configured for rollback. SMTP deployments request delegated `https://outlook.office.com/SMTP.Send` during sign-in, and attachment users separately authorize delegated `Files.ReadWrite.AppFolder` for their own OneDrive storage.
 - Localhost and deployed Web callback routes have been exercised with the existing application.
 - The deployed Worker uses an existing confidential client credential stored only as a Cloudflare secret. Its value is intentionally not recoverable from Entra.
 - Two USM student test accounts are available locally. Both completed authentication-only XOAUTH2 probes successfully; this is strong cohort evidence, not a tenant-wide guarantee.

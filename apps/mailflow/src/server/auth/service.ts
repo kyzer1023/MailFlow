@@ -2,6 +2,7 @@ import type {
   AuthCallbackResult,
   AuthenticatedUser,
   AuthorizationStart,
+  OAuthTokenResource,
   OAuthStateStore,
   OAuthTokenStore,
   UserStore,
@@ -78,6 +79,7 @@ function requireRefreshToken(tokenSet: OAuthTokenSet): string {
  */
 export class MicrosoftAuthService {
   private readonly config;
+  private readonly tokenResource: OAuthTokenResource;
 
   constructor(
     config: EntraConfig,
@@ -85,6 +87,11 @@ export class MicrosoftAuthService {
     private readonly deps: AuthServiceDependencies,
   ) {
     this.config = resolveEntraConfig(config);
+    this.tokenResource = this.config.scopes.some((scope) => scope.toLowerCase().endsWith("/smtp.send"))
+      ? "smtp"
+      : this.config.scopes.includes("Files.ReadWrite.AppFolder")
+        ? "onedrive"
+        : "graph_mail";
   }
 
   private now(): number {
@@ -169,6 +176,7 @@ export class MicrosoftAuthService {
     const refreshToken = requireRefreshToken(tokens);
     await this.deps.tokenStore.save({
       userId: user.id,
+      resource: this.tokenResource,
       encryptedRefreshToken: await encryptRefreshToken(refreshToken, this.deps.tokenEncryptionSecret),
       accessTokenExpiresAt: tokens.accessTokenExpiresAt,
       grantedScopes: tokens.scope,
@@ -191,7 +199,7 @@ export class MicrosoftAuthService {
 
   /** Refresh and persist a user's token for queue work without exposing it. */
   async refreshUserAccessToken(userId: string): Promise<OAuthTokenSet> {
-    const record = await this.deps.tokenStore.findByUserId(userId);
+    const record = await this.deps.tokenStore.findByUserId(userId, this.tokenResource);
     if (!record) throw new AuthFlowError("token", "Sign-in expired. Sign in again, then resume from the first unsent row.");
     const refreshToken = await decryptRefreshToken(record.encryptedRefreshToken, this.deps.tokenEncryptionSecret);
     const tokens = await refreshAccessToken(this.config, {
@@ -208,5 +216,55 @@ export class MicrosoftAuthService {
       updatedAt: this.now(),
     });
     return tokens;
+  }
+
+  /** Complete an additional resource grant for the already signed-in user. */
+  async completeResourceConsent(input: AuthCallbackInput, expectedUser: AuthenticatedUser): Promise<{ returnTo: string; stateCookie: string }> {
+    if (!input.code || !input.state) throw new AuthFlowError("state", "Microsoft authorization response is incomplete");
+    let state;
+    try {
+      state = await consumeOAuthState({
+        secret: this.deps.stateSecret,
+        expectedState: input.state,
+        cookieHeader: input.cookieHeader,
+        cookieValue: input.stateCookieValue,
+        now: this.now(),
+        stateStore: this.deps.stateStore,
+      });
+    } catch {
+      throw new AuthFlowError("state", "Microsoft authorization could not be verified in this browser");
+    }
+    const tokens = await exchangeAuthorizationCode(this.config, {
+      code: input.code,
+      codeVerifier: state.codeVerifier,
+      fetchImpl: this.deps.fetchImpl,
+      now: this.now(),
+    });
+    if (!tokens.idToken) throw new AuthFlowError("identity", "Microsoft did not return a verifiable identity");
+    const claims = await verifyIdToken(tokens.idToken, {
+      tenantId: this.config.tenantId,
+      clientId: this.config.clientId,
+      nonce: state.nonce,
+      fetchImpl: this.deps.fetchImpl,
+      verifySignature: this.deps.verifyIdTokenSignature ?? true,
+      now: Math.floor(this.now() / 1000),
+    });
+    if (claims.tid !== expectedUser.tenantId || claims.oid !== expectedUser.objectId) {
+      throw new AuthFlowError("identity", "Authorize OneDrive with the same Microsoft account currently signed in to MailFlow");
+    }
+    const refreshToken = requireRefreshToken(tokens);
+    await this.deps.tokenStore.save({
+      userId: expectedUser.id,
+      resource: this.tokenResource,
+      encryptedRefreshToken: await encryptRefreshToken(refreshToken, this.deps.tokenEncryptionSecret),
+      accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+      grantedScopes: tokens.scope,
+      encryptionVersion: REFRESH_TOKEN_ENCRYPTION_VERSION,
+      updatedAt: this.now(),
+    });
+    return {
+      returnTo: state.returnTo,
+      stateCookie: clearOAuthStateCookie(this.deps.secureCookies ?? true),
+    };
   }
 }

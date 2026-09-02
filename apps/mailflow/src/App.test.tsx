@@ -602,6 +602,31 @@ describe("campaign attachments", () => {
     expect(screen.getAllByText("agenda.pdf")).toHaveLength(1);
   });
 
+  it("asks the signed-in student to connect OneDrive before exposing attachment uploads", async () => {
+    mockedGetMe.mockResolvedValue({
+      user: {
+        id: "user-1",
+        displayName: "Amina Tan",
+        principalName: "amina@student.example",
+        mailboxAddress: "amina@student.example",
+      },
+      csrfToken: "test-csrf-token",
+      config: {
+        defaultPacePerMinute: 12,
+        maxCampaignRecipients: 300,
+        mailTransport: "smtp",
+        attachmentsEnabled: false,
+        attachmentsOneDriveAuthorizationRequired: true,
+      },
+    });
+
+    render(<App />);
+
+    const connect = await screen.findByRole("link", { name: "Connect OneDrive" });
+    expect(connect).toHaveAttribute("href", "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Frecipients");
+    expect(screen.queryByRole("button", { name: /Drop files here or choose files/ })).not.toBeInTheDocument();
+  });
+
   it("keeps campaign payloads file-free and locks attachments after test campaign creation", async () => {
     window.history.replaceState({}, "", "/flows/new/data");
     mockedCreateFlow.mockResolvedValue({ flow: {

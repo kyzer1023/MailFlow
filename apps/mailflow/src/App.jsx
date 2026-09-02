@@ -59,7 +59,7 @@ import { escapeMergeValue } from "./client/template";
 const DraftContext = createContext(null);
 const ApiContext = createContext(null);
 
-const fallbackConfig = { defaultPacePerMinute: 12, maxCampaignRecipients: 300, mailTransport: "graph", attachmentsEnabled: false, attachmentsReauthorizationRequired: false };
+const fallbackConfig = { defaultPacePerMinute: 12, maxCampaignRecipients: 300, mailTransport: "graph", attachmentsEnabled: false, attachmentsReauthorizationRequired: false, attachmentsSmtpAuthorizationRequired: false, attachmentsOneDriveAuthorizationRequired: false };
 const emptyDraft = () => ({
   name: "",
   subject: "",
@@ -1325,9 +1325,11 @@ function RecipientsPage() {
         {validation && !validation.ok && <div className="notice notice--warn"><WarningCircle weight="fill" /><span>Flagged recipient rows can be skipped during Review. Template-level issues must be resolved before sending.</span></div>}
         {config.attachmentsEnabled
           ? <AttachmentPicker />
-          : config.attachmentsReauthorizationRequired
+          : config.attachmentsSmtpAuthorizationRequired
             ? <div className="notice notice--warn"><Info weight="fill" /><span>Reconnect Microsoft to authorize SMTP attachments.</span><a className="button button--text" href="/auth/microsoft/start?returnTo=%2Fflows%2Fnew%2Frecipients">Reconnect Microsoft</a></div>
-            : <div className="notice"><Info weight="fill" /><span>Attachments become available when this deployment uses SMTP delivery.</span></div>}
+            : config.attachmentsOneDriveAuthorizationRequired
+              ? <div className="notice notice--warn"><Info weight="fill" /><span>Connect your OneDrive to store attachment files in your MailFlow app folder.</span><a className="button button--text" href="/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Frecipients">Connect OneDrive</a></div>
+              : <div className="notice"><Info weight="fill" /><span>Attachments become available when this deployment uses SMTP delivery.</span></div>}
       </section>
       <aside className="panel pace-card"><Gauge weight="duotone" /><h2>Paced for safety</h2><p>Mail Flow sends one personalized message at a time and records the result for every row.</p><Field label={`${draft.pace} messages per minute`}><input type="range" min="6" max="20" value={draft.pace} onChange={(event) => updateDraft("pace", Number(event.target.value))} /></Field><div className="pace-facts"><span><strong>{validation?.totalRows ?? draft.rowCount}</strong>Total rows</span><span><strong>About {Math.ceil((validation?.validRecipientCount ?? draft.rowCount) / draft.pace)} min</strong>Estimated time</span></div><div className="notice"><Info weight="fill" /><span>Accepted rows are never sent twice. An uncertain Microsoft response is marked Unknown for manual review.</span></div></aside>
     </div>

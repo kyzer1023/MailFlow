@@ -1,5 +1,5 @@
--- Persist campaign-wide attachment sets and their private object metadata.
--- Attachment bytes live in the private R2 binding; D1 stores ownership,
+-- Persist campaign-wide attachment sets and their private storage metadata.
+-- Attachment bytes live in each user's OneDrive App Folder; D1 stores ownership,
 -- integrity, lifecycle, and audit metadata only.
 
 PRAGMA foreign_keys = ON;

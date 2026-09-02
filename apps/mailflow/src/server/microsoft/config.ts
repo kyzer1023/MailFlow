@@ -15,6 +15,14 @@ export const SMTP_ENTRA_SCOPES = [
   "https://outlook.office.com/SMTP.Send",
 ] as const;
 
+export const ONEDRIVE_ENTRA_SCOPES = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "Files.ReadWrite.AppFolder",
+] as const;
+
 export type MailTransport = "graph" | "smtp";
 
 export function resolveMailTransport(value: string | undefined): MailTransport {
@@ -70,9 +78,11 @@ export function resolveEntraConfig(config: EntraConfig): ResolvedEntraConfig {
     .filter(Boolean);
   const hasGraphMailScopes = scopes.includes("User.Read") && scopes.includes("Mail.Send");
   const hasSmtpScope = scopes.includes("https://outlook.office.com/SMTP.Send");
-  if (hasGraphMailScopes && hasSmtpScope) throw new Error("Graph and SMTP require separate resource-specific access tokens");
-  if (!scopes.includes("openid") || !scopes.includes("offline_access") || (!hasGraphMailScopes && !hasSmtpScope)) {
-    throw new Error("Microsoft scopes must include openid, offline_access, and one supported mail transport scope set");
+  const hasOneDriveScope = scopes.includes("Files.ReadWrite.AppFolder");
+  const resourceCount = Number(hasGraphMailScopes) + Number(hasSmtpScope) + Number(hasOneDriveScope);
+  if (resourceCount > 1) throw new Error("Microsoft Graph, OneDrive, and SMTP require separate resource-specific access tokens");
+  if (!scopes.includes("openid") || !scopes.includes("offline_access") || resourceCount !== 1) {
+    throw new Error("Microsoft scopes must include openid, offline_access, and one supported resource scope set");
   }
   return {
     tenantId,
