@@ -137,6 +137,12 @@ describe("test-send service", () => {
       importance: "low",
       saveToSentItems: true,
     });
+    await expect(sendTestToSelf(provider, "access-fixture", {
+      subject: "Attachment test",
+      bodyHtml: "<p>Fixture</p>",
+      attachments: [{ filename: "proof.txt", contentType: "text/plain", content: new Uint8Array([1]) }],
+    })).rejects.toThrow("SMTP transport");
+    expect(calls).toHaveLength(1);
   });
 });
 

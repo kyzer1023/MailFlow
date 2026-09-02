@@ -7,7 +7,7 @@
  */
 
 export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
+export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 export const ATTACHMENT_ORPHAN_TTL_MS = 24 * 60 * 60 * 1000;
 export const ATTACHMENT_MAX_FILENAME_LENGTH = 120;
 
@@ -68,7 +68,8 @@ export interface AttachmentObjectBody {
 export interface AttachmentObjectStore {
   put(key: string, value: ArrayBuffer, options?: AttachmentObjectPutOptions): Promise<unknown>;
   get(key: string): Promise<AttachmentObjectBody | null>;
-  delete(key: string): Promise<unknown>;
+  delete(key: string | string[]): Promise<unknown>;
+  list(options: { prefix: string; limit?: number }): Promise<{ objects: readonly { key: string }[]; truncated: boolean }>;
 }
 
 export interface AttachmentRepository {

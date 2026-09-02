@@ -2,6 +2,8 @@
 
 Date: 2026-09-02
 
+Status: superseded by the delegated OAuth SMTP plus private R2 implementation in ADR-009. This document remains as historical evidence for the rejected Graph draft-upload path.
+
 ## Recommendation
 
 **Conditional go for a tenant-scoped prototype. No-go for production rollout until the USM tenant test passes.**

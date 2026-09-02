@@ -149,14 +149,14 @@ describe("campaign tick", () => {
     expect(deps.state.job.status).toBe("accepted");
   });
 
-  it("loads and forwards one immutable attachment set to Graph", async () => {
+  it("loads and forwards one immutable attachment set to the selected provider", async () => {
     const first = Uint8Array.from([1, 2, 3]);
     const second = Uint8Array.from([250, 0, 9]);
     let calls = 0;
     const provider: MailProvider = {
       send: async (message: MailMessage) => {
         calls += 1;
-        expect(message.attachments?.map((attachment) => attachment.name)).toEqual(["one.txt", "two.bin"]);
+        expect(message.attachments?.map((attachment) => attachment.filename)).toEqual(["one.txt", "two.bin"]);
         expect([...((message.attachments?.[0]?.content) ?? [])]).toEqual([...first]);
         expect([...((message.attachments?.[1]?.content) ?? [])]).toEqual([...second]);
         return { kind: "accepted" };
@@ -164,8 +164,8 @@ describe("campaign tick", () => {
     };
     const deps = dependencies(provider);
     deps.attachmentLoader = async () => [
-      { name: "one.txt", contentType: "text/plain", content: first },
-      { name: "two.bin", contentType: "application/octet-stream", content: second },
+      { filename: "one.txt", contentType: "text/plain", content: first },
+      { filename: "two.bin", contentType: "application/octet-stream", content: second },
     ];
     await expect(processCampaignTick("campaign-1", deps)).resolves.toMatchObject({ kind: "scheduled", outcome: "accepted" });
     expect(calls).toBe(1);

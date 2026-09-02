@@ -1,16 +1,14 @@
+import { Buffer } from "node:buffer";
 import type { MailAttachment, MailMessage } from "../../domain/mail-provider";
 
 const encoder = new TextEncoder();
+const BASE64_INPUT_CHUNK_BYTES = 57 * 1024;
 
 export const MAX_SMTP_ATTACHMENTS = 20;
 export const MAX_SMTP_RAW_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
+  return Buffer.from(bytes).toString("base64");
 }
 
 function utf8Base64(value: string): string {
@@ -65,7 +63,7 @@ function importanceHeaders(importance: MailMessage["importance"]): string[] {
   return ["Importance: normal", "X-Priority: 3"];
 }
 
-function attachmentPart(boundary: string, attachment: MailAttachment): string {
+function attachmentHeaders(boundary: string, attachment: MailAttachment): string {
   if (!attachment.content || typeof attachment.content.byteLength !== "number" || typeof attachment.content.subarray !== "function") {
     throw new Error("Attachment content is invalid");
   }
@@ -77,8 +75,14 @@ function attachmentPart(boundary: string, attachment: MailAttachment): string {
     `Content-Disposition: attachment; filename="${fallbackFilename}"; filename*=${encodedFilename}`,
     "Content-Transfer-Encoding: base64",
     "",
-    wrapBase64(bytesToBase64(attachment.content)),
   ].join("\r\n");
+}
+
+function* attachmentBodyChunks(content: Uint8Array): Generator<string> {
+  for (let offset = 0; offset < content.byteLength; offset += BASE64_INPUT_CHUNK_BYTES) {
+    const encoded = bytesToBase64(content.subarray(offset, offset + BASE64_INPUT_CHUNK_BYTES));
+    yield `${wrapBase64(encoded)}\r\n`;
+  }
 }
 
 export interface MimeBuildOptions {
@@ -88,20 +92,36 @@ export interface MimeBuildOptions {
   now?: Date;
 }
 
-export function buildMimeMessage(message: MailMessage, options: MimeBuildOptions): string {
+interface PreparedMimeMessage {
+  headers: string[];
+  attachments: readonly {
+    attachment: MailAttachment;
+    headers: string;
+  }[];
+  boundary: string;
+}
+
+function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): PreparedMimeMessage {
   const sender = requireAddress(options.senderAddress);
   const to = requireAddress(message.to);
   const cc = message.cc.map(requireAddress);
   const replyTo = message.replyTo.map(requireAddress);
   message.bcc.map(requireAddress);
   const subject = requireHeader(message.subject, "Subject");
-  const attachments = [...(message.attachments ?? [])];
-  if (attachments.length > MAX_SMTP_ATTACHMENTS) throw new Error(`A message can contain at most ${MAX_SMTP_ATTACHMENTS} attachments`);
-  const rawAttachmentBytes = attachments.reduce((total, attachment) => total + attachment.content.byteLength, 0);
-  if (rawAttachmentBytes > MAX_SMTP_RAW_ATTACHMENT_BYTES) throw new Error("Combined attachments exceed MailFlow's 20 MiB safety limit");
-
+  const sourceAttachments = [...(message.attachments ?? [])];
+  if (sourceAttachments.length > MAX_SMTP_ATTACHMENTS) {
+    throw new Error(`A message can contain at most ${MAX_SMTP_ATTACHMENTS} attachments`);
+  }
+  const rawAttachmentBytes = sourceAttachments.reduce((total, attachment) => total + attachment.content.byteLength, 0);
+  if (rawAttachmentBytes > MAX_SMTP_RAW_ATTACHMENT_BYTES) {
+    throw new Error("Combined attachments exceed MailFlow's 20 MiB safety limit");
+  }
   const boundary = options.boundary ?? `mailflow_${crypto.randomUUID().replaceAll("-", "")}`;
   requireHeader(boundary, "MIME boundary");
+  const attachments = sourceAttachments.map((attachment) => ({
+    attachment,
+    headers: attachmentHeaders(boundary, attachment),
+  }));
   const messageId = requireHeader(options.messageId ?? `<${crypto.randomUUID()}@mailflow.local>`, "Message ID");
   const headers = [
     `From: ${sender}`,
@@ -114,30 +134,55 @@ export function buildMimeMessage(message: MailMessage, options: MimeBuildOptions
     ...importanceHeaders(message.importance),
     "MIME-Version: 1.0",
   ];
+  return { headers, attachments, boundary };
+}
 
-  if (!attachments.length) {
-    return [
+/**
+ * Yield a complete MIME message in bounded chunks. Attachment bytes remain
+ * in their original Uint8Arrays while each base64 segment is encoded and
+ * written, avoiding a second message-sized buffer in the Worker.
+ */
+export function buildMimeMessageChunks(message: MailMessage, options: MimeBuildOptions): Iterable<string> {
+  // Prepare eagerly so malformed headers or attachment metadata fail before
+  // an SMTP DATA transaction begins.
+  const prepared = prepareMimeMessage(message, options);
+  return (function* chunks(): Generator<string> {
+    const { headers, attachments, boundary } = prepared;
+    if (!attachments.length) {
+      yield [
+        ...headers,
+        'Content-Type: text/html; charset="UTF-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        wrapBase64(utf8Base64(message.htmlBody)),
+        "",
+      ].join("\r\n");
+      return;
+    }
+
+    yield [
       ...headers,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
       'Content-Type: text/html; charset="UTF-8"',
       "Content-Transfer-Encoding: base64",
       "",
       wrapBase64(utf8Base64(message.htmlBody)),
+      "",
     ].join("\r\n");
-  }
 
-  return [
-    ...headers,
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(utf8Base64(message.htmlBody)),
-    ...attachments.map((attachment) => attachmentPart(boundary, attachment)),
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
+    for (const { attachment, headers: attachmentHeaderBlock } of attachments) {
+      yield `${attachmentHeaderBlock}\r\n`;
+      yield* attachmentBodyChunks(attachment.content);
+    }
+    yield `--${boundary}--\r\n`;
+  })();
+}
+
+/** Convenience helper for deterministic tests and small-message inspection. */
+export function buildMimeMessage(message: MailMessage, options: MimeBuildOptions): string {
+  return [...buildMimeMessageChunks(message, options)].join("");
 }
 
 export function smtpEnvelopeRecipients(message: MailMessage): string[] {

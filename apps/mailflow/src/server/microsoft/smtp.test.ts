@@ -4,13 +4,17 @@ import { delegatedSmtpMailProvider } from "./smtp-adapter";
 import { buildMimeMessage, smtpEnvelopeRecipients } from "./smtp-mime";
 import { ExchangeOnlineSmtpClient } from "./smtp";
 import type { SmtpConnect, SmtpSocketLike } from "./smtp";
+import { sendProviderTestToSelf } from "./test-send";
 
 interface Script {
   commands: string[];
   mime: string | null;
+  maxWriteBytes?: number;
   authCode?: number;
   finalCode?: number | null;
   dataMode?: boolean;
+  failDataWriteAfterBytes?: number;
+  dataBytes?: number;
 }
 
 class ScriptedSocket implements SmtpSocketLike {
@@ -37,8 +41,15 @@ class ScriptedSocket implements SmtpSocketLike {
   }
 
   private receive(value: string): void {
+    this.script.maxWriteBytes = Math.max(this.script.maxWriteBytes ?? 0, this.encoder.encode(value).byteLength);
     if (this.script.dataMode) {
-      this.script.mime = value;
+      this.script.dataBytes = (this.script.dataBytes ?? 0) + this.encoder.encode(value).byteLength;
+      if (this.script.failDataWriteAfterBytes && this.script.dataBytes >= this.script.failDataWriteAfterBytes) {
+        throw new Error("connection lost before DATA terminator");
+      }
+      this.script.mime = `${this.script.mime ?? ""}${value}`;
+      if (!this.script.mime.endsWith("\r\n.\r\n")) return;
+      this.script.mime = this.script.mime.slice(0, -3);
       this.script.dataMode = false;
       if (this.script.finalCode === null) throw new Error("connection lost after DATA");
       this.reply(`${this.script.finalCode ?? 250} submission result`);
@@ -146,10 +157,42 @@ describe("Exchange Online SMTP client", () => {
     expect(test.script.mime).not.toContain("Bcc:");
   });
 
+  it("streams attachment MIME in bounded socket writes", async () => {
+    const content = new Uint8Array(512 * 1024 + 7);
+    content.fill(0xab);
+    const test = fixture();
+    await expect(test.client.send("access-token-fixture", "sender@example.test", message({
+      attachments: [{ filename: "streamed.bin", contentType: "application/octet-stream", content }],
+    }))).resolves.toEqual({ accepted: true, status: 250 });
+    expect(test.script.mime).toContain('filename="streamed.bin"');
+    expect(test.script.maxWriteBytes).toBeLessThan(100 * 1024);
+  });
+
+  it("includes the campaign attachment set in a test-to-self message", async () => {
+    const test = fixture();
+    const provider = delegatedSmtpMailProvider(test.client, "access-token-fixture", "sender@example.test");
+    await expect(sendProviderTestToSelf(provider, "sender@example.test", {
+      subject: "Attachment preview",
+      bodyHtml: "<p>Review</p>",
+      attachments: [{ filename: "proof.txt", contentType: "text/plain", content: new TextEncoder().encode("proof") }],
+    })).resolves.toMatchObject({ status: "accepted", smtpStatus: 250 });
+    expect(test.script.commands).toContain("RCPT TO:<sender@example.test>");
+    expect(test.script.mime).toContain('filename="proof.txt"');
+    expect(test.script.mime).toContain("cHJvb2Y=");
+  });
+
   it("marks a lost final submission response unknown", async () => {
     const test = fixture({ finalCode: null });
     const result = await delegatedSmtpMailProvider(test.client, "access-token-fixture", "sender@example.test").send(message());
     expect(result).toMatchObject({ kind: "unknown", category: "ambiguous" });
+  });
+
+  it("allows retry when the connection fails before the DATA terminator", async () => {
+    const test = fixture({ failDataWriteAfterBytes: 64 });
+    const result = await delegatedSmtpMailProvider(test.client, "access-token-fixture", "sender@example.test").send(message({
+      attachments: [{ filename: "retryable.txt", contentType: "text/plain", content: new Uint8Array(1024) }],
+    }));
+    expect(result).toMatchObject({ kind: "retryable", safeToRetry: true });
   });
 
   it("safely retries an explicit transient rejection and fails a rejected OAuth token", async () => {

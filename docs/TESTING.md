@@ -21,6 +21,8 @@
 - Campaign duration and pacing.
 - State transition guards and unique send keys.
 - Graph and SMTP error classification, MIME structure, envelope privacy, and STARTTLS/XOAUTH2 state transitions.
+- Attachment filename/type policy, executable signature rejection, duplicate detection, file-count and combined-size limits.
+- Bounded MIME attachment encoding, exact base64 content, pre-terminator retry safety, and post-terminator ambiguity.
 
 ### Integration
 
@@ -32,6 +34,8 @@
 - Safe retry for explicit throttles.
 - `unknown` behavior for ambiguous transport failures.
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
+- Attachment-set ownership, idempotent creation, immutable association, R2 byte integrity, terminal cleanup, and 24-hour orphan cleanup.
+- Campaign creation and test-send reject attachment sets unless SMTP mode, R2, and a stored `SMTP.Send` grant are all present.
 
 ### Frontend
 
@@ -40,6 +44,7 @@
 - Worksheet and header selection.
 - Mapping, validation, flagged rows, and representative previews.
 - Test-send and final acknowledgement.
+- Multi-file selection, upload progress, retry/remove states, 5-file and 20-MiB limits, Review summary, and attachment locking after test-send.
 - Campaign polling or live refresh, pause, resume, and CSV export.
 - Loading, empty, failure, and narrow-screen states.
 
@@ -56,6 +61,8 @@ For each mock route:
 
 Also test 1440 x 900, 1024 x 768, and 390 x 844. Check keyboard focus, contrast, overflow, and reduced motion.
 
+For attachment UI changes, use a synthetic recipient file and at least two synthetic attachment types. Confirm the attachment picker is present only for an SMTP-authorized session, filenames and byte totals match in Review, final confirmation remains gated, and browser console warnings/errors remain empty. Stop before test-send unless the recipient and message have current authorization.
+
 ## Real Microsoft and Gmail matrix
 
 Run only after mocked and local integration tests pass.
@@ -63,11 +70,12 @@ Run only after mocked and local integration tests pass.
 1. Primary USM account signs in and sends a test to self.
 2. Primary USM account sends one small campaign to the five authorized Gmail recipients.
 3. Verify provider acceptance, Sent Items, and inbox receipt where available.
-4. Sign out completely.
-5. Secondary USM account signs in through the same Entra application.
-6. Secondary account sends a test to self and a small external campaign.
-7. Verify sender identity is locked to the secondary mailbox.
-8. Confirm accepted recipients cannot be sent again through a duplicate queue delivery.
+4. Verify each attachment filename, downloaded byte count, SHA-256 digest, and content independently in Sent Items and the authorized inbox.
+5. Sign out completely.
+6. Secondary USM account signs in through the same Entra application.
+7. Secondary account sends a test to self and a small external campaign.
+8. Verify sender identity is locked to the secondary mailbox.
+9. Confirm accepted recipients cannot be sent again through a duplicate queue delivery.
 
 Record sanitized evidence: test timestamp, sender alias such as `primary` or `secondary`, recipient count, provider result category, campaign status, and whether inbox receipt was observed. Do not commit account addresses or credentials.
 
@@ -75,6 +83,8 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 
 - Production D1 migrations applied.
 - Queue producer and consumer bound.
+- Private R2 attachment bucket bound with no public access.
+- Attachment migration applied and hourly cleanup trigger registered.
 - Static assets served by the Worker.
 - Production origin and both local and production Entra redirect URIs configured.
 - Worker secrets present without appearing in `wrangler` files or Git.

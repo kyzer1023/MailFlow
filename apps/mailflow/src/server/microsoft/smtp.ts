@@ -1,5 +1,5 @@
 import type { MailMessage } from "../../domain/mail-provider";
-import { buildMimeMessage, dotStuffMime, smtpEnvelopeRecipients } from "./smtp-mime";
+import { buildMimeMessageChunks, dotStuffMime, smtpEnvelopeRecipients } from "./smtp-mime";
 
 export interface SmtpSocketLike {
   readable: ReadableStream<Uint8Array>;
@@ -243,10 +243,10 @@ export class ExchangeOnlineSmtpClient {
     let submissionMayHaveCompleted = false;
     let wire: SmtpWire | null = null;
     try {
-      let mime: string;
+      let mimeChunks: Iterable<string>;
       let recipients: string[];
       try {
-        mime = buildMimeMessage(message, { senderAddress: sender });
+        mimeChunks = buildMimeMessageChunks(message, { senderAddress: sender });
         recipients = smtpEnvelopeRecipients(message);
       } catch {
         throw new SmtpProviderError("invalid_message", "The message or an attachment is invalid");
@@ -261,8 +261,12 @@ export class ExchangeOnlineSmtpClient {
       }
       await wire.writeLine("DATA");
       expect(await wire.readReply(), [354], "message transfer");
+      for (const chunk of mimeChunks) await wire.writeRaw(dotStuffMime(chunk));
+      // Exchange cannot accept the message before the DATA terminator. A
+      // failure while writing the terminator or awaiting its reply is the
+      // first point where delivery becomes ambiguous.
       submissionMayHaveCompleted = true;
-      await wire.writeRaw(`${dotStuffMime(mime)}\r\n.\r\n`);
+      await wire.writeRaw(".\r\n");
       const result = await wire.readReply();
       submissionMayHaveCompleted = false;
       expect(result, [250], "message submission");

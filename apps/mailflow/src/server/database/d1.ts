@@ -908,7 +908,7 @@ export class D1AttachmentRepository implements AttachmentRepository {
            WHERE EXISTS (
              SELECT 1 FROM attachment_sets
              WHERE id = ?2 AND owner_user_id = ?11 AND state = 'open'
-               AND file_count < 5 AND total_bytes + ?6 <= 2097152
+               AND file_count < 5 AND total_bytes + ?6 <= 20971520
            )`,
         ),
         [
@@ -1051,7 +1051,7 @@ export class D1AttachmentRepository implements AttachmentRepository {
       this.db.prepare(
         `SELECT * FROM attachment_sets
          WHERE (
-           state = 'open' AND campaign_id IS NULL AND expires_at <= ?1
+           state IN ('open', 'locked') AND campaign_id IS NULL AND expires_at <= ?1
          ) OR (
            campaign_id IS NOT NULL
            AND state IN ('open', 'locked')

@@ -1,6 +1,7 @@
 import { sha256Hex } from "../auth/crypto";
 import {
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_FILES,
   ATTACHMENT_ORPHAN_TTL_MS,
   AttachmentError,
   type AttachmentFileRecord,
@@ -134,7 +135,7 @@ export class AttachmentService {
       mediaType: validated.mediaType,
       byteSize: validated.bytes.byteLength,
       sha256: digest,
-      position: set.fileCount + 1,
+      position: Math.max(0, ...files.map((entry) => entry.position)) + 1,
       createdAt,
       deletedAt: null,
     };
@@ -155,9 +156,11 @@ export class AttachmentService {
         if (!latest || latest.state !== "open" || latest.campaignId) {
           throw new AttachmentError("immutable", "This attachment set can no longer be changed");
         }
-        if (latest.fileCount >= 5) throw new AttachmentError("file_limit_exceeded", "A campaign can contain at most 5 attachments");
+        if (latest.fileCount >= ATTACHMENT_MAX_FILES) {
+          throw new AttachmentError("file_limit_exceeded", `A campaign can contain at most ${ATTACHMENT_MAX_FILES} attachments`);
+        }
         if (latest.totalBytes + file.byteSize > ATTACHMENT_MAX_BYTES) {
-          throw new AttachmentError("size_limit_exceeded", "The combined attachment size exceeds 2 MiB");
+          throw new AttachmentError("size_limit_exceeded", "The combined attachment size exceeds 20 MiB");
         }
         const latestFiles = await this.repository.listFiles(set.id);
         if (latestFiles.some((entry) => entry.sha256 === digest)) {
@@ -183,11 +186,13 @@ export class AttachmentService {
     }
     const file = await this.repository.getFileByIdForOwner(fileId, attachmentSetId, ownerUserId);
     if (!file) return false;
-    // Delete bytes first. If the object store is temporarily unavailable, the
-    // row remains so the client can retry without losing the metadata needed
-    // for cleanup.
-    await this.objectStore.delete(file.objectKey);
-    return this.repository.removeFile(file.id, attachmentSetId, ownerUserId, file.byteSize, nowIso(this.now));
+    // The conditional metadata removal must win before bytes are touched.
+    // If campaign creation locked the set concurrently, leave its object
+    // intact. A failed object deletion is swept by this set's later cleanup.
+    const removed = await this.repository.removeFile(file.id, attachmentSetId, ownerUserId, file.byteSize, nowIso(this.now));
+    if (!removed) return false;
+    await this.deleteObjectAfterFailedInsert(file.objectKey);
+    return true;
   }
 
   async lockForSnapshot(ownerUserId: string, attachmentSetId: string): Promise<AttachmentSetRecord> {
@@ -277,6 +282,17 @@ export class AttachmentService {
     }
     if (failedFileIds.length > 0) {
       return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: set.state === "deleted" };
+    }
+    // An object put can succeed while its metadata insert or compensating
+    // delete fails. Sweep this private set namespace too, so such bytes do
+    // not outlive the set merely because they have no attachment_files row.
+    // Re-listing after each bounded delete makes progress without retaining
+    // a cursor across scheduled invocations.
+    for (let page = 0; page < 10; page += 1) {
+      const objects = await this.objectStore.list({ prefix: `attachment-sets/${attachmentSetId}/`, limit: 1000 });
+      if (objects.objects.length) await this.objectStore.delete(objects.objects.map((object) => object.key));
+      if (!objects.truncated) break;
+      if (page === 9) return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
     }
     const remaining = await this.repository.listFiles(attachmentSetId);
     let setDeleted = set.state === "deleted";

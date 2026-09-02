@@ -5,7 +5,7 @@ export type SpreadsheetFormat = "csv" | "xlsx";
 
 /** Limits for the first campaign attachment delivery path. */
 export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
+export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 
 /** File types accepted by the browser attachment picker. */
 export const ATTACHMENT_ACCEPT = [

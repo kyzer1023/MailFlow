@@ -59,7 +59,7 @@ import { escapeMergeValue } from "./client/template";
 const DraftContext = createContext(null);
 const ApiContext = createContext(null);
 
-const fallbackConfig = { defaultPacePerMinute: 12, maxCampaignRecipients: 300 };
+const fallbackConfig = { defaultPacePerMinute: 12, maxCampaignRecipients: 300, mailTransport: "graph", attachmentsEnabled: false, attachmentsReauthorizationRequired: false };
 const emptyDraft = () => ({
   name: "",
   subject: "",
@@ -303,7 +303,7 @@ function LandingPage() {
   return <div className="landing">
     <header className="marketing-header"><Brand /><LandingAction compact allowSignOut /></header>
     <main className="landing-hero">
-      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Mail.Send</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
+      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Microsoft OAuth</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
     </main>
   </div>;
 }
@@ -1294,7 +1294,7 @@ function DataFirstPage() {
 
 function RecipientsPage() {
   const { draft, setDraft, updateDraft, table, validation, attachmentsReady } = useContext(DraftContext);
-  const { user } = useApi();
+  const { user, config } = useApi();
   const navigate = useNavigate();
   const options = columnOptions(table);
   const sender = user?.mailboxAddress || user?.principalName || "Sender not available";
@@ -1323,7 +1323,11 @@ function RecipientsPage() {
           <Field label="Importance" hint="Sets the priority flag shown by supported email clients."><select value={draft.importance} onChange={(event) => updateDraft("importance", event.target.value)}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></Field>
         </div>
         {validation && !validation.ok && <div className="notice notice--warn"><WarningCircle weight="fill" /><span>Flagged recipient rows can be skipped during Review. Template-level issues must be resolved before sending.</span></div>}
-        <AttachmentPicker />
+        {config.attachmentsEnabled
+          ? <AttachmentPicker />
+          : config.attachmentsReauthorizationRequired
+            ? <div className="notice notice--warn"><Info weight="fill" /><span>Reconnect Microsoft to authorize SMTP attachments.</span><a className="button button--text" href="/auth/microsoft/start?returnTo=%2Fflows%2Fnew%2Frecipients">Reconnect Microsoft</a></div>
+            : <div className="notice"><Info weight="fill" /><span>Attachments become available when this deployment uses SMTP delivery.</span></div>}
       </section>
       <aside className="panel pace-card"><Gauge weight="duotone" /><h2>Paced for safety</h2><p>Mail Flow sends one personalized message at a time and records the result for every row.</p><Field label={`${draft.pace} messages per minute`}><input type="range" min="6" max="20" value={draft.pace} onChange={(event) => updateDraft("pace", Number(event.target.value))} /></Field><div className="pace-facts"><span><strong>{validation?.totalRows ?? draft.rowCount}</strong>Total rows</span><span><strong>About {Math.ceil((validation?.validRecipientCount ?? draft.rowCount) / draft.pace)} min</strong>Estimated time</span></div><div className="notice"><Info weight="fill" /><span>Accepted rows are never sent twice. An uncertain Microsoft response is marked Unknown for manual review.</span></div></aside>
     </div>

@@ -1,7 +1,7 @@
 import { GraphApiError } from "./graph";
 import type { GraphMailProviderContract } from "./graph";
 import type { MailImportance } from "../../domain/types";
-import type { MailProvider } from "../../domain/mail-provider";
+import type { MailAttachment, MailProvider } from "../../domain/mail-provider";
 
 export interface TestSendInput {
   subject: string;
@@ -10,6 +10,7 @@ export interface TestSendInput {
   bcc?: readonly string[];
   replyTo?: readonly string[];
   importance?: MailImportance;
+  attachments?: readonly MailAttachment[];
 }
 
 export interface TestSendResult {
@@ -51,6 +52,9 @@ export class TestSendService {
     const user = await this.provider.getCurrentUser(accessToken);
     const self = mailboxAddress(user.mail, user.userPrincipalName);
     if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+    if (input.attachments?.length) {
+      throw new TestSendError("Attachments require the SMTP transport");
+    }
 
     try {
       const result = await this.provider.sendMail(accessToken, {
@@ -104,6 +108,7 @@ export async function sendProviderTestToSelf(
     importance: input.importance ?? "normal",
     subject: input.subject,
     htmlBody: input.bodyHtml,
+    attachments: input.attachments,
   }, { sendKey: `test:${crypto.randomUUID()}` });
   if (result.kind !== "accepted") throw new TestSendError(result.message);
   return {

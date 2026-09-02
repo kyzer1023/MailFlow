@@ -30,10 +30,18 @@ class MemoryObjectStore implements AttachmentObjectStore {
     };
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string | string[]): Promise<void> {
     if (this.failDelete) throw new Error("temporary object-store failure");
-    this.deleted.push(key);
-    this.values.delete(key);
+    for (const entry of Array.isArray(key) ? key : [key]) {
+      this.deleted.push(entry);
+      this.values.delete(entry);
+    }
+  }
+
+  async list(options: { prefix: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean }> {
+    const keys = [...this.values.keys()].filter((key) => key.startsWith(options.prefix));
+    const limit = options.limit ?? 1000;
+    return { objects: keys.slice(0, limit).map((key) => ({ key })), truncated: keys.length > limit };
   }
 }
 
@@ -67,6 +75,7 @@ class MemoryAttachmentRepository implements AttachmentRepository {
     const set = this.sets.get(file.attachmentSetId);
     if (!set || set.ownerUserId !== ownerUserId || set.state !== "open" || set.fileCount >= 5 || set.totalBytes + file.byteSize > ATTACHMENT_MAX_BYTES) return false;
     if (Array.from(this.files.values()).some((entry) => entry.attachmentSetId === file.attachmentSetId && entry.sha256 === file.sha256 && !entry.deletedAt)) return false;
+    if (Array.from(this.files.values()).some((entry) => entry.attachmentSetId === file.attachmentSetId && entry.position === file.position)) return false;
     this.files.set(file.id, file);
     this.sets.set(set.id, { ...set, fileCount: set.fileCount + 1, totalBytes: set.totalBytes + file.byteSize, updatedAt: file.createdAt });
     return true;
@@ -127,7 +136,7 @@ class MemoryAttachmentRepository implements AttachmentRepository {
 
   async listOrphanSets(now: string, limit = 100): Promise<AttachmentSetRecord[]> {
     return Array.from(this.sets.values())
-      .filter((set) => set.state === "open" && !set.campaignId && set.expiresAt <= now)
+      .filter((set) => ["open", "locked"].includes(set.state) && !set.campaignId && set.expiresAt <= now)
       .sort((left, right) => left.expiresAt.localeCompare(right.expiresAt))
       .slice(0, limit);
   }
@@ -164,7 +173,7 @@ describe("attachment service", () => {
     expect(objectStore.values.size).toBe(1);
   });
 
-  it("rejects duplicate bytes, enforces five-file and 2 MiB limits, and isolates owners", async () => {
+  it("rejects duplicate bytes, enforces five-file and 20 MiB limits, and isolates owners", async () => {
     const now = { value: "2026-09-02T00:00:00.000Z" };
     const { service } = createService(now);
     const first = await service.createSet("user-1", "request-1");
@@ -180,7 +189,7 @@ describe("attachment service", () => {
     await expect(service.addFile("user-1", large.set.id, { filename: "large.txt", bytes: new Uint8Array(ATTACHMENT_MAX_BYTES + 1), contentType: "text/plain" })).rejects.toMatchObject({ code: "size_limit_exceeded" });
   });
 
-  it("removes bytes before metadata and blocks changes after locking or campaign association", async () => {
+  it("removes only an open set's file and blocks changes after locking or campaign association", async () => {
     const now = { value: "2026-09-02T00:00:00.000Z" };
     const { service, repository, objectStore } = createService(now);
     const first = await service.createSet("user-1", "request-1");
@@ -194,6 +203,40 @@ describe("attachment service", () => {
     expect(locked.state).toBe("locked");
     await expect(addText(service, "user-1", first.set.id, "nope", "nope.txt")).rejects.toMatchObject({ code: "immutable" });
     await expect(service.removeFile("user-1", first.set.id, result.file.id)).rejects.toMatchObject({ code: "immutable" });
+  });
+
+  it("keeps remaining ordering valid when a removed file is replaced", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, repository } = createService(now);
+    const { set } = await service.createSet("user-1", "replace-request");
+    const first = await addText(service, "user-1", set.id, "first", "first.txt");
+    await addText(service, "user-1", set.id, "second", "second.txt");
+    await service.removeFile("user-1", set.id, first.file.id);
+    await addText(service, "user-1", set.id, "replacement", "replacement.txt");
+    expect((await repository.listFiles(set.id)).map((file) => file.position)).toEqual([2, 3]);
+  });
+
+  it("leaves bytes intact when campaign locking wins the removal race", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, repository, objectStore } = createService(now);
+    const { set } = await service.createSet("user-1", "race-request");
+    const file = await addText(service, "user-1", set.id, "keep me");
+    repository.removeFile = async () => false;
+    expect(await service.removeFile("user-1", set.id, file.file.id)).toBe(false);
+    expect(objectStore.values.has(file.file.objectKey)).toBe(true);
+  });
+
+  it("sweeps untracked object bytes from an expired locked set", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, repository, objectStore } = createService(now);
+    const { set } = await service.createSet("user-1", "orphan-object-request");
+    await service.lockForSnapshot("user-1", set.id);
+    objectStore.values.set(`attachment-sets/${set.id}/untracked`, new Uint8Array([1, 2, 3]));
+    now.value = "2026-09-03T00:00:01.000Z";
+    const cleanup = await service.cleanupExpiredOrphans();
+    expect(cleanup.deleted).toBe(1);
+    expect(objectStore.values.size).toBe(0);
+    expect((await repository.getSetById(set.id))?.state).toBe("deleted");
   });
 
   it("verifies integrity before a send and deletes terminal bytes idempotently", async () => {

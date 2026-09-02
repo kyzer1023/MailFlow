@@ -538,7 +538,14 @@ describe("campaign attachments", () => {
         mailboxAddress: "amina@student.example",
       },
       csrfToken: "test-csrf-token",
-      config: { defaultPacePerMinute: 12, maxCampaignRecipients: 300 },
+      config: {
+        defaultPacePerMinute: 12,
+        maxCampaignRecipients: 300,
+        mailTransport: "smtp",
+        attachmentsEnabled: true,
+        maxAttachmentFiles: 5,
+        maxAttachmentBytes: 20 * 1024 * 1024,
+      },
     });
     mockedGetFlows.mockResolvedValue({ flows: [] });
     mockedGetCampaigns.mockResolvedValue({ campaigns: [] });

@@ -151,6 +151,6 @@ export function assertAttachmentSetCapacity(fileCount: number, totalBytes: numbe
     throw new AttachmentError("file_limit_exceeded", `A campaign can contain at most ${ATTACHMENT_MAX_FILES} attachments`);
   }
   if (!Number.isInteger(totalBytes) || totalBytes < 0 || totalBytes + nextBytes > ATTACHMENT_MAX_BYTES) {
-    throw new AttachmentError("size_limit_exceeded", "The combined attachment size exceeds 2 MiB");
+    throw new AttachmentError("size_limit_exceeded", "The combined attachment size exceeds 20 MiB");
   }
 }

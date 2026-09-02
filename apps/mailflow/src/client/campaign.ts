@@ -94,7 +94,7 @@ export function validateAttachmentSelection(
     } else if (active.length + accepted.length >= ATTACHMENT_MAX_FILES) {
       error = { ...base, code: "too_many", message: `You can add up to ${ATTACHMENT_MAX_FILES} attachments.` };
     } else if (totalBytes + file.size > ATTACHMENT_MAX_BYTES) {
-      error = { ...base, code: "too_large", message: "Attachments must be 2 MiB or smaller in total." };
+      error = { ...base, code: "too_large", message: "Attachments must be 20 MiB or smaller in total." };
     }
     if (error) {
       rejected.push(error);

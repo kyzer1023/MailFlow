@@ -18,6 +18,11 @@ export interface ApiUser {
 export interface ApiConfig {
   readonly defaultPacePerMinute: number;
   readonly maxCampaignRecipients: number;
+  readonly mailTransport?: "graph" | "smtp";
+  readonly attachmentsEnabled?: boolean;
+  readonly attachmentsReauthorizationRequired?: boolean;
+  readonly maxAttachmentFiles?: number;
+  readonly maxAttachmentBytes?: number;
 }
 
 export interface MeResponse {
@@ -49,7 +54,8 @@ export interface TestSendResponse {
     readonly userMessage: "Accepted by Microsoft";
     readonly senderAddress: string;
     readonly recipientAddress: string;
-    readonly graphStatus: number;
+    readonly graphStatus?: number;
+    readonly smtpStatus?: number;
     readonly requestId?: string;
   };
 }

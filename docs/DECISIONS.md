@@ -51,3 +51,15 @@ Mail Flow will use Exchange Online SMTP submission on port 587 with STARTTLS and
 The rollout is deployment-selectable rather than an automatic per-message fallback. Microsoft access tokens are resource-specific, so Graph scopes and the Outlook SMTP scope cannot be treated as one interchangeable bearer token. Production remains on Graph until a Cloudflare-hosted SMTP test passes; switching to SMTP requires users to complete OAuth consent again. Graph code remains available for rollback during the validation period.
 
 SMTP transport must preserve ADR-005. A connection failure after the terminating DATA marker may have submitted the message and therefore becomes `unknown`; it is never automatically retried. Explicit pre-submission failures and explicit transient SMTP replies may be retried only when the provider can prove that no message was accepted.
+
+## ADR-009 - Store campaign attachment bytes temporarily in private R2
+
+Status: accepted for prototype implementation.
+
+Mail Flow stores campaign-wide attachment metadata in D1 and bytes in a private R2 bucket. The browser uploads through authenticated same-origin Worker routes; it never receives an R2 credential, object key, or public attachment URL. Campaign requests and Queue messages carry only an opaque attachment-set identifier.
+
+The set is owner-scoped, limited to five approved files and 20 MiB combined raw bytes, and becomes immutable when used by test-send or associated with a campaign. Each object is verified against its stored byte count and SHA-256 digest before SMTP submission. A missing or changed object fails before the next recipient is claimed.
+
+Abandoned unassociated sets expire after 24 hours. Terminal campaign paths delete the R2 bytes immediately when possible, and the hourly scheduled cleanup retries expired orphan deletion. D1 metadata remains as an audit record after bytes are removed.
+
+This replaces the OneDrive App Folder and Power Automate attachment prototypes. It avoids delegated `Mail.ReadWrite`, does not depend on a central connector mailbox, and preserves the signed-in student as sender through delegated OAuth SMTP. Microsoft Graph remains a rollback transport for campaigns without attachments and must reject attachment sends in this release.

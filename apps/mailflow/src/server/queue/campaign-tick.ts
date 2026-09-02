@@ -78,7 +78,7 @@ export async function processCampaignTick(
 
   // Attachment bytes are deliberately loaded and checksum-verified before a
   // recipient claim.  This keeps a missing or corrupt R2 object from being
-  // mistaken for an ambiguous Graph outcome and prevents any row from being
+  // mistaken for an ambiguous provider outcome and prevents any row from being
   // marked sending when the campaign snapshot is no longer deliverable.
   let attachments: readonly MailAttachment[];
   try {

@@ -42,6 +42,7 @@ import {
 import type { MailTransport } from "../microsoft";
 import {
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_FILES,
   AttachmentError,
   createAttachmentService,
   type AttachmentPayload,
@@ -116,6 +117,23 @@ function attachmentServiceFor(context: MailFlowContext, repo = repositories(cont
   return createAttachmentService(repo.attachments, context.env.ATTACHMENTS);
 }
 
+function attachmentInfrastructureAvailable(context: MailFlowContext): boolean {
+  return resolveMailTransport(context.env.MAIL_TRANSPORT) === "smtp" && Boolean(context.env.ATTACHMENTS);
+}
+
+function hasSmtpSendScope(scopes: readonly string[]): boolean {
+  return scopes.some((scope) => {
+    const normalized = scope.trim().toLowerCase();
+    return normalized === "smtp.send" || normalized.endsWith("/smtp.send");
+  });
+}
+
+async function smtpAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
+  if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return false;
+  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId);
+  return Boolean(token && hasSmtpSendScope(token.grantedScopes));
+}
+
 function publicAttachmentSet(set: AttachmentSetRecord): Record<string, unknown> {
   // Upload keys, owner identifiers, expiry timestamps, and deletion details
   // are server metadata. The browser only needs this bounded progress shape.
@@ -164,7 +182,7 @@ export async function loadCampaignAttachments(
     throw new AttachmentError("integrity_error", "The campaign attachment metadata does not match its files");
   }
   return payloads.map(({ file, bytes }) => ({
-    name: file.originalFilename,
+    filename: file.originalFilename,
     contentType: file.mediaType,
     content: bytes,
   }));
@@ -551,12 +569,19 @@ app.post("/auth/logout", async (context) => {
 app.get("/api/me", async (context) => {
   const authenticated = await requireSession(context);
   if (authenticated instanceof Response) return authenticated;
+  const attachmentInfrastructure = attachmentInfrastructureAvailable(context);
+  const smtpAuthorized = await smtpAuthorizedFor(context, authenticated.user.id);
   return context.json({
     user: publicUser(authenticated.user),
     csrfToken: authenticated.csrfToken,
     config: {
       defaultPacePerMinute: integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600),
       maxCampaignRecipients: integerEnv(context.env.MAX_CAMPAIGN_RECIPIENTS, 300, 1, 300),
+      mailTransport: resolveMailTransport(context.env.MAIL_TRANSPORT),
+      attachmentsEnabled: attachmentInfrastructure && smtpAuthorized,
+      attachmentsReauthorizationRequired: attachmentInfrastructure && !smtpAuthorized,
+      maxAttachmentFiles: ATTACHMENT_MAX_FILES,
+      maxAttachmentBytes: ATTACHMENT_MAX_BYTES,
     },
   });
 });
@@ -566,6 +591,12 @@ app.get("/api/me", async (context) => {
 app.post("/api/attachment-sets", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
+  if (!attachmentInfrastructureAvailable(context)) {
+    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery and private attachment storage.");
+  }
+  if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+  }
   const input = await parseOrError(context, attachmentSetCreateSchema);
   if (input instanceof Response) return input;
   const repo = repositories(context);
@@ -582,13 +613,19 @@ app.post("/api/attachment-sets", async (context) => {
 app.post("/api/attachment-sets/:id/files", async (context) => {
   const authenticated = await requireMutationSession(context);
   if (authenticated instanceof Response) return authenticated;
+  if (!attachmentInfrastructureAvailable(context)) {
+    return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery and private attachment storage.");
+  }
+  if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+  }
   const contentLengthHeader = context.req.header("Content-Length");
   if (contentLengthHeader) {
     const contentLength = Number(contentLengthHeader);
     // Allow a bounded multipart envelope while rejecting obviously oversized
     // requests before form-data parsing allocates their body in the Worker.
     if (Number.isFinite(contentLength) && contentLength > ATTACHMENT_MAX_BYTES + 64 * 1024) {
-      return responseError(context, 413, "attachment_size_limit_exceeded", "The combined attachment size exceeds 2 MiB.");
+      return responseError(context, 413, "attachment_size_limit_exceeded", "The combined attachment size exceeds 20 MiB.");
     }
   }
   const repo = repositories(context);
@@ -837,6 +874,12 @@ app.post("/api/campaigns", async (context) => {
   const flow = await repo.flows.getByIdForOwner(input.flowId, authenticated.user.id);
   if (!flow) return responseError(context, 404, "flow_not_found", "Save the flow before creating a campaign.");
   if (input.attachmentSetId) {
+    if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
+      return responseError(context, 409, "attachments_require_smtp", "This campaign uses attachments and must be sent with SMTP delivery.");
+    }
+    if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
+      return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before creating an attachment campaign.");
+    }
     const service = attachmentServiceFor(context, repo);
     if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
     const attachmentSet = await repo.attachments.getSetByIdForOwner(input.attachmentSetId, authenticated.user.id);
@@ -1056,6 +1099,12 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
   if (campaign.state !== "validated") return responseError(context, 409, "campaign_not_ready", "Review and validate the campaign before starting it.");
   const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
+  if (attachmentSet && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
+    return responseError(context, 409, "attachments_require_smtp", "Switch this deployment back to SMTP delivery before starting an attachment campaign.");
+  }
+  if (attachmentSet && !(await smtpAuthorizedFor(context, authenticated.user.id))) {
+    return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before starting this attachment campaign.");
+  }
   const attachmentService = attachmentServiceFor(context, repo);
   if (attachmentSet && !attachmentService) {
     const error = new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");

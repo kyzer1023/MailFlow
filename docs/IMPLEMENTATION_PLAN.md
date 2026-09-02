@@ -24,7 +24,8 @@ Acceptance: mocked integration tests pass, then both student accounts can authen
 ### W3 D1, campaigns, and queue
 
 - SQL migrations and repositories.
-- Flow, template version, campaign, recipient job, and audit persistence.
+- Flow, template version, campaign, recipient job, attachment metadata, and audit persistence.
+- Private R2 attachment bytes, integrity checks, immutable association, and retention cleanup.
 - Queue tick pacing, pause, resume, conditional claims, retries, and unknown outcomes.
 
 Acceptance: local D1 and queue tests cover state transitions and duplicate deliveries.
@@ -32,7 +33,7 @@ Acceptance: local D1 and queue tests cover state transitions and duplicate deliv
 ### W4 Client workflow and mock fidelity
 
 - Landing, dashboard, template, mapping, review, and campaign routes.
-- Browser-side CSV/XLSX parsing, mapping, validation, sanitization, preview, and export.
+- Browser-side CSV/XLSX parsing, attachment selection, mapping, validation, sanitization, preview, and export.
 - Responsive and accessibility states.
 
 Acceptance: primary journey works locally and visual comparison matches the approved references closely.
@@ -40,7 +41,7 @@ Acceptance: primary journey works locally and visual comparison matches the appr
 ### W5 Verification and deployment
 
 - Unit, integration, security, accessibility, and visual QA.
-- Cloudflare D1 and Queue setup, Worker secrets, Entra redirects, and deployment.
+- Cloudflare D1, Queue, and private R2 setup, Worker secrets, Entra redirects, and deployment.
 - Real email tests across both USM senders and five Gmail recipients.
 
 Acceptance: deployed URL works, real acceptance is recorded accurately, and test evidence is documented without secrets.
@@ -52,13 +53,15 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 3. Domain and persistence contracts.
 4. Authentication plus one-message Microsoft transport feasibility test.
 5. Complete local campaign journey with simulated mail.
-6. Cloudflare resource provisioning and deployment.
-7. Real-mail verification with both senders.
-8. Final design QA, accessibility pass, and handoff documentation.
+6. Private attachment storage and delegated OAuth SMTP MIME delivery.
+7. Cloudflare resource provisioning and deployment.
+8. Real-mail verification with both senders.
+9. Final design QA, accessibility pass, and handoff documentation.
 
 ## Cross-workstream gates
 
 - No real sending before test-send confirmation and a visible recipient summary.
+- No attachment deployment unless SMTP mode, private R2, migration `0004`, and `SMTP.Send` reauthorization are ready together.
 - No deployment before `.env` and `.dev.vars` are ignored and Git history is checked for secrets.
 - No automatic retry for `unknown` outcomes.
 - No visual handoff before `design-qa.md` says `final result: passed` or accurately records a blocker.

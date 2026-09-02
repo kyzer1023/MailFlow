@@ -18,7 +18,11 @@ Cloudflare Worker
         |
         +--> D1
         |    users, sessions, flows, template versions,
-        |    campaigns, recipient jobs, audit events, encrypted tokens
+        |    campaigns, recipient jobs, attachment metadata,
+        |    audit events, encrypted tokens
+        |
+        +--> private R2
+        |    temporary campaign attachment bytes
         |
         +--> Cloudflare Queue
              one campaign tick at a time
@@ -34,10 +38,11 @@ Cloudflare Worker
 
 ## Module boundaries
 
-- `client`: routing, view models, browser-side workbook parsing, sanitization, preview, and user interaction.
+- `client`: routing, view models, browser-side workbook parsing, attachment selection, sanitization, preview, and user interaction.
 - `api`: HTTP routes, input validation, session checks, and orchestration.
 - `domain`: pure campaign states, validation rules, template rendering, pace calculations, and contracts.
 - `database`: D1 schema, SQL migrations, and repositories.
+- `attachments`: file policy, private object storage coordination, checksum verification, locking, and cleanup.
 - `queue`: Cloudflare Queue adapter and campaign tick consumer.
 - `microsoft`: OAuth, encrypted token storage, refresh, Graph fallback, SMTP adapter, MIME generation, and provider error mapping.
 
@@ -85,6 +90,12 @@ Flow and template references, owner, sender address, source filename, recipient 
 
 The campaign-create API requires the idempotency key. D1 enforces uniqueness per owner, and both an ordinary replay and a concurrent insert race resolve to the existing campaign response.
 
+### attachment_sets and attachment_files
+
+An attachment set belongs to one user and at most one campaign. D1 stores the sanitized original filename, media type, byte count, SHA-256 digest, private object key, immutable ordering, lifecycle state, and expiry metadata. Attachment bytes live only in the private `ATTACHMENTS` R2 bucket.
+
+The product limit is five files and 20 MiB combined raw bytes. Open sets may be edited. Test-send locks a set, and campaign creation atomically associates an open set with one owner-matching campaign. Abandoned unassociated sets expire after 24 hours. Terminal campaign cleanup deletes R2 bytes and retains metadata for audit.
+
 ### recipient_jobs
 
 Campaign reference, source row, resolved recipient metadata, message importance, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
@@ -118,11 +129,12 @@ Only conditional SQL updates can claim a pending job. A queue duplicate that can
 The queue carries campaign tick messages, not an uncontrolled burst of all recipients. A tick:
 
 1. Verifies that the campaign is runnable.
-2. Conditionally claims the next pending job.
-3. Refreshes the user's access token for the selected Microsoft resource when needed.
-4. Calls the selected mail provider once.
-5. Records the result.
-6. Enqueues the next tick with a delay derived from the configured pace.
+2. Loads and checksum-verifies the campaign-wide attachment set before claiming a row.
+3. Conditionally claims the next pending job.
+4. Refreshes the user's access token for the selected Microsoft resource when needed.
+5. Calls the selected mail provider once.
+6. Records the result.
+7. Enqueues the next tick with a delay derived from the configured pace.
 
 At 12 messages per minute, the next tick is delayed by approximately 5 seconds. Graph `429` and explicit transient SMTP replies use their provider retry delay when present. Paused campaigns do not enqueue progress until resumed.
 
@@ -136,6 +148,7 @@ Expected route groups:
 
 - `/auth/microsoft/start`, `/auth/microsoft/callback`, `/auth/logout`, `/api/me`
 - `/api/flows`, `/api/flows/:id`, `/api/flows/:id/versions`
+- `/api/attachment-sets`, `/api/attachment-sets/:id/files`, `/api/attachment-sets/:id/files/:fileId`
 - `/api/campaigns`, `/api/campaigns/:id`, `/api/campaigns/:id/jobs`
 - `/api/campaigns/:id/test-send`
 - `/api/campaigns/:id/start`, `/pause`, `/resume`
@@ -146,12 +159,14 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 ## Cloudflare bindings
 
 - `DB`: D1 database.
+- `ATTACHMENTS`: private R2 bucket for temporary attachment bytes. Public access is not configured.
 - `CAMPAIGN_QUEUE`: Queue producer.
 - Queue consumer in the same Worker deployment unless operational evidence calls for a split Worker.
 - Static assets binding for the Vite client.
 - Secrets for Entra client secret, token-encryption key, and session integrity.
 - Plain variables for tenant ID, client ID, public origin, campaign limit, and default pace.
-- `MAIL_TRANSPORT` selects `graph` or `smtp`; omission keeps Graph during the staged rollout.
+- `MAIL_TRANSPORT` selects `graph` or `smtp`. Attachments are exposed and accepted only in `smtp` mode when the user's stored grant includes `SMTP.Send`.
+- An hourly scheduled handler removes attachment sets that remain unassociated past their 24-hour expiry. Campaign terminal paths also request immediate cleanup.
 
 ## Security boundaries
 
@@ -160,5 +175,8 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 - Spreadsheet values are escaped before insertion into templates.
 - Preview content is sanitized and isolated in an iframe.
 - Campaign ownership is checked on every read and write.
+- Attachment APIs require the same authenticated owner, CSRF protection, same-origin mutation checks, bounded multipart bodies, approved file types, and content-signature validation.
+- Queue messages and campaign JSON carry only opaque attachment-set identifiers. They never contain attachment bytes, user filenames as object keys, or private R2 keys.
+- R2 bytes are rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed.
 - User-facing errors do not reveal tokens, Graph response bodies, or internal stack traces.
 - Production configuration is reproducible from `wrangler` configuration, migration files, and documented secret names.

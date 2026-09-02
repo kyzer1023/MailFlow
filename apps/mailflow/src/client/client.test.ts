@@ -439,7 +439,7 @@ describe("campaign payload and result export", () => {
     const almostFull = [{ ...existing[0], byteSize: ATTACHMENT_MAX_BYTES - 2 }];
     const tooLarge = new File(["123"], "too-large.txt", { type: "text/plain" });
     expect(validateAttachmentSelection([tooLarge], almostFull).rejected[0].code).toBe("too_large");
-    expect(formatAttachmentSize(ATTACHMENT_MAX_BYTES)).toBe("2 MB");
+    expect(formatAttachmentSize(ATTACHMENT_MAX_BYTES)).toBe("20 MB");
   });
 
   it("serializes only an opaque attachment set ID and never a browser File", () => {

@@ -32,11 +32,12 @@ When sources conflict, use this order:
 
 - Cloudflare is the only application hosting platform.
 - Microsoft Entra ID is the only user identity provider.
-- Microsoft Graph delegated `Mail.Send` remains the rollback transport during the staged migration. Delegated OAuth SMTP with `SMTP.Send` is the target transport after Cloudflare-hosted verification.
+- Delegated OAuth SMTP with `SMTP.Send` is the target mail transport. Microsoft Graph delegated `Mail.Send` remains a deployment-selectable rollback path during the staged migration.
 - The first release accepts `.csv` and `.xlsx` uploads. It does not connect directly to Google Sheets.
 - Every spreadsheet row produces a separate message.
 - The sender is always the authenticated USM mailbox.
-- Shared mailboxes, attachments, arbitrary From addresses, and application-level Graph permissions are out of scope for the prototype.
+- Campaign-wide attachments are limited to five files and 20 MiB combined, use private R2 storage, and require SMTP mode plus delegated `SMTP.Send`.
+- Shared mailboxes, arbitrary From addresses, and application-level Microsoft permissions are out of scope for the prototype.
 
 ## Architecture boundaries
 

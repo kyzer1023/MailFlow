@@ -86,11 +86,22 @@ Flagged rows are visible and excluded until corrected or explicitly skipped. No 
 - Render preview HTML in an isolated iframe.
 - Show the resolved sender, To, CC, BCC, Reply-To, subject, and body.
 
-## UC-08 Send a test to self
+## UC-08 Add campaign attachments
 
-The member can send one rendered message to the authenticated mailbox before starting the campaign. The interface reports `Accepted by Microsoft`, not `Delivered`.
+- The member may add up to five PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG files.
+- The combined raw file size may not exceed 20 MiB.
+- Every valid recipient receives the same immutable attachment set.
+- Uploads require SMTP mode and a stored delegated `SMTP.Send` grant. The interface asks an older Graph-authorized session to reconnect before it exposes uploads.
+- The browser sends files only to the same-origin authenticated API. D1 stores ownership and integrity metadata; private R2 stores the bytes.
+- Executable signatures, empty files, duplicate content, mismatched extensions and media types, and unsupported formats are rejected.
+- Review displays filenames and sizes. Campaign creation sends only an opaque attachment-set identifier, never file bytes or private object keys.
+- Abandoned uploads expire after 24 hours. Campaign attachment bytes are deleted after the campaign reaches a terminal state while audit metadata remains.
 
-## UC-09 Confirm and start
+## UC-09 Send a test to self
+
+The member can send one rendered message, including the selected attachment set, to the authenticated mailbox before starting the campaign. The interface reports `Accepted by Microsoft`, not `Delivered`.
+
+## UC-10 Confirm and start
 
 The final review shows:
 
@@ -101,12 +112,13 @@ The final review shows:
 - Configured pace.
 - Estimated duration.
 - Validation totals and skipped rows.
+- Attachment filenames and sizes.
 
 The member must acknowledge the review before starting.
 
 Campaign creation carries a stable client-generated idempotency key. Replaying the same confirmed request returns the original campaign and never inserts another set of recipient jobs.
 
-## UC-10 Send in the background
+## UC-11 Send in the background
 
 - A Queue consumer advances the campaign after the browser closes.
 - Default pace is 12 messages per minute and can be reduced by configuration.
@@ -114,7 +126,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - Campaigns can be paused and resumed.
 - A resume starts from the first eligible unsent row.
 
-## UC-11 Prevent blind duplicate sends
+## UC-12 Prevent blind duplicate sends
 
 - Each recipient job has a deterministic unique send key.
 - A conditional database transition claims only a pending job.
@@ -122,7 +134,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - A known throttle or pre-send temporary failure can retry after a delay.
 - A timeout or lost response after the selected provider may have accepted a message becomes `unknown` and is never automatically resent.
 
-## UC-12 Understand results
+## UC-13 Understand results
 
 Supported states:
 
@@ -139,7 +151,7 @@ The user-facing label for `accepted` is `Accepted by Microsoft`. The UI explains
 
 Members can export a result CSV containing row number, recipient, status, attempt count, timestamps, and diagnostic message.
 
-## UC-13 Human-readable recovery
+## UC-14 Human-readable recovery
 
 Examples include:
 
@@ -158,11 +170,11 @@ Included:
 - Subject and HTML placeholders.
 - Fixed or mapped recipient metadata.
 - Test send, review, paced background queue, pause, resume, status, and result export.
+- Up to five campaign-wide attachments totaling at most 20 MiB through delegated OAuth SMTP and private temporary R2 storage.
 
 Later:
 
 - Direct Google Sheets authorization and write-back.
-- Attachments.
 - Shared mailbox and `Mail.Send.Shared` support.
 - Arbitrary From addresses.
 - Rich organization and role administration.
