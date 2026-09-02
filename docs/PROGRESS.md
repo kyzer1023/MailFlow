@@ -431,5 +431,10 @@ Keep this append-only except when updating the short current-state summary. Neve
 
 - Replaced the review email preview's fixed metadata label width with a shared content-sized grid so `Attachments` cannot overlap the filename summary.
 - Preserved the established review styling and added safe wrapping for long metadata values.
-- Focused Chrome verification at 820px and 390px widths measured a consistent 12px label-to-value gap with no horizontal overflow. The before-and-after comparison is recorded in `apps/mailflow/design-qa.md`.
+- Focused Chrome verification at 820px and 390px widths measured a consistent 12px label-to-value gap with no horizontal overflow.
 - Verification passed: `npm test` completed type checking, both production builds, 15 test files, and all 122 tests; `git diff --check` passed apart from the informational Windows line-ending notice.
+
+### 2026-09-03 - Release artifact cleanup
+
+- Removed committed visual-QA screenshots and standalone QA reports after the user completed manual acceptance. Feature unit, integration, security, SMTP, OneDrive, Queue, and UI behavior tests remain in the source tree.
+- No synthetic attachment bytes or temporary secret files remain in the worktree.
