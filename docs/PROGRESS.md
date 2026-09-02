@@ -438,3 +438,13 @@ Keep this append-only except when updating the short current-state summary. Neve
 
 - Removed committed visual-QA screenshots and standalone QA reports after the user completed manual acceptance. Feature unit, integration, security, SMTP, OneDrive, Queue, and UI behavior tests remain in the source tree.
 - No synthetic attachment bytes or temporary secret files remain in the worktree.
+
+### 2026-09-03 - SMTP and OneDrive attachment release deployed
+
+- Merged PR 1 into `main` at merge commit `92ca21e` after the final Cloudflare PR build passed.
+- Applied production D1 migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`; a second migration listing reported no pending work.
+- Preserved the existing production `ENTRA_CLIENT_SECRET`, `SESSION_SECRET`, and `TOKEN_ENCRYPTION_KEY_B64` Worker secrets. Deployed SMTP mode with D1, Queue producer and consumer, static assets, and the hourly attachment cleanup trigger. No R2 binding was created.
+- Completed the primary production account's normal SMTP reconnect and OneDrive App Folder connection through the shared Entra callback. Production D1 contains separate `smtp` and `onedrive` grant records for that account; no test message or attachment was sent during deployment verification.
+- Public smoke checks passed: the landing page returned 200, unauthenticated `/api/me` returned 401, the sign-in route requested delegated `SMTP.Send`, and an authenticated Chrome session rendered the production dashboard with no console warnings or errors.
+- Fast-forwarded the local main checkout, consolidated local secrets into one ignored `apps/mailflow/.env`, removed the redundant `.env.local`, applied both local migrations, installed dependencies, and started the full-stack development server on port 5173.
+- Local main verification passed: 15 test files and all 122 tests, both production builds, Wrangler deployment dry run, root HTTP 200, unauthenticated API 401, SMTP OAuth scope, localhost callback, and no pending local migrations.
