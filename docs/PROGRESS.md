@@ -554,3 +554,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved campaign listing, campaign detail, recipient-job listing, and CSV export into a dedicated route module while keeping campaign creation and mutations in the application composition module.
 - Preserved route order, authentication and ownership checks, paging limits, response shapes, CSV headers, and the 10,000-job export bound.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
+
+### 2026-09-03 - Authentication D1 store extraction
+
+- Split authentication users, OAuth resource tokens, sessions, and OAuth state into focused D1 store modules while retaining `d1-auth.ts` as the compatibility facade and factory.
+- Preserved every SQL statement and mapper, fresh store instances per factory call, the separation between domain and authentication user adapters, and clock injection only for the one-time OAuth state store.
+- Verification passed: exact normalized implementation comparisons, focused TypeScript checks, 15 test files, all 122 tests, and the database-scoped whitespace check. A repository-wide typecheck follows completion of a concurrent frontend extraction.
