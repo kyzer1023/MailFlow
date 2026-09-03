@@ -584,3 +584,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved reusable flow cards, campaign tables, and flow actions into typed component and hook modules used by the dashboard and library routes.
 - Preserved loading and confirmation states, navigation, saved-flow hydration and reset, API mutations, dashboard refreshes, markup, classes, icons, and copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Campaign mutation API extraction
+
+- Moved campaign test-send, start, pause, and resume routes with their shared start helper into a dedicated mutation module.
+- Preserved session and acknowledgement checks, provider and attachment gates, conditional transitions, queue handling, cleanup, audit order, provider result handling, and response contracts.
+- Verification passed: normalized implementation comparisons, TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
