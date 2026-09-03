@@ -638,3 +638,10 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Converted the root application file to TypeScript after reducing it to provider, route-protection, and route-table composition.
 - Preserved provider and route order exactly. The reachable frontend graph now contains 51 code modules and 157 resolved import edges with no cycles, unresolved relative imports, stale `App.jsx` or `base.css` references, or old inline component definitions.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Repository cleanup and refactor verification
+
+- Completed the approved cleanup of obsolete build, browser-QA, Wrangler trace, fixture, artwork, documentation, and merged-worktree artifacts. The previously locked empty worktree directory is now removed; development dependencies, secrets, and local D1 state remain intact.
+- Final verification passed: `npm test` (TypeScript, both production builds, 15 test files, all 122 tests), `wrangler deploy --dry-run`, local D1 migration status with no pending migrations, and `git diff --check`.
+- Chrome regression checks passed at 1440×900, 1024×768, and 390×844 across landing, dashboard, flow library, campaign history, all four wizard routes, a saved template editor, and a completed campaign monitor. No document overflow or browser console warnings appeared. Dashboard-to-wizard navigation and visual/source editor switching also passed.
+- Removed the generated `dist/` directory again after validation so the checkout remains free of reproducible build output.
