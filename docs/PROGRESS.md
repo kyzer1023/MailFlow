@@ -542,3 +542,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved session and dashboard loading state into a typed API context, moved sign-out behavior into a dedicated hook, and moved the authenticated product-route guard into its own routing module.
 - Preserved the `BrowserRouter`, API provider, draft provider, and route composition order along with existing loading, error, and sign-out behavior.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Audit and attachment D1 repository extraction
+
+- Moved audit-event and attachment-set/file D1 adapters into dedicated modules while retaining compatibility exports and composition through `d1.ts`.
+- Exact normalized comparisons confirm that SQL, row mappings, ownership checks, conditional batches, cleanup queries, and limits remain unchanged.
+- All 122 unit tests and the database-scoped whitespace check passed at this checkpoint. The full typecheck follows completion of a concurrent API extraction.
