@@ -524,3 +524,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved attachment-set creation, multipart file upload, and file removal into a dedicated route-registration module while keeping their position immediately after authentication routes.
 - Preserved scope-gating order, multipart limits, response contracts, cleanup behavior, and the established OneDrive-only authorization rule on file removal.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, exact route-order comparison, and `git diff --check`.
+
+### 2026-09-03 - Campaign D1 repository extraction
+
+- Moved the campaign row mapper and repository into a dedicated D1 adapter module while preserving the `d1.ts` compatibility facade and factory.
+- Campaign and recipient insert order, attachment association and rollback guards, lifecycle transitions, exhaustion checks, and state updates remain equivalent to the original implementation.
+- Verification passed: exact normalized implementation comparison, TypeScript checks, both production builds, 15 test files, all 122 tests, and the database-scoped whitespace check.
