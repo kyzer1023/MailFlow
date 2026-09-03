@@ -1,4 +1,4 @@
-import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
@@ -13,10 +13,8 @@ import {
   ApiRequestError,
   archiveFlow,
   createCampaign as createCampaignRequest,
-  createAttachmentSet as createAttachmentSetRequest,
   createFlow as createFlowRequest,
   createTemplateVersion as createTemplateVersionRequest,
-  deleteAttachmentFile as deleteAttachmentFileRequest,
   downloadCampaignExport,
   getCampaign,
   getCampaignJobs,
@@ -25,7 +23,6 @@ import {
   resumeCampaign,
   sendCampaignTest,
   startCampaign,
-  uploadAttachmentFile as uploadAttachmentFileRequest,
   updateFlow as updateFlowRequest,
 } from "./api";
 import {
@@ -40,52 +37,24 @@ import {
   extractPlaceholders,
   formatAttachmentSize,
   getHeaderRowCandidates,
-  mapSpreadsheetRows,
   mappingsForCurrentTable,
   mappingToRecipientConfiguration,
   parseSpreadsheet,
-  recipientConfigurationToClientMapping,
   selectSpreadsheetTable,
   sanitizeTemplateHtml,
   validateAttachmentSelection,
-  validateClientCampaign,
 } from "../client";
 import { escapeMergeValue } from "../client/template";
-import { attachmentFileFromResponse, attachmentSummaryText } from "./lib/attachments";
+import { attachmentSummaryText } from "./lib/attachments";
 import { bodyHtmlFromDraft, dynamicFieldLabel, appendTokenEditorContent, normalizeHtmlForComparison, serializeTokenEditor } from "./lib/editor-dom";
 import { formatDate } from "./lib/format";
-import { localAttachmentId, requestKey } from "./lib/ids";
+import { localAttachmentId } from "./lib/ids";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
 import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
 import { useSignOut } from "./hooks/use-sign-out";
-import { AppDataProvider, fallbackConfig, useApi } from "./state/api-context";
+import { AppDataProvider, useApi } from "./state/api-context";
+import { DraftProvider, useDraft } from "./state/draft-context";
 import { RequireProductSession } from "./routing/RequireProductSession";
-
-const DraftContext = createContext(null);
-const emptyDraft = () => ({
-  name: "",
-  subject: "",
-  cc: "",
-  bcc: "",
-  replyTo: "",
-  body: "",
-  fileName: "",
-  fileSize: "",
-  rowCount: 0,
-  worksheet: "",
-  headerRow: "Row 1",
-  pace: fallbackConfig.defaultPacePerMinute,
-  importance: "normal",
-  toField: "",
-  separator: "auto",
-  ccMode: "fixed",
-  bccMode: "fixed",
-  replyToMode: "fixed",
-  ccColumn: "",
-  bccColumn: "",
-  replyToColumn: "",
-  mappings: {},
-});
 
 function Brand({ compact = false }) {
   return <Link className={`brand ${compact ? "brand--compact" : ""}`} to="/" aria-label="MailFlow home"><img src="/assets/mailflow-logo-horizontal.png" alt="MailFlow" /></Link>;
@@ -153,7 +122,7 @@ function FlowCard({ flow, loading = false, removing = false, confirmingRemove = 
 
 function useFlowActions() {
   const navigate = useNavigate();
-  const { hydrateSavedFlow, resetWizardState } = useContext(DraftContext);
+  const { hydrateSavedFlow, resetWizardState } = useDraft();
   const [openingFlowId, setOpeningFlowId] = useState(null);
   const [openFlowError, setOpenFlowError] = useState("");
   const openFlow = async (flow, mode = "use") => {
@@ -503,7 +472,7 @@ function AttachmentIcon({ mediaType }) {
 }
 
 function AttachmentPicker() {
-  const state = useContext(DraftContext);
+  const state = useDraft();
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
   const locked = Boolean(state.campaignResponse);
@@ -594,203 +563,8 @@ function AttachmentPicker() {
   </section>;
 }
 
-function DraftProvider({ children }) {
-  const { user, config, csrfToken } = useApi();
-  const [draft, setDraft] = useState(emptyDraft);
-  const [workbook, setWorkbook] = useState(null);
-  const [table, setTable] = useState(null);
-  const [flowId, setFlowId] = useState(null);
-  const [templateVersionId, setTemplateVersionId] = useState(null);
-  const [campaignResponse, setCampaignResponse] = useState(null);
-  // Attachment bytes are held by the upload request and this ref only while
-  // retry is possible. They are deliberately not part of draft state or any
-  // campaign payload.
-  const [attachments, setAttachments] = useState([]);
-  const [attachmentSetId, setAttachmentSetId] = useState(null);
-  const attachmentSetIdRef = useRef(null);
-  const [attachmentSetRequestKey, setAttachmentSetRequestKey] = useState(() => `attachment-${requestKey()}`);
-  const attachmentSourcesRef = useRef(new Map());
-  const attachmentSetPromiseRef = useRef(null);
-  const attachmentUploadQueueRef = useRef(Promise.resolve());
-  const attachmentGenerationRef = useRef(0);
-  const [skipInvalidRows, setSkipInvalidRows] = useState(false);
-  const [campaignRequestKey, setCampaignRequestKey] = useState(requestKey);
-  const bodyHtml = useMemo(() => bodyHtmlFromDraft(draft.body), [draft.body]);
-  const mapping = useMemo(() => {
-    const source = (key) => {
-      const mode = draft[`${key}Mode`];
-      const column = draft[`${key}Column`];
-      if (mode === "column" && column) return { kind: "column", field: column };
-      return { kind: "fixed", value: draft[key] || "" };
-    };
-    return {
-      toField: draft.toField || "",
-      cc: source("cc"),
-      bcc: source("bcc"),
-      replyTo: source("replyTo"),
-      importance: draft.importance || "normal",
-      separator: draft.separator || "auto",
-      placeholders: draft.mappings,
-    };
-  }, [draft]);
-  const mappedRows = useMemo(() => table ? mapSpreadsheetRows(table, mapping).rows : [], [table, mapping]);
-  const mappingIssues = useMemo(() => table ? mapSpreadsheetRows(table, mapping).issues : [], [table, mapping]);
-  const validation = useMemo(() => table ? validateClientCampaign({
-    senderAddress: user?.mailboxAddress || user?.principalName || "",
-    subjectTemplate: draft.subject,
-    bodyHtml,
-    rows: mappedRows,
-    mappedFields: draft.mappings,
-    separator: draft.separator || "auto",
-    maxRecipients: config.maxCampaignRecipients,
-    pacePerMinute: draft.pace,
-    mappingIssues,
-  }) : null, [table, user, draft, bodyHtml, mappedRows, mappingIssues, config]);
-  const campaignValidation = useMemo(() => {
-    if (!validation || !skipInvalidRows || validation.ok) return validation;
-    const rowOnly = validation.issues.length > 0 && validation.issues.every((issue) => issue.row !== undefined);
-    return rowOnly ? { ...validation, ok: true, issues: [] } : validation;
-  }, [validation, skipInvalidRows]);
-  const updateDraft = useCallback((key, value) => setDraft((current) => ({ ...current, [key]: value })), []);
-  const ensureAttachmentSet = useCallback(async () => {
-    if (attachmentSetIdRef.current) return attachmentSetIdRef.current;
-    const generation = attachmentGenerationRef.current;
-    const currentRequest = attachmentSetPromiseRef.current;
-    if (currentRequest && currentRequest.generation === generation) return currentRequest.promise;
-    const promise = createAttachmentSetRequest(attachmentSetRequestKey, csrfToken).then((response) => {
-      const id = response?.attachmentSet?.id;
-      if (!id || attachmentGenerationRef.current !== generation) throw new Error("The attachment upload was cancelled. Choose the files again.");
-      attachmentSetIdRef.current = id;
-      setAttachmentSetId(id);
-      return id;
-    }).finally(() => {
-      if (attachmentSetPromiseRef.current?.promise === promise) attachmentSetPromiseRef.current = null;
-    });
-    attachmentSetPromiseRef.current = { generation, promise };
-    return promise;
-  }, [attachmentSetRequestKey, csrfToken]);
-  const performAttachmentUpload = useCallback(async (localId, file, generation) => {
-    if (attachmentGenerationRef.current !== generation) return;
-    setAttachments((current) => current.map((attachment) => attachment.id === localId
-      ? { ...attachment, status: "uploading", error: undefined }
-      : attachment));
-    attachmentSourcesRef.current.set(localId, file);
-    try {
-      const setId = await ensureAttachmentSet();
-      if (attachmentGenerationRef.current !== generation) return;
-      const response = await uploadAttachmentFileRequest(setId, file, csrfToken);
-      if (attachmentGenerationRef.current !== generation) return;
-      const next = attachmentFileFromResponse(response, file, localId);
-      attachmentSourcesRef.current.delete(localId);
-      setAttachments((current) => current.map((attachment) => attachment.id === localId ? next : attachment));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "This file could not be uploaded.";
-      setAttachments((current) => current.map((attachment) => attachment.id === localId
-        ? { ...attachment, status: "error", error: message }
-        : attachment));
-    }
-  }, [csrfToken, ensureAttachmentSet]);
-  const uploadAttachment = useCallback((localId, file) => {
-    // One attachment set has one conditional file-count update. Serializing
-    // the bounded five uploads prevents two browser requests from choosing
-    // the same next position or racing that counter in D1.
-    const generation = attachmentGenerationRef.current;
-    const queued = attachmentUploadQueueRef.current.then(() => performAttachmentUpload(localId, file, generation));
-    attachmentUploadQueueRef.current = queued.catch(() => undefined);
-    return queued;
-  }, [performAttachmentUpload]);
-  const retryAttachment = useCallback((localId) => {
-    const file = attachmentSourcesRef.current.get(localId);
-    if (file) void uploadAttachment(localId, file);
-  }, [uploadAttachment]);
-  const removeAttachment = useCallback(async (localId) => {
-    if (campaignResponse) return;
-    const attachment = attachments.find((item) => item.id === localId);
-    if (!attachment) return;
-    const serverId = attachment.id && !attachment.id.startsWith("attachment-local-") ? attachment.id : "";
-    try {
-      if (serverId && attachmentSetId) await deleteAttachmentFileRequest(attachmentSetId, serverId, csrfToken);
-      attachmentSourcesRef.current.delete(localId);
-      setAttachments((current) => current.filter((item) => item.id !== localId));
-    } catch (error) {
-      setAttachments((current) => current.map((item) => item.id === localId
-        ? { ...item, status: "error", error: error instanceof Error ? error.message : "This file could not be removed." }
-        : item));
-    }
-  }, [attachmentSetId, attachments, campaignResponse, csrfToken]);
-  const resetAttachmentState = useCallback(() => {
-    attachmentGenerationRef.current += 1;
-    attachmentSetPromiseRef.current = null;
-    attachmentUploadQueueRef.current = Promise.resolve();
-    attachmentSourcesRef.current.clear();
-    setAttachments([]);
-    attachmentSetIdRef.current = null;
-    setAttachmentSetId(null);
-    setAttachmentSetRequestKey(`attachment-${requestKey()}`);
-  }, []);
-  const attachmentsUploading = attachments.some((attachment) => attachment.status === "uploading");
-  const attachmentsHaveErrors = attachments.some((attachment) => attachment.status === "error");
-  const attachmentsReady = !attachmentsUploading && !attachmentsHaveErrors && attachments.every((attachment) => attachment.status === "ready");
-  const resetWizardState = useCallback(() => {
-    setDraft(emptyDraft());
-    setWorkbook(null);
-    setTable(null);
-    setFlowId(null);
-    setTemplateVersionId(null);
-    setCampaignResponse(null);
-    resetAttachmentState();
-    setSkipInvalidRows(false);
-    setCampaignRequestKey(requestKey());
-  }, [resetAttachmentState]);
-  const hydrateSavedFlow = useCallback((flow, templateVersion) => {
-    const savedMapping = templateVersion
-      ? recipientConfigurationToClientMapping(templateVersion.recipientConfiguration)
-      : { toField: "", cc: null, bcc: null, replyTo: null, separator: "auto", placeholders: {} };
-    const sourceFields = (value) => value?.kind === "column"
-      ? { mode: "column", fixed: "", column: value.field }
-      : { mode: "fixed", fixed: value?.value || "", column: "" };
-    const cc = sourceFields(savedMapping.cc);
-    const bcc = sourceFields(savedMapping.bcc);
-    const replyTo = sourceFields(savedMapping.replyTo);
-    setDraft({
-      ...emptyDraft(),
-      name: flow.name,
-      subject: templateVersion?.subjectTemplate || "",
-      body: templateVersion?.bodyHtml || "",
-      cc: cc.fixed,
-      bcc: bcc.fixed,
-      replyTo: replyTo.fixed,
-      importance: savedMapping.importance || "normal",
-      fileName: "",
-      fileSize: "",
-      rowCount: 0,
-      worksheet: "",
-      headerRow: "Row 1",
-      toField: savedMapping.toField,
-      separator: savedMapping.separator,
-      ccMode: cc.mode,
-      bccMode: bcc.mode,
-      replyToMode: replyTo.mode,
-      ccColumn: cc.column,
-      bccColumn: bcc.column,
-      replyToColumn: replyTo.column,
-      mappings: { ...savedMapping.placeholders },
-    });
-    setWorkbook(null);
-    setTable(null);
-    setFlowId(flow.id);
-    setTemplateVersionId(templateVersion?.id || null);
-    setCampaignResponse(null);
-    resetAttachmentState();
-    setSkipInvalidRows(false);
-    setCampaignRequestKey(requestKey());
-  }, [resetAttachmentState]);
-  const value = useMemo(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
-  return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
-}
-
 function TemplatePage() {
-  const { draft, updateDraft, flowId, mapping, setFlowId, setTemplateVersionId, table } = useContext(DraftContext);
+  const { draft, updateDraft, flowId, mapping, setFlowId, setTemplateVersionId, table } = useDraft();
   const { csrfToken, refreshDashboard } = useApi();
   const navigate = useNavigate();
   const { flowId: editingFlowId } = useParams();
@@ -869,7 +643,7 @@ function TemplatePage() {
 
 function EditFlowTemplatePage() {
   const { flowId: routeFlowId } = useParams();
-  const { flowId, hydrateSavedFlow } = useContext(DraftContext);
+  const { flowId, hydrateSavedFlow } = useDraft();
   const [loadState, setLoadState] = useState({ status: "idle", error: "" });
 
   useEffect(() => {
@@ -894,7 +668,7 @@ function EditFlowTemplatePage() {
 }
 
 function DataFirstPage() {
-  const { draft, setDraft, workbook, setWorkbook, table, setTable, validation, mappedRows } = useContext(DraftContext);
+  const { draft, setDraft, workbook, setWorkbook, table, setTable, validation, mappedRows } = useDraft();
   const navigate = useNavigate();
   const [uploadState, setUploadState] = useState("ready");
   const [uploadError, setUploadError] = useState("");
@@ -1070,7 +844,7 @@ function DataFirstPage() {
 }
 
 function RecipientsPage() {
-  const { draft, setDraft, updateDraft, table, validation, attachmentsReady } = useContext(DraftContext);
+  const { draft, setDraft, updateDraft, table, validation, attachmentsReady } = useDraft();
   const { user, config } = useApi();
   const navigate = useNavigate();
   const options = columnOptions(table);
@@ -1114,7 +888,7 @@ function RecipientsPage() {
 }
 
 function useEnsureCampaign() {
-  const api = useApi(); const draftState = useContext(DraftContext);
+  const api = useApi(); const draftState = useDraft();
   return useCallback(async () => {
     if (!api.isLive) return null;
     if (draftState.campaignResponse) return draftState.campaignResponse;
@@ -1166,7 +940,7 @@ function useEnsureCampaign() {
 }
 
 function ReviewPage() {
-  const state = useContext(DraftContext);
+  const state = useDraft();
   const { user, csrfToken, refreshDashboard } = useApi();
   const navigate = useNavigate();
   const [sampleIndex, setSampleIndex] = useState(0);

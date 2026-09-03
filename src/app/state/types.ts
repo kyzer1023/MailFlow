@@ -3,6 +3,7 @@ import type {
   CampaignCounts,
   CampaignRecord,
   FlowRecord,
+  TemplateVersionRecord,
   MailImportance,
 } from "../../domain/types";
 import type {
@@ -14,7 +15,7 @@ import type {
   ParsedSpreadsheet,
   SpreadsheetTable,
 } from "../../client/types";
-import type { ApiConfig, ApiUser } from "../api";
+import type { ApiConfig, ApiUser, CampaignResponse } from "../api";
 
 export type AddressRuleMode = "fixed" | "column";
 
@@ -91,6 +92,43 @@ export interface ApiContextValue extends SessionState {
   readonly dashboard: DashboardState;
   readonly refreshDashboard: () => Promise<void>;
   readonly setSession: (next: SessionState | ((current: SessionState) => SessionState)) => void;
+}
+
+export interface DraftContextValue {
+  readonly draft: DraftState;
+  readonly setDraft: (next: DraftState | ((current: DraftState) => DraftState)) => void;
+  readonly updateDraft: (key: keyof DraftState, value: DraftState[keyof DraftState]) => void;
+  readonly workbook: ParsedSpreadsheet | null;
+  readonly setWorkbook: (next: ParsedSpreadsheet | null | ((current: ParsedSpreadsheet | null) => ParsedSpreadsheet | null)) => void;
+  readonly table: SpreadsheetTable | null;
+  readonly setTable: (next: SpreadsheetTable | null | ((current: SpreadsheetTable | null) => SpreadsheetTable | null)) => void;
+  readonly flowId: string | null;
+  readonly setFlowId: (next: string | null | ((current: string | null) => string | null)) => void;
+  readonly templateVersionId: string | null;
+  readonly setTemplateVersionId: (next: string | null | ((current: string | null) => string | null)) => void;
+  readonly campaignResponse: CampaignResponse | null;
+  readonly setCampaignResponse: (next: CampaignResponse | null | ((current: CampaignResponse | null) => CampaignResponse | null)) => void;
+  readonly campaignRequestKey: string;
+  readonly bodyHtml: string;
+  readonly mapping: ClientMapping;
+  readonly mappedRows: readonly MappedRecipientRow[];
+  readonly validation: ClientValidationSummary | null;
+  readonly campaignValidation: ClientValidationSummary | null;
+  readonly skipInvalidRows: boolean;
+  readonly setSkipInvalidRows: (next: boolean | ((current: boolean) => boolean)) => void;
+  readonly config: ApiConfig;
+  readonly hydrateSavedFlow: (flow: FlowRecord, templateVersion: TemplateVersionRecord | null) => void;
+  readonly resetWizardState: () => void;
+  readonly attachments: readonly CampaignAttachment[];
+  readonly setAttachments: (next: CampaignAttachment[] | ((current: CampaignAttachment[]) => CampaignAttachment[])) => void;
+  readonly attachmentSetId: string | null;
+  readonly attachmentSetRequestKey: string;
+  readonly attachmentsUploading: boolean;
+  readonly attachmentsHaveErrors: boolean;
+  readonly attachmentsReady: boolean;
+  readonly uploadAttachment: (localId: string, file: File) => Promise<void>;
+  readonly retryAttachment: (localId: string) => void;
+  readonly removeAttachment: (localId: string) => Promise<void>;
 }
 
 export type DashboardStatus = "idle" | "loading" | "ready" | "error";

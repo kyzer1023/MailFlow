@@ -560,3 +560,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Split authentication users, OAuth resource tokens, sessions, and OAuth state into focused D1 store modules while retaining `d1-auth.ts` as the compatibility facade and factory.
 - Preserved every SQL statement and mapper, fresh store instances per factory call, the separation between domain and authentication user adapters, and clock injection only for the one-time OAuth state store.
 - Verification passed: exact normalized implementation comparisons, focused TypeScript checks, 15 test files, all 122 tests, and the database-scoped whitespace check. A repository-wide typecheck follows completion of a concurrent frontend extraction.
+
+### 2026-09-03 - Typed frontend draft-state boundary
+
+- Moved draft, workbook, mapping, attachment, and campaign state into a typed draft context while preserving state across wizard route navigation.
+- Kept upload serialization, cancellation generations, source-file retry references, attachment-set promise reuse, cleanup, and reset behavior together within the provider.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
