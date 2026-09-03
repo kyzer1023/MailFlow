@@ -1,5 +1,5 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   Code, DownloadSimple, Envelope, Eraser, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
@@ -20,11 +20,7 @@ import {
   downloadCampaignExport,
   getCampaign,
   getCampaignJobs,
-  getCampaigns,
   getFlow,
-  getFlows,
-  getMe,
-  logout,
   pauseCampaign,
   resumeCampaign,
   sendCampaignTest,
@@ -61,11 +57,11 @@ import { formatDate } from "./lib/format";
 import { localAttachmentId, requestKey } from "./lib/ids";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
 import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
+import { useSignOut } from "./hooks/use-sign-out";
+import { AppDataProvider, fallbackConfig, useApi } from "./state/api-context";
+import { RequireProductSession } from "./routing/RequireProductSession";
 
 const DraftContext = createContext(null);
-const ApiContext = createContext(null);
-
-const fallbackConfig = { defaultPacePerMinute: 12, maxCampaignRecipients: 300, mailTransport: "graph", attachmentsEnabled: false, attachmentsReauthorizationRequired: false, attachmentsSmtpAuthorizationRequired: false, attachmentsOneDriveAuthorizationRequired: false };
 const emptyDraft = () => ({
   name: "",
   subject: "",
@@ -91,105 +87,8 @@ const emptyDraft = () => ({
   mappings: {},
 });
 
-const dashboardDataRoutes = new Set(["/dashboard", "/flows", "/campaigns"]);
-
-function AppDataProvider({ children }) {
-  const location = useLocation();
-  const [session, setSession] = useState({ status: "loading", user: null, csrfToken: "", config: fallbackConfig });
-  const [dashboard, setDashboard] = useState({ status: "idle", flows: null, campaigns: null, error: "" });
-  const dashboardRequestRef = useRef(0);
-  const activeUserIdRef = useRef(session.user?.id || null);
-  activeUserIdRef.current = session.user?.id || null;
-
-  const refreshDashboard = useCallback(async () => {
-    const userId = activeUserIdRef.current;
-    if (!userId) return;
-    const requestId = ++dashboardRequestRef.current;
-    setDashboard({ status: "loading", flows: null, campaigns: null, error: "" });
-    try {
-      const [flowsResponse, campaignsResponse] = await Promise.all([getFlows(), getCampaigns()]);
-      const flowNames = new Map(flowsResponse.flows.map((flow) => [flow.id, flow.name]));
-      // The list endpoint intentionally returns only campaign records. Fetch
-      // each owner-scoped detail to obtain authoritative result counts for the
-      // dashboard rather than displaying guessed or fixture totals.
-      const campaigns = await Promise.all(campaignsResponse.campaigns.map(async (campaign) => {
-        const detail = await getCampaign(campaign.id);
-        return { campaign, counts: detail.counts, flowName: flowNames.get(campaign.flowId) || "" };
-      }));
-      if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
-      setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, error: "" });
-    } catch (error) {
-      if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
-      setDashboard({ status: "error", flows: null, campaigns: null, error: error instanceof Error ? error.message : "The dashboard could not be loaded." });
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    getMe().then((response) => {
-      if (!active) return;
-      setSession({ status: "authenticated", user: response.user, csrfToken: response.csrfToken, config: response.config || fallbackConfig });
-    }).catch((error) => {
-      if (!active) return;
-      if (error instanceof ApiRequestError && error.status === 401) {
-        setSession({ status: "unauthenticated", user: null, csrfToken: "", config: fallbackConfig });
-        return;
-      }
-      setSession({ status: "error", user: null, csrfToken: "", config: fallbackConfig, error: error instanceof Error ? error.message : "Mail Flow could not verify this session." });
-    });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    dashboardRequestRef.current += 1;
-    setDashboard({ status: "idle", flows: null, campaigns: null, error: "" });
-  }, [session.user?.id]);
-
-  useEffect(() => {
-    if (session.user && dashboardDataRoutes.has(location.pathname)) void refreshDashboard();
-  }, [location.key, location.pathname, session.user, refreshDashboard]);
-
-  const value = useMemo(() => ({
-    ...session,
-    isLive: session.status === "authenticated" && Boolean(session.user),
-    dashboard,
-    refreshDashboard,
-    setSession,
-  }), [session, dashboard, refreshDashboard]);
-  return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;
-}
-
-function useApi() {
-  return useContext(ApiContext);
-}
-
-function RequireProductSession({ children }) {
-  const { status, user, error } = useApi();
-  if (status === "loading") return <div className="route-gate" role="status"><SpinnerGap className="spin" /> Loading Mail Flow...</div>;
-  if (status === "error") return <div className="route-gate" role="alert"><WarningCircle weight="fill" /><h1>Mail Flow could not load this session.</h1><p>{error || "Try again in a moment."}</p><a className="button button--outline" href="/">Return to sign in</a></div>;
-  if (!user) return <Navigate to="/" replace />;
-  return children;
-}
-
 function Brand({ compact = false }) {
   return <Link className={`brand ${compact ? "brand--compact" : ""}`} to="/" aria-label="MailFlow home"><img src="/assets/mailflow-logo-horizontal.png" alt="MailFlow" /></Link>;
-}
-
-function useSignOut() {
-  const { csrfToken, setSession } = useApi();
-  const [state, setState] = useState({ status: "idle", error: "" });
-  const signOut = async () => {
-    if (state.status === "working") return;
-    setState({ status: "working", error: "" });
-    try {
-      await logout(csrfToken);
-      setSession({ status: "unauthenticated", user: null, csrfToken: "", config: fallbackConfig });
-      window.location.assign("/");
-    } catch (error) {
-      setState({ status: "error", error: error instanceof Error ? error.message : "Mail Flow could not sign you out." });
-    }
-  };
-  return { signOut, signingOut: state.status === "working", signOutError: state.error };
 }
 
 function LandingAction({ compact = false, allowSignOut = false }) {

@@ -86,6 +86,13 @@ export interface SessionState {
   readonly error?: string;
 }
 
+export interface ApiContextValue extends SessionState {
+  readonly isLive: boolean;
+  readonly dashboard: DashboardState;
+  readonly refreshDashboard: () => Promise<void>;
+  readonly setSession: (next: SessionState | ((current: SessionState) => SessionState)) => void;
+}
+
 export type DashboardStatus = "idle" | "loading" | "ready" | "error";
 
 export interface DashboardState {

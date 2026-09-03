@@ -536,3 +536,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved flow listing, creation, retrieval, update aliases, and template-version routes into a dedicated route-registration module. Campaign routes remain in the application composition module.
 - Preserved route order, ownership and conflict checks, schemas, audit sequence, response shapes, and the paired `PATCH` and `PUT` update behavior.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
+
+### 2026-09-03 - Typed frontend session boundary
+
+- Moved session and dashboard loading state into a typed API context, moved sign-out behavior into a dedicated hook, and moved the authenticated product-route guard into its own routing module.
+- Preserved the `BrowserRouter`, API provider, draft provider, and route composition order along with existing loading, error, and sign-out behavior.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
