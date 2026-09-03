@@ -578,3 +578,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved campaign creation into a dedicated route module and retained its position between campaign listing and campaign detail routes.
 - Preserved recipient and template validation, idempotency replay and race handling, attachment authorization and integrity gates, batch creation, lifecycle transition, audit order, and response contracts.
 - Verification passed: exact normalized handler comparison, TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
+
+### 2026-09-03 - Typed frontend overview components
+
+- Moved reusable flow cards, campaign tables, and flow actions into typed component and hook modules used by the dashboard and library routes.
+- Preserved loading and confirmation states, navigation, saved-flow hydration and reset, API mutations, dashboard refreshes, markup, classes, icons, and copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.

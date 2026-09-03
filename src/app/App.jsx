@@ -7,7 +7,7 @@ import {
   HighlighterCircle, House, Info, LinkSimple, ListBullets, ListNumbers,
   MicrosoftOutlookLogo, MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play, Plus,
   Rows, SignOut, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
-  TextItalic, TextUnderline, Trash, Users, WarningCircle, X,
+  TextItalic, TextUnderline, Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
   ApiRequestError,
@@ -54,8 +54,11 @@ import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/v
 import { DynamicValueChip } from "./components/common/DynamicValueChip";
 import { Field } from "./components/common/Field";
 import { StatusChip } from "./components/common/StatusChip";
+import { CampaignTable } from "./components/overview/CampaignTable";
+import { FlowCard } from "./components/overview/FlowCard";
 import { AppShell } from "./components/shell/AppShell";
 import { Brand } from "./components/shell/Brand";
+import { useFlowActions } from "./hooks/use-flow-actions";
 import { useSignOut } from "./hooks/use-sign-out";
 import { AppDataProvider, useApi } from "./state/api-context";
 import { DraftProvider, useDraft } from "./state/draft-context";
@@ -84,50 +87,6 @@ function LandingPage() {
       <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Microsoft OAuth</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
     </main>
   </div>;
-}
-
-function FlowCard({ flow, loading = false, removing = false, confirmingRemove = false, onUse, onEdit, onBeginRemove, onCancelRemove, onConfirmRemove, compact = false }) {
-  const busy = loading || removing;
-  return <article className={`flow-card ${compact ? "flow-card--compact" : ""}`} aria-busy={busy}>
-    <div className="flow-title"><span className="mini-mark"><Envelope weight="fill" /></span><h3>{flow.name}</h3>{busy && <SpinnerGap className="spin" aria-label={removing ? "Removing flow" : "Opening flow"} />}</div>
-    <div className="card-divider" />
-    <small>Template</small>
-    <div className="field-list">{flow.fields.map((field) => <code key={field}>{field}</code>)}</div>
-    <footer><span><Clock /> {flow.metaLabel}</span><StatusChip status={flow.status}>{flow.status === "ready" ? "Ready" : "Draft"}</StatusChip></footer>
-    <div className="flow-card-actions">
-      <button type="button" className="button button--coral button--small" onClick={onUse} disabled={busy}>Use flow <ArrowRight /></button>
-      {onEdit && <button type="button" className="button button--outline button--small" onClick={onEdit} disabled={busy}>Edit</button>}
-      {onBeginRemove && !confirmingRemove && <button type="button" className="button button--outline button--small" onClick={onBeginRemove} disabled={busy} aria-label={`Remove ${flow.name}`}><Trash /> Remove</button>}
-      {confirmingRemove && <><span className="flow-remove-note">Campaign history stays available.</span><button type="button" className="button button--outline button--small" onClick={onCancelRemove} disabled={busy}>Keep flow</button><button type="button" className="button button--danger button--small" onClick={onConfirmRemove} disabled={busy} aria-label={`Confirm remove ${flow.name}`}>{removing ? <SpinnerGap className="spin" /> : <Trash />} {removing ? "Removing" : "Confirm remove"}</button></>}
-    </div>
-  </article>;
-}
-
-function useFlowActions() {
-  const navigate = useNavigate();
-  const { hydrateSavedFlow, resetWizardState } = useDraft();
-  const [openingFlowId, setOpeningFlowId] = useState(null);
-  const [openFlowError, setOpenFlowError] = useState("");
-  const openFlow = async (flow, mode = "use") => {
-    if (openingFlowId) return;
-    setOpenFlowError("");
-    setOpeningFlowId(flow.id);
-    try {
-      const response = await getFlow(flow.id);
-      hydrateSavedFlow(response.flow, response.templateVersion);
-      navigate(mode === "edit" ? `/flows/${flow.id}/edit/template` : "/flows/new/data");
-    } catch (error) {
-      setOpenFlowError(error instanceof Error ? error.message : "The saved flow could not be opened.");
-    } finally {
-      setOpeningFlowId(null);
-    }
-  };
-  const startNewFlow = () => { resetWizardState(); navigate("/flows/new/data"); };
-  return { openingFlowId, openFlowError, openFlow, startNewFlow };
-}
-
-function CampaignTable({ campaigns }) {
-  return <div className="table-wrap"><table><thead><tr><th>Campaign</th><th>Last updated</th><th>Status</th><th>Results</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>{campaigns.map((campaign) => <tr key={campaign.id}><td><strong>{campaign.name}</strong><small>{campaign.date}</small></td><td>{campaign.updated}</td><td><StatusChip status={campaign.status}>{campaign.status[0].toUpperCase() + campaign.status.slice(1)}</StatusChip></td><td><strong>{campaign.accepted}</strong> accepted<br /><small>{campaign.failed} failed</small></td><td><Link className="table-open" to={`/campaigns/${campaign.id}`} aria-label={`Open ${campaign.name}`}><CaretRight /></Link></td></tr>)}</tbody></table></div>;
 }
 
 function DashboardPage() {
