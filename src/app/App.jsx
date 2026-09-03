@@ -55,6 +55,12 @@ import {
   validateClientCampaign,
 } from "../client";
 import { escapeMergeValue } from "../client/template";
+import { attachmentFileFromResponse, attachmentSummaryText } from "./lib/attachments";
+import { bodyHtmlFromDraft, dynamicFieldLabel, appendTokenEditorContent, normalizeHtmlForComparison, serializeTokenEditor } from "./lib/editor-dom";
+import { formatDate } from "./lib/format";
+import { localAttachmentId, requestKey } from "./lib/ids";
+import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
+import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
 
 const DraftContext = createContext(null);
 const ApiContext = createContext(null);
@@ -84,103 +90,6 @@ const emptyDraft = () => ({
   replyToColumn: "",
   mappings: {},
 });
-
-function requestKey() {
-  try {
-    return `campaign-${crypto.randomUUID()}`;
-  } catch {
-    return `campaign-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-}
-
-function formatDate(value) {
-  if (!value) return "Not available";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function localAttachmentId() {
-  try {
-    return `attachment-local-${crypto.randomUUID()}`;
-  } catch {
-    return `attachment-local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-}
-
-function attachmentFileFromResponse(response, fallback, localId) {
-  const candidate = response?.file || response?.attachment || response || {};
-  const byteSize = Number(candidate.byteSize ?? candidate.size ?? fallback?.size ?? 0);
-  return {
-    id: String(candidate.id || localId),
-    name: String(candidate.originalFilename ?? candidate.filename ?? candidate.name ?? fallback?.name ?? "Attachment"),
-    mediaType: String(candidate.mediaType ?? candidate.contentType ?? candidate.type ?? fallback?.type ?? attachmentMediaType(fallback || { name: "", size: byteSize, type: "" })),
-    byteSize: Number.isFinite(byteSize) ? byteSize : Number(fallback?.size || 0),
-    status: "ready",
-  };
-}
-
-function attachmentSummaryText(attachments) {
-  return attachments.length > 0
-    ? attachments.map((attachment) => `${attachment.name} (${formatAttachmentSize(attachment.byteSize)})`).join(", ")
-    : "None";
-}
-
-function bodyHtmlFromDraft(body) {
-  const source = String(body || "");
-  if (/<[a-z][^>]*>/iu.test(source)) return source;
-  return source
-    .split(/\r?\n/u)
-    // DOMPurify serializes void elements as `<br>`. Keep generated drafts in
-    // that same canonical form so a harmless blank line is not reported as
-    // an unsafe-template change during Review validation.
-    .map((line) => line ? `<p>${escapeMergeValue(line)}</p>` : "<br>")
-    .join("");
-}
-
-function normalizeHtmlForComparison(html) {
-  const template = document.createElement("template");
-  template.innerHTML = String(html || "");
-  return template.innerHTML.trim();
-}
-
-function columnOptions(table) {
-  return table ? table.columns.map((column) => ({ value: column.key, label: column.label || column.key })) : [];
-}
-
-function findColumn(table, words, fallback = "") {
-  if (!table) return fallback;
-  const match = table.columns.find((column) => {
-    const haystack = `${column.key} ${column.label}`.toLowerCase();
-    return words.some((word) => haystack.includes(word));
-  });
-  return match?.key || table.columns[0]?.key || fallback;
-}
-
-function displayFlow(flow) {
-  return {
-    id: flow.id,
-    name: flow.name,
-    fields: ["Saved template"],
-    metaLabel: `Updated ${formatDate(flow.updatedAt)}`,
-    status: flow.state === "archived" ? "draft" : "ready",
-  };
-}
-
-function displayCampaign(campaign, counts, flowName = "") {
-  const status = campaign.state === "completed" ? "completed" : campaign.state === "paused" ? "paused" : campaign.state === "failed" ? "failed" : campaign.state;
-  return {
-    id: campaign.id,
-    name: flowName.trim() || campaign.sourceFilename || "Campaign",
-    date: formatDate(campaign.createdAt),
-    updated: formatDate(campaign.updatedAt),
-    status: ["completed", "paused", "running", "queued", "failed"].includes(status) ? status : "queued",
-    accepted: counts?.accepted ?? 0,
-    failed: (counts?.failed ?? 0) + (counts?.unknown ?? 0),
-    sent: (counts?.accepted ?? 0) + (counts?.failed ?? 0) + (counts?.unknown ?? 0),
-    total: campaign.totalRecipients,
-  };
-}
 
 const dashboardDataRoutes = new Set(["/dashboard", "/flows", "/campaigns"]);
 
@@ -423,52 +332,8 @@ function WizardStepper({ current }) {
 function WizardShell({ current, title, subtitle, actions, children }) { return <AppShell><WizardStepper current={current} /><div className="page wizard-page"><header className="page-header wizard-header"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="header-actions">{actions}</div></header>{children}</div></AppShell>; }
 function Field({ label, children, hint, error, errorId }) { return <label className={`field${error ? " field--error" : ""}`}><span>{label}</span>{children}{error ? <small className="field-error" id={errorId} role="alert">{error}</small> : hint && <small>{hint}</small>}</label>; }
 
-function dynamicFieldLabel(key, options = []) {
-  const match = options.find((option) => option.value === key);
-  return match?.label || String(key || "").replace(/_/gu, " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
-}
-
 function DynamicValueChip({ value, options = [], compact = false }) {
   return <span className={`dynamic-value-chip${compact ? " dynamic-value-chip--compact" : ""}`}><BracketsCurly weight="bold" aria-hidden="true" />{dynamicFieldLabel(value, options)}</span>;
-}
-
-function serializeTokenEditor(root) {
-  if (!root) return "";
-  const clone = root.cloneNode(true);
-  clone.querySelectorAll("[data-dynamic-field]").forEach((element) => {
-    element.replaceWith(document.createTextNode(`{{${element.dataset.dynamicField}}}`));
-  });
-  return clone.innerHTML;
-}
-
-function appendTokenEditorContent(root, value, options) {
-  const safeHtml = sanitizeTemplateHtml(bodyHtmlFromDraft(value));
-  root.innerHTML = safeHtml;
-  const pattern = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const textNodes = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode);
-  textNodes.forEach((node) => {
-    const source = node.nodeValue || "";
-    pattern.lastIndex = 0;
-    if (!pattern.test(source)) return;
-    pattern.lastIndex = 0;
-    const fragment = document.createDocumentFragment();
-    let cursor = 0;
-    for (const match of source.matchAll(pattern)) {
-      if (match.index > cursor) fragment.append(document.createTextNode(source.slice(cursor, match.index)));
-      const token = document.createElement("span");
-      token.className = "dynamic-inline-token";
-      token.contentEditable = "false";
-      token.dataset.dynamicField = match[1];
-      token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(match[1], options)}`);
-      token.textContent = dynamicFieldLabel(match[1], options);
-      fragment.append(token);
-      cursor = match.index + match[0].length;
-    }
-    if (cursor < source.length) fragment.append(document.createTextNode(source.slice(cursor)));
-    node.replaceWith(fragment);
-  });
 }
 
 export const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
@@ -692,10 +557,6 @@ export const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value
     </>}
   </div>;
 });
-
-function splitFixedAddresses(value) {
-  return String(value || "").split(/[;,\n]+/u).map((part) => part.trim()).filter(Boolean);
-}
 
 function AddressRuleField({ fieldKey, label, value, mode, column, options, onValue, onMode, onColumn, hint }) {
   const [pending, setPending] = useState("");
@@ -1403,26 +1264,6 @@ function useEnsureCampaign() {
     void api.refreshDashboard();
     return response;
   }, [api, draftState]);
-}
-
-function validationIssueAction(issue) {
-  if (["missing_mapping", "missing_column", "missing_to_mapping"].includes(issue.code)) {
-    return { label: "Fix data mapping", to: "/flows/new/data" };
-  }
-  if (["missing_subject", "missing_body", "unsafe_html"].includes(issue.code)) {
-    return { label: "Fix template", to: "/flows/new/template" };
-  }
-  return { label: "Fix recipients", to: "/flows/new/recipients" };
-}
-
-function uniqueValidationIssues(issues) {
-  const seen = new Set();
-  return issues.filter((issue) => {
-    const key = `${issue.code}:${issue.field || ""}:${issue.row || ""}:${issue.message}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function ReviewPage() {

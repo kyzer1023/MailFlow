@@ -512,3 +512,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the recipient-job row mapper and repository into a dedicated D1 adapter module and exposed one shared recipient insert-statement builder.
 - Campaign creation uses the shared builder while retaining the exact campaign insert, optional attachment association, rollback guard, recipient insertion order, and atomic D1 batch.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the database-scoped whitespace check.
+
+### 2026-09-03 - Typed frontend helper extraction
+
+- Added typed application state contracts and moved identifier generation, display formatting, view-model mapping, attachment normalization, editor DOM serialization, and validation-review helpers into focused modules under `src/app/`.
+- Context providers, hooks, components, editor behavior, and routes remain in the application composition module for later isolated extractions. The new dependency direction remains acyclic.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the frontend-scoped whitespace check.
