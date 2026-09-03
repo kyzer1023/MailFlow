@@ -614,3 +614,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the landing page, dashboard, flow library, and campaign history into typed route modules while leaving the central application route table as the composition boundary.
 - Preserved session and API behavior, navigation, flow confirmation states, loading, empty and error rendering, markup, classes, icons, links, and visible copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed Data and Template routes
+
+- Moved the Data step plus new and existing flow Template editors into typed route modules.
+- Preserved browser-side workbook parsing, sheet and header selection, column mapping, validation, token-editor refs, create/update behavior, navigation, loading and error states, accessibility attributes, markup, classes, icons, and copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.

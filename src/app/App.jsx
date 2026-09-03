@@ -2,21 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, CaretLeft, CaretRight, Check, CheckCircle, Clock,
-  DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
+  DownloadSimple, Envelope, FlowArrow, Gauge,
   Info,
   MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play,
-  Rows, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
+  Rows, SpinnerGap,
   Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
-  ApiRequestError,
   createCampaign as createCampaignRequest,
   createFlow as createFlowRequest,
   createTemplateVersion as createTemplateVersionRequest,
   downloadCampaignExport,
   getCampaign,
   getCampaignJobs,
-  getFlow,
   pauseCampaign,
   resumeCampaign,
   sendCampaignTest,
@@ -27,26 +25,17 @@ import {
   buildPreviewSrcDoc,
   buildMessagePreviews,
   createCampaignPayload,
-  extractPlaceholders,
-  getHeaderRowCandidates,
-  mappingsForCurrentTable,
   mappingToRecipientConfiguration,
-  parseSpreadsheet,
-  selectSpreadsheetTable,
-  sanitizeTemplateHtml,
 } from "../client";
 import { attachmentSummaryText } from "./lib/attachments";
-import { bodyHtmlFromDraft, dynamicFieldLabel } from "./lib/editor-dom";
 import { formatDate } from "./lib/format";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
-import { columnOptions, findColumn } from "./lib/view-models";
+import { columnOptions } from "./lib/view-models";
 import { AttachmentPicker } from "./components/attachments/AttachmentPicker";
 import { AddressRuleField } from "./components/recipients/AddressRuleField";
-import { DynamicValueChip } from "./components/common/DynamicValueChip";
 import { Field } from "./components/common/Field";
 import { StatusChip } from "./components/common/StatusChip";
 import { AppShell } from "./components/shell/AppShell";
-import { TokenMessageEditor } from "./components/editor/TokenMessageEditor";
 import { WizardShell } from "./components/wizard/WizardShell";
 import { AppDataProvider, useApi } from "./state/api-context";
 import { DraftProvider, useDraft } from "./state/draft-context";
@@ -55,286 +44,8 @@ import { LandingPage } from "./routes/public/LandingPage";
 import { CampaignsPage } from "./routes/overview/CampaignsPage";
 import { DashboardPage } from "./routes/overview/DashboardPage";
 import { FlowsPage } from "./routes/overview/FlowsPage";
-
-function TemplatePage() {
-  const { draft, updateDraft, flowId, mapping, setFlowId, setTemplateVersionId, table } = useDraft();
-  const { csrfToken, refreshDashboard } = useApi();
-  const navigate = useNavigate();
-  const { flowId: editingFlowId } = useParams();
-  const bodyRef = useRef(null);
-  const [saveState, setSaveState] = useState("idle");
-  const [saveError, setSaveError] = useState("");
-  const [nameError, setNameError] = useState("");
-  const dynamicOptions = columnOptions(table);
-  const dynamicFields = dynamicOptions.map((option) => option.value);
-  const editingExisting = Boolean(editingFlowId) && !table;
-  const sanitizedDraftBody = useMemo(() => sanitizeTemplateHtml(bodyHtmlFromDraft(draft.body)), [draft.body]);
-  const canSave = Boolean(draft.name.trim() && draft.subject.trim() && sanitizedDraftBody.trim() && mapping.toField);
-
-  const editDraft = (key, value) => {
-    updateDraft(key, value);
-    setSaveState("idle");
-    setSaveError("");
-    if (key === "name") setNameError("");
-  };
-
-  const insertDynamicField = (key) => {
-    bodyRef.current?.insertToken(key);
-  };
-
-  const saveFlowDraft = async (destination = "") => {
-    if (!canSave) {
-      setSaveError("Add a flow name, subject, message body, and primary recipient before saving.");
-      return;
-    }
-    setSaveState("saving"); setSaveError(""); setNameError("");
-    let flowNameSaved = false;
-    try {
-      const bodyHtml = sanitizedDraftBody;
-      updateDraft("body", bodyHtml);
-      const recipientConfiguration = mappingToRecipientConfiguration(mapping);
-      const templatePayload = { subjectTemplate: draft.subject, bodyHtml, placeholderManifest: extractPlaceholders(draft.subject, bodyHtml), recipientConfiguration };
-      if (!flowId) {
-        const response = await createFlowRequest({ name: draft.name, ...templatePayload }, csrfToken);
-        setFlowId(response.flow.id);
-        setTemplateVersionId(response.templateVersion?.id || null);
-      } else {
-        await updateFlowRequest(flowId, { name: draft.name }, csrfToken);
-        flowNameSaved = true;
-        const response = await createTemplateVersionRequest(flowId, templatePayload, csrfToken);
-        setTemplateVersionId(response.version.id);
-      }
-      await refreshDashboard();
-      setSaveState("saved");
-      if (destination) navigate(destination);
-    } catch (error) {
-      setSaveState("error");
-      if (error instanceof ApiRequestError && error.code === "flow_name_conflict") {
-        setNameError(error.message);
-      } else {
-        const message = error instanceof Error ? error.message : "The flow could not be saved.";
-        setSaveError(flowNameSaved ? `The flow name was saved, but the message changes were not saved. ${message}` : message);
-      }
-    }
-  };
-  const nextDestination = editingExisting ? "/flows" : "/flows/new/recipients";
-  if (!table && !editingExisting) {
-    return <AppShell><div className="route-gate" role="status"><WarningCircle weight="fill" /><h1>Import your data first.</h1><p>The template editor builds its dynamic fields from your spreadsheet headers.</p><Link className="button button--coral" to="/flows/new/data">Start with data</Link></div></AppShell>;
-  }
-  return <WizardShell current={1} title="Compose the reusable message." subtitle="Your spreadsheet headers are ready to use as dynamic fields." actions={<><button className="button button--outline" onClick={() => navigate(editingExisting ? "/flows" : "/flows/new/data")}><ArrowLeft /> Back</button><button className="button button--text" onClick={() => void saveFlowDraft()} disabled={saveState === "saving" || !canSave}><Files /> {saveState === "saving" ? "Saving" : saveState === "saved" ? "Saved" : "Save draft"}</button><button className="button button--coral" onClick={() => void saveFlowDraft(nextDestination)} disabled={saveState === "saving" || !canSave}>{editingExisting ? "Save changes" : "Continue to recipients"} <ArrowRight /></button></>}>
-    <div className="template-layout">
-      <section className="panel editor-card">
-        {saveError && <div className="notice notice--warn template-save-error" role="alert"><WarningCircle weight="fill" /><span><strong>Changes were not fully saved.</strong>{saveError}</span></div>}
-        <Field label="Flow name" error={nameError} errorId="flow-name-error"><input value={draft.name} onChange={(event) => editDraft("name", event.target.value)} placeholder="For example, Event invitation" aria-invalid={Boolean(nameError)} aria-describedby={nameError ? "flow-name-error" : undefined} /></Field>
-        <Field label="Subject"><input value={draft.subject} onChange={(event) => editDraft("subject", event.target.value)} placeholder="Add a clear email subject" /></Field>
-        <div className="field"><span>Message body</span><TokenMessageEditor ref={bodyRef} value={draft.body} onChange={(value) => editDraft("body", value)} options={dynamicOptions} placeholder="Write the reusable message here." /><small>Use the code button to switch between visual formatting and the sanitized HTML source.</small></div>
-      </section>
-      <aside className="panel dynamic-panel"><h2>Dynamic values</h2><p>Detected from your spreadsheet headers</p>{dynamicFields.length > 0 ? <div className="token-stack">{dynamicFields.map((key) => <button type="button" key={key} onClick={() => insertDynamicField(key)} aria-label={`Insert ${dynamicFieldLabel(key, dynamicOptions)}`}><DynamicValueChip value={key} options={dynamicOptions} /></button>)}</div> : <div className="empty-state empty-state--compact">No fields are available. Return to Data and import a spreadsheet.</div>}<div className="notice"><Info weight="fill" /><span>Click a value to insert it in the message. Highlighted text is replaced.</span></div><div className="envelope-preview"><img src="/assets/mailflow-logo-horizontal.png" alt="" /><strong>Safe preview</strong><small>HTML is cleaned before preview. Unsafe elements are removed before sending.</small></div></aside>
-    </div>
-  </WizardShell>;
-}
-
-function EditFlowTemplatePage() {
-  const { flowId: routeFlowId } = useParams();
-  const { flowId, hydrateSavedFlow } = useDraft();
-  const [loadState, setLoadState] = useState({ status: "idle", error: "" });
-
-  useEffect(() => {
-    if (!routeFlowId || flowId === routeFlowId) return undefined;
-    let active = true;
-    setLoadState({ status: "loading", error: "" });
-    void getFlow(routeFlowId).then((response) => {
-      if (!active) return;
-      hydrateSavedFlow(response.flow, response.templateVersion);
-      setLoadState({ status: "ready", error: "" });
-    }).catch((error) => {
-      if (!active) return;
-      setLoadState({ status: "error", error: error instanceof Error ? error.message : "The saved flow could not be opened." });
-    });
-    return () => { active = false; };
-  }, [routeFlowId, flowId, hydrateSavedFlow]);
-
-  if (routeFlowId && flowId !== routeFlowId) {
-    return <AppShell><div className="route-gate" role={loadState.status === "error" ? "alert" : "status"}>{loadState.status === "error" ? <WarningCircle weight="fill" /> : <SpinnerGap className="spin" />}<h1>{loadState.status === "error" ? "This flow could not be opened." : "Opening your flow..."}</h1>{loadState.error && <p>{loadState.error}</p>}{loadState.status === "error" && <Link className="button button--outline" to="/flows">Return to flows</Link>}</div></AppShell>;
-  }
-  return <TemplatePage />;
-}
-
-function DataFirstPage() {
-  const { draft, setDraft, workbook, setWorkbook, table, setTable, validation, mappedRows } = useDraft();
-  const navigate = useNavigate();
-  const [uploadState, setUploadState] = useState("ready");
-  const [uploadError, setUploadError] = useState("");
-  const options = columnOptions(table);
-  const worksheet = workbook?.worksheets.find((item) => item.name === draft.worksheet) || workbook?.worksheets[0];
-  const headerCandidates = worksheet ? getHeaderRowCandidates(worksheet) : [];
-  const templateFields = extractPlaceholders(draft.subject, bodyHtmlFromDraft(draft.body));
-  const mappingFields = templateFields.length > 0 ? templateFields : Object.keys(draft.mappings || {});
-
-  const rebuildTable = (sourceWorkbook, worksheetName, headerRow) => {
-    try {
-      const nextTable = selectSpreadsheetTable(sourceWorkbook, { worksheet: worksheetName, headerRow });
-      const nextMappings = mappingsForCurrentTable(nextTable);
-      const nextTo = draft.toField && nextTable.columns.some((column) => column.key === draft.toField) ? draft.toField : findColumn(nextTable, ["email", "mail"]);
-      setTable(nextTable);
-      setDraft((current) => ({ ...current, worksheet: nextTable.worksheetName, headerRow: `Row ${nextTable.headerRow}`, rowCount: nextTable.rows.length, toField: nextTo, mappings: nextMappings }));
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "We could not select that worksheet.");
-    }
-  };
-
-  const onFile = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setUploadState("loading");
-    setUploadError("");
-    try {
-      const parsed = await parseSpreadsheet(await file.arrayBuffer(), { fileName: file.name });
-      setWorkbook(parsed);
-      const first = parsed.worksheets.find((item) => item.visibility === "visible") || parsed.worksheets[0];
-      rebuildTable(parsed, first.name, "auto");
-      setDraft((value) => ({ ...value, fileName: file.name, fileSize: `${Math.max(1, Math.round(file.size / 1024))} KB` }));
-      setUploadState("ready");
-    } catch (error) {
-      setUploadState("error");
-      setUploadError(error instanceof Error ? error.message : "We could not read that file.");
-    }
-  };
-
-  const previewColumns = table?.columns.slice(0, 6) || [];
-  const previewRows = table?.rows.slice(0, 8) || [];
-  const readyCount = validation?.validRecipientCount ?? 0;
-  const attentionCount = validation?.invalidRows.length ?? 0;
-  const firstIssue = validation?.issues.find((issue) => issue.row !== undefined) || null;
-  const canContinue = Boolean(table && draft.toField);
-  const subtitle = table ? `We found ${draft.rowCount} rows in ${draft.fileName}.` : "Start with a CSV or Excel file so we can discover its dynamic fields.";
-
-  return (
-    <WizardShell
-      current={0}
-      title="Bring in the recipient data."
-      subtitle={subtitle}
-      actions={(
-        <>
-          <button className="button button--outline" onClick={() => navigate("/flows")}><ArrowLeft /> Back to flows</button>
-          <button className="button button--coral" onClick={() => navigate("/flows/new/template")} disabled={!canContinue}>Continue to template <ArrowRight /></button>
-        </>
-      )}
-    >
-      <div className={`data-layout ${!table ? "data-layout--empty" : ""}`}>
-        <section className="panel upload-panel">
-          <div className="upload-card">
-            <span className="upload-icon"><FileArrowUp weight="duotone" /></span>
-            <div>
-              <h2>{draft.fileName || "Upload CSV or Excel"}</h2>
-              <p>{draft.fileName ? `${draft.fileSize} · ${draft.rowCount} rows` : "Choose a .csv or .xlsx file. It stays in this browser until you confirm the campaign."}</p>
-              {uploadError && <p className="error-text" role="alert"><WarningCircle /> {uploadError}</p>}
-            </div>
-            <label className="button button--outline file-button">
-              {uploadState === "loading" ? <SpinnerGap className="spin" /> : <FileCsv />}
-              {draft.fileName ? "Replace file" : "Choose file"}
-              <input type="file" accept=".csv,.xlsx" onChange={onFile} />
-            </label>
-          </div>
-          {table ? (
-            <>
-              <div className="sheet-controls">
-                <Field label="Worksheet">
-                  <select value={draft.worksheet} onChange={(event) => rebuildTable(workbook, event.target.value, Number.parseInt(draft.headerRow.replace(/\D/gu, ""), 10) || "auto")}>
-                    {workbook.worksheets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Header row">
-                  <select value={draft.headerRow} onChange={(event) => rebuildTable(workbook, draft.worksheet, Number.parseInt(event.target.value.replace(/\D/gu, ""), 10) || "auto")}>
-                    {headerCandidates.map((row) => <option key={row}>Row {row}</option>)}
-                  </select>
-                </Field>
-                <div className="validation-badge">
-                  <CheckCircle weight="fill" />
-                  <span><strong>{readyCount} ready</strong><small>{attentionCount} rows need attention</small></span>
-                </div>
-              </div>
-              <div className="preview-table table-wrap">
-                <table>
-                  <thead><tr><th>Row</th>{previewColumns.map((column) => <th key={column.key}>{column.label || column.key}</th>)}</tr></thead>
-                  <tbody>
-                    {previewRows.map((row) => {
-                      const invalid = validation?.invalidRows.includes(row.sourceRow);
-                      return (
-                        <tr key={row.sourceRow} className={invalid ? "row-error" : ""}>
-                          <td>{row.sourceRow}</td>
-                          {previewColumns.map((column) => <td key={column.key}>{row.values[column.key]}{invalid && column.key === draft.toField && <WarningCircle />}</td>)}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {firstIssue && (
-                <div className="issue-strip">
-                  <WarningCircle weight="fill" />
-                  <span><strong>Row {firstIssue.row}. Recipient data needs attention</strong><small>{firstIssue.message}</small></span>
-                  <span>{attentionCount} flagged {attentionCount === 1 ? "row" : "rows"}</span>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="upload-empty">
-              <h3>Your file defines the flow.</h3>
-              <p>Once imported, the header row becomes the set of dynamic fields available in the template. No sample recipients are preloaded.</p>
-              <span><CheckCircle weight="fill" /> Parsed locally in your browser</span>
-            </div>
-          )}
-        </section>
-        <aside className="panel mapping-panel">
-          <div className="section-heading">
-            <div>
-              <h2>{table ? "Map your spreadsheet" : "Why data comes first"}</h2>
-              <p>{table ? "Choose the email column, then match each message value to a column." : "The message editor should only offer values that truly exist in your file."}</p>
-            </div>
-            <Rows />
-          </div>
-          {table ? (
-            <>
-              <Field label="Recipient email column">
-                <select value={draft.toField} onChange={(event) => setDraft((value) => ({ ...value, toField: event.target.value }))}>
-                  <option value="">Choose a column</option>
-                  {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </Field>
-              {templateFields.length > 0 && mappingFields.map((key) => (
-                <Field key={key} label={`${dynamicFieldLabel(key, options)} in message`}>
-                  <select value={draft.mappings[key] || ""} onChange={(event) => setDraft((value) => ({ ...value, mappings: { ...value.mappings, [key]: event.target.value } }))}>
-                    <option value="">Choose a column</option>
-                    {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                </Field>
-              ))}
-              <div className="detected-field-group">
-                <span className="detected-field-group__label">Columns found in your file</span>
-                <div className="detected-field-list">
-                  {options.map((option) => <span className="detected-field-name" key={option.value}>{option.label}</span>)}
-                </div>
-              </div>
-              <div className="validation-metrics">
-                <span><CheckCircle weight="fill" /><strong>{readyCount}</strong><small>ready</small></span>
-                <span><WarningCircle weight="fill" /><strong>{attentionCount}</strong><small>attention</small></span>
-                <span><Users weight="fill" /><strong>{validation?.duplicateRecipients.length ?? 0}</strong><small>duplicate</small></span>
-              </div>
-              <div className="locked-note"><CheckCircle weight="fill" /> Nothing is sent until Review.</div>
-            </>
-          ) : (
-            <ol className="data-first-list">
-              <li>Import the file.</li>
-              <li>Confirm the header row.</li>
-              <li>Use those headers in the message.</li>
-            </ol>
-          )}
-        </aside>
-      </div>
-    </WizardShell>
-  );
-}
+import { DataFirstPage } from "./routes/flows/DataFirstPage";
+import { EditFlowTemplatePage, TemplatePage } from "./routes/flows/TemplatePage";
 
 function RecipientsPage() {
   const { draft, setDraft, updateDraft, table, validation, attachmentsReady } = useDraft();
