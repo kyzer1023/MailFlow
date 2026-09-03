@@ -518,3 +518,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added typed application state contracts and moved identifier generation, display formatting, view-model mapping, attachment normalization, editor DOM serialization, and validation-review helpers into focused modules under `src/app/`.
 - Context providers, hooks, components, editor behavior, and routes remain in the application composition module for later isolated extractions. The new dependency direction remains acyclic.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the frontend-scoped whitespace check.
+
+### 2026-09-03 - Attachment API route extraction
+
+- Moved attachment-set creation, multipart file upload, and file removal into a dedicated route-registration module while keeping their position immediately after authentication routes.
+- Preserved scope-gating order, multipart limits, response contracts, cleanup behavior, and the established OneDrive-only authorization rule on file removal.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, exact route-order comparison, and `git diff --check`.
