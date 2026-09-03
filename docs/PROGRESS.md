@@ -464,3 +464,8 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Cleared obsolete local Playwright output, QA captures, generated build output, Wrangler dry-run files, and Wrangler observability traces while retaining `node_modules`, local environment files, and local D1 state.
 - Removed the clean, fully merged `feature/smtp-campaign-attachments` Codex worktree and deleted its local branch. Windows continues to hold the final empty worktree directory open, but its contents and Git registration are gone.
 - Verification passed: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests. Existing dependency-comment and client chunk-size warnings remain.
+
+### 2026-09-03 - Package script cleanup
+
+- Removed the unused `dev:worker` command and redundant `build:client` alias. The documented `npm run dev` full-stack workflow and the standard build, preview, migration, deployment, and test commands remain.
+- Verification passed: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests. Existing dependency-comment and client chunk-size warnings remain.
