@@ -8,6 +8,12 @@ Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
 
 ## Repository map
 
+- `package.json`: application commands, run from the repository root.
+- `src/`: React client, domain modules, and server adapters.
+- `worker/index.ts`: Cloudflare API, Queue, and scheduled-handler entry point.
+- `migrations/`: D1 schema migrations.
+- `public/`: client static assets.
+- `wrangler.jsonc`: Cloudflare bindings and deployment configuration.
 - `AGENTS.md`: first read for every coding agent.
 - `docs/CONTEXT.md`: durable project brief and authority order.
 - `docs/USE_CASES.md`: accepted functional requirements and release boundaries.
@@ -23,7 +29,7 @@ Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
 
 ## Application commands
 
-Run commands from `apps/mailflow`:
+Run commands from the repository root:
 
 ```text
 npm install
@@ -33,12 +39,12 @@ npm run dev
 ```
 
 The Vite dev server serves the client and the Cloudflare Vite plugin's local
-Worker preview. Copy `apps/mailflow/.dev.vars.example` to a local `.dev.vars`
+Worker preview. Copy `.env.example` to a local `.env`
 and fill it with non-committed development values before exercising OAuth.
 Apply the local D1 schema with `npm run db:migrate:local`.
 
 For a Cloudflare deployment, create the D1 database and Queue named in
-`apps/mailflow/wrangler.jsonc`, add the resulting D1 id to that file, configure
+`wrangler.jsonc`, add the resulting D1 id to that file, configure
 the Entra redirect URI, then set Worker secrets with Wrangler. Finally run:
 
 ```text

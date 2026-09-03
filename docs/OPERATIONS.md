@@ -15,13 +15,13 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | Entra application | Existing single-tenant application named `MailFlow` |
 | Microsoft permissions | SMTP target: delegated `SMTP.Send`; attachment storage: delegated `Files.ReadWrite.AppFolder`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
 
-The source configuration is `../apps/mailflow/wrangler.jsonc`. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
+The source configuration is `../wrangler.jsonc`. The application package and all build commands live at the repository root. Configure Cloudflare Git builds to use the repository root as their build directory. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
 
 As of 2026-08-31, the D1 database and Queue are provisioned, the initial migration is applied, the Entra production callback is registered, all Worker secrets are present, and the public deployment is active. Do not create duplicate resources during routine maintenance; inspect the existing bindings first.
 
 ## Preflight gate
 
-From `apps/mailflow`:
+From the repository root:
 
 ```text
 npm ci

@@ -35,7 +35,7 @@ A society member can safely turn a spreadsheet and reusable HTML message into in
 - Two USM student test accounts are available locally. Both completed authentication-only XOAUTH2 probes successfully; this is strong cohort evidence, not a tenant-wide guarantee.
 - Five Gmail recipients are available in an already-open Gmail session for external-delivery testing.
 - The user has open Chrome tabs for Gmail, Microsoft Entra, and Cloudflare and authorized their use for setup, verification, and deployment.
-- The root `.env` is local-only and must never be committed or deployed.
+- The root `.env` holds local application configuration. The ignored `.env.test-accounts` preserves local interactive test-account notes. Neither file may be committed or deployed.
 
 ## Source references
 

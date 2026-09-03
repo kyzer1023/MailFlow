@@ -50,6 +50,13 @@ When sources conflict, use this order:
 - Use conditional state transitions for recipient jobs. Queue delivery is at least once.
 - A provider request with an ambiguous network outcome becomes `unknown`; it is not retried automatically.
 
+## Application layout and local workflow
+
+- Run application commands from the repository root beside `package.json` and `wrangler.jsonc`.
+- Build app UI in `src/`. The production Worker API, Queue consumer, and scheduled handler enter through `worker/index.ts`.
+- Static client output must remain reproducible, and unknown API or write requests must never fall through to the app shell.
+- Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
+
 ## Frontend rules
 
 - Match the approved mock for each route before inventing a new layout.
@@ -59,11 +66,19 @@ When sources conflict, use this order:
 - Use one icon family. Do not hand-draw SVG icons or substitute emoji.
 - Implement keyboard access, visible focus, reduced-motion handling, loading, empty, error, disabled, and success states.
 - Do not put an em dash or en dash in user-visible copy.
+- Before making substantial visual changes, use the Product Design context workflow when the visual source is unclear or no longer matches the current goal. Record durable prototype-specific design feedback, preferences, and decisions in this guide.
+- Do not hard-code the name or identity of USM Debate Society, or any other individual society, in UI copy, defaults, fixtures, tests, or flow creation. Organization-specific names in approved mocks are layout references only.
+
+Recipient metadata controls should follow a Power Automate-like pattern: fixed CC, BCC, and Reply-to addresses use removable chips, while spreadsheet-sourced values stay behind one explicit dynamic-value control. Render dynamic values as readable green tokens without exposing merge braces in the interface, including inside the message editor. Email Importance is a first-class sending rule with Normal as the default.
+
+The Data step sidebar should explain mappings in plain language: identify the recipient email column, label each message value by its readable name, and show detected spreadsheet columns without merge braces or dynamic-value icons. Reserve green token styling for places where a member inserts or selects a dynamic value.
+
+In Sending rules, CC, BCC, Reply-to, and Importance each occupy their own full-width row. Do not pair these inputs into two-column groups.
 
 ## Secret handling
 
-- Do not print or copy values from `.env` or `.dev.vars` into logs, documentation, prompts, tests, or source files.
-- The root `.env` is local test-only and currently uses colon-separated labels. Do not assume it is a deployable dotenv file.
+- Do not print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, or source files.
+- The root `.env` holds local application configuration. The ignored `.env.test-accounts` holds local test-only notes and currently uses colon-separated labels. Never load that account file into the application or treat it as deployable dotenv configuration.
 - Student account passwords are for local interactive test support only. They must never enter Cloudflare, D1, browser bundles, fixtures, screenshots, or Git history.
 - OAuth secrets belong in Worker secrets. Encrypted refresh tokens belong in D1 only when server-side encryption and key rotation notes are present.
 

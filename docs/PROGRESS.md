@@ -448,3 +448,12 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Public smoke checks passed: the landing page returned 200, unauthenticated `/api/me` returned 401, the sign-in route requested delegated `SMTP.Send`, and an authenticated Chrome session rendered the production dashboard with no console warnings or errors.
 - Fast-forwarded the local main checkout, consolidated local secrets into one ignored `apps/mailflow/.env`, removed the redundant `.env.local`, applied both local migrations, installed dependencies, and started the full-stack development server on port 5173.
 - Local main verification passed: 15 test files and all 122 tests, both production builds, Wrangler deployment dry run, root HTTP 200, unauthenticated API 401, SMTP OAuth scope, localhost callback, and no pending local migrations.
+
+### 2026-09-03 - Single-application repository root
+
+- Flattened `apps/mailflow` into the repository root and removed both empty wrapper directories. All 102 moved source, test, asset, migration, package, and configuration files match their original Git blobs.
+- Merged the application-specific instructions into the root `AGENTS.md`, promoted the application `.env.example`, and updated the README and operations runbook so commands and deployment paths resolve from the root. Historical progress entries retain their original paths.
+- Preserved ignored dependency files, local D1 state, and Playwright artifacts at the root. Moved the active application `.env` to the root and retained the former root test-account notes as ignored `.env.test-accounts`; both files retained their original hashes and no secret values were printed or committed.
+- Verification passed from the repository root: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests; `npx wrangler deploy --dry-run` passed; `npx wrangler d1 migrations list mailflow-db --local` reported no pending migrations; `git diff --check` passed. Existing dependency-comment and client chunk-size warnings remain.
+- Started the full-stack preview from the root on port 5173. HTTP checks returned 200 for the landing page, client entry, and logo asset, 401 for unauthenticated `/api/me`, and 302 for sign-in with delegated `SMTP.Send` and the localhost callback.
+- Cloudflare Git builds must use the repository root as their build directory when this change is rolled out. This checkpoint does not alter remote build settings or deploy production code.
