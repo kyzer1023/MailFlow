@@ -2,10 +2,7 @@ import type {
   AuditEventRecord,
   CampaignCounts,
   CampaignRecord,
-  FlowRecord,
   RecipientJobRecord,
-  TemplateVersionRecord,
-  UserRecord,
 } from "../../domain/types";
 import { emptyCampaignCounts } from "../../domain/types";
 import type {
@@ -18,221 +15,18 @@ import type {
   CampaignRepository,
   D1Database,
   D1PreparedStatement,
-  FlowRepository,
   RecipientJobRepository,
   Repositories,
-  TemplateVersionRepository,
-  UserRepository,
 } from "./contracts";
 import { bind, changes, json, parseJson } from "./d1-helpers";
 
-interface UserRow {
-  id: string;
-  tenant_id: string;
-  object_id: string;
-  principal_name: string;
-  mailbox_address: string;
-  display_name: string;
-  role: UserRecord["role"];
-  created_at: string;
-  last_login_at: string | null;
-}
+import { D1FlowRepository } from "./d1-flows";
+import { D1TemplateVersionRepository } from "./d1-template-versions";
+import { D1UserRepository } from "./d1-users";
 
-function toUser(row: UserRow): UserRecord {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    objectId: row.object_id,
-    principalName: row.principal_name,
-    mailboxAddress: row.mailbox_address,
-    displayName: row.display_name,
-    role: row.role,
-    createdAt: row.created_at,
-    lastLoginAt: row.last_login_at ?? null,
-  };
-}
-
-export class D1UserRepository implements UserRepository {
-  constructor(private readonly db: D1Database) {}
-
-  async getById(id: string): Promise<UserRecord | null> {
-    const row = await bind(this.db.prepare("SELECT * FROM users WHERE id = ?1"), [id]).first<UserRow>();
-    return row ? toUser(row) : null;
-  }
-
-  async getByPrincipal(tenantId: string, principalName: string): Promise<UserRecord | null> {
-    const row = await bind(
-      this.db.prepare("SELECT * FROM users WHERE tenant_id = ?1 AND principal_name = ?2"),
-      [tenantId, principalName.toLowerCase()],
-    ).first<UserRow>();
-    return row ? toUser(row) : null;
-  }
-
-  async upsert(user: UserRecord): Promise<void> {
-    await bind(
-      this.db.prepare(
-        `INSERT INTO users (id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at, last_login_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-         ON CONFLICT(id) DO UPDATE SET
-           tenant_id = excluded.tenant_id,
-           object_id = excluded.object_id,
-           principal_name = excluded.principal_name,
-           mailbox_address = excluded.mailbox_address,
-           display_name = excluded.display_name,
-           role = excluded.role,
-           last_login_at = excluded.last_login_at`,
-      ),
-      [user.id, user.tenantId, user.objectId, user.principalName.toLowerCase(), user.mailboxAddress, user.displayName, user.role, user.createdAt, user.lastLoginAt],
-    ).run();
-  }
-
-  async touchLastLogin(id: string, lastLoginAt: string): Promise<boolean> {
-    return changes(await bind(this.db.prepare("UPDATE users SET last_login_at = ?1 WHERE id = ?2"), [lastLoginAt, id]).run()) === 1;
-  }
-}
-
-interface FlowRow {
-  id: string;
-  owner_user_id: string;
-  society_name: string | null;
-  name: string;
-  current_template_version_id: string | null;
-  state: FlowRecord["state"];
-  created_at: string;
-  updated_at: string;
-}
-
-function toFlow(row: FlowRow): FlowRecord {
-  return {
-    id: row.id,
-    ownerUserId: row.owner_user_id,
-    societyName: row.society_name ?? null,
-    name: row.name,
-    currentTemplateVersionId: row.current_template_version_id ?? null,
-    state: row.state,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-export class D1FlowRepository implements FlowRepository {
-  constructor(private readonly db: D1Database) {}
-
-  async getById(id: string): Promise<FlowRecord | null> {
-    const row = await bind(this.db.prepare("SELECT * FROM flows WHERE id = ?1"), [id]).first<FlowRow>();
-    return row ? toFlow(row) : null;
-  }
-
-  async getByIdForOwner(id: string, ownerUserId: string): Promise<FlowRecord | null> {
-    const row = await bind(this.db.prepare("SELECT * FROM flows WHERE id = ?1 AND owner_user_id = ?2"), [id, ownerUserId]).first<FlowRow>();
-    return row ? toFlow(row) : null;
-  }
-
-  async getByNameForOwner(ownerUserId: string, name: string): Promise<FlowRecord | null> {
-    const row = await bind(
-      this.db.prepare("SELECT * FROM flows WHERE owner_user_id = ?1 AND state = 'active' AND name = ?2 COLLATE NOCASE"),
-      [ownerUserId, name.trim()],
-    ).first<FlowRow>();
-    return row ? toFlow(row) : null;
-  }
-
-  async listByOwner(ownerUserId: string): Promise<FlowRecord[]> {
-    const result = await bind(
-      this.db.prepare("SELECT * FROM flows WHERE owner_user_id = ?1 AND state = 'active' ORDER BY updated_at DESC"),
-      [ownerUserId],
-    ).all<FlowRow>();
-    return result.results.map(toFlow);
-  }
-
-  async create(flow: FlowRecord): Promise<void> {
-    await bind(
-      this.db.prepare(
-        `INSERT INTO flows (id, owner_user_id, society_name, name, current_template_version_id, state, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-      ),
-      [flow.id, flow.ownerUserId, flow.societyName, flow.name, flow.currentTemplateVersionId, flow.state, flow.createdAt, flow.updatedAt],
-    ).run();
-  }
-
-  async update(flow: FlowRecord): Promise<boolean> {
-    return changes(
-      await bind(
-        this.db.prepare(
-          `UPDATE flows SET society_name = ?1, name = ?2, current_template_version_id = ?3,
-             state = ?4, updated_at = ?5 WHERE id = ?6 AND owner_user_id = ?7`,
-        ),
-        [flow.societyName, flow.name, flow.currentTemplateVersionId, flow.state, flow.updatedAt, flow.id, flow.ownerUserId],
-      ).run(),
-    ) === 1;
-  }
-}
-
-interface TemplateVersionRow {
-  id: string;
-  flow_id: string;
-  version: number;
-  subject_template: string;
-  body_html: string;
-  recipient_configuration_json: string;
-  placeholder_manifest_json: string;
-  created_at: string;
-}
-
-function toTemplateVersion(row: TemplateVersionRow): TemplateVersionRecord {
-  return {
-    id: row.id,
-    flowId: row.flow_id,
-    version: row.version,
-    subjectTemplate: row.subject_template,
-    bodyHtml: row.body_html,
-    recipientConfiguration: parseJson(row.recipient_configuration_json, {
-      toField: "",
-      ccField: null,
-      bccField: null,
-      replyToField: null,
-      separator: "auto" as const,
-    }),
-    placeholderManifest: parseJson<string[]>(row.placeholder_manifest_json, []),
-    createdAt: row.created_at,
-  };
-}
-
-export class D1TemplateVersionRepository implements TemplateVersionRepository {
-  constructor(private readonly db: D1Database) {}
-
-  async getById(id: string): Promise<TemplateVersionRecord | null> {
-    const row = await bind(this.db.prepare("SELECT * FROM template_versions WHERE id = ?1"), [id]).first<TemplateVersionRow>();
-    return row ? toTemplateVersion(row) : null;
-  }
-
-  async listByFlow(flowId: string): Promise<TemplateVersionRecord[]> {
-    const result = await bind(
-      this.db.prepare("SELECT * FROM template_versions WHERE flow_id = ?1 ORDER BY version DESC"),
-      [flowId],
-    ).all<TemplateVersionRow>();
-    return result.results.map(toTemplateVersion);
-  }
-
-  async create(version: TemplateVersionRecord): Promise<void> {
-    await bind(
-      this.db.prepare(
-        `INSERT INTO template_versions
-         (id, flow_id, version, subject_template, body_html, recipient_configuration_json, placeholder_manifest_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-      ),
-      [
-        version.id,
-        version.flowId,
-        version.version,
-        version.subjectTemplate,
-        version.bodyHtml,
-        json(version.recipientConfiguration),
-        json(version.placeholderManifest),
-        version.createdAt,
-      ],
-    ).run();
-  }
-}
+export { D1FlowRepository } from "./d1-flows";
+export { D1TemplateVersionRepository } from "./d1-template-versions";
+export { D1UserRepository } from "./d1-users";
 
 interface CampaignRow {
   id: string;

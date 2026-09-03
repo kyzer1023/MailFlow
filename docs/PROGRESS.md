@@ -494,3 +494,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Extracted API context types, runtime dependency construction, attachment serialization and integrity bridges, and common request, session, response, template, CSV, and queue helpers from the main Hono module.
 - Kept all route declarations in `app.ts` in their original order and preserved its Worker-facing compatibility exports. Route paths, response contracts, authorization order, queue behavior, and error handling remain unchanged.
 - Verification passed: TypeScript checks, both production builds, 15 test files, and all 122 tests. Route declarations match the pre-extraction list and `git diff --check` passed.
+
+### 2026-09-03 - Core D1 repository extraction
+
+- Moved the user, flow, and template-version D1 adapters into dedicated modules. The existing `d1.ts` facade continues to export their classes and compose the same repository factory.
+- Extracted adapter blocks match the prior implementations; SQL, row mapping, JSON fallbacks, and behavior remain unchanged.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the database-scoped whitespace check.
