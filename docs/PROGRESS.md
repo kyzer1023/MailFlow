@@ -572,3 +572,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the brand, navigation sidebar, support footer, application shell, status chip, field wrapper, and dynamic-value chip into typed shared component modules.
 - Preserved their markup, classes, icons, active navigation, sign-out behavior, keyboard behavior, and visible copy while leaving route-specific and interactive components for later phases.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the frontend-scoped whitespace check.
+
+### 2026-09-03 - Campaign creation API extraction
+
+- Moved campaign creation into a dedicated route module and retained its position between campaign listing and campaign detail routes.
+- Preserved recipient and template validation, idempotency replay and race handling, attachment authorization and integrity gates, batch creation, lifecycle transition, audit order, and response contracts.
+- Verification passed: exact normalized handler comparison, TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
