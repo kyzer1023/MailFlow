@@ -10,7 +10,8 @@ import type {
   UserUpsert,
 } from "../auth/contracts";
 import type { SessionRecord, SessionStore } from "../auth/session";
-import type { D1Database, D1Value } from "./contracts";
+import type { D1Database } from "./contracts";
+import { prepareAndBind as bind } from "./d1-helpers";
 
 interface AuthUserRow {
   id: string;
@@ -19,10 +20,6 @@ interface AuthUserRow {
   principal_name: string;
   mailbox_address: string;
   display_name: string | null;
-}
-
-function bind(db: D1Database, sql: string, values: readonly unknown[]) {
-  return db.prepare(sql).bind(...(values as D1Value[]));
 }
 
 function authUser(row: AuthUserRow): AuthenticatedUser {

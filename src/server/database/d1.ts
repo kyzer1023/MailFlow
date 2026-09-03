@@ -18,36 +18,13 @@ import type {
   CampaignRepository,
   D1Database,
   D1PreparedStatement,
-  D1RunResult,
-  D1Value,
   FlowRepository,
   RecipientJobRepository,
   Repositories,
   TemplateVersionRepository,
   UserRepository,
 } from "./contracts";
-
-function json(value: unknown): string {
-  return JSON.stringify(value);
-}
-
-function parseJson<T>(value: unknown, fallback: T): T {
-  if (typeof value !== "string") return fallback;
-  try {
-    const parsed = JSON.parse(value) as T;
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function bind(statement: D1PreparedStatement, values: readonly unknown[]): D1PreparedStatement {
-  return statement.bind(...(values as D1Value[]));
-}
-
-function changes(result: D1RunResult): number {
-  return result.meta?.changes ?? 0;
-}
+import { bind, changes, json, parseJson } from "./d1-helpers";
 
 interface UserRow {
   id: string;
