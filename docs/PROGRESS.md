@@ -626,3 +626,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved recipient rule configuration, campaign review, and campaign creation orchestration into typed route and hook modules.
 - Preserved fixed and dynamic address rules, importance defaults, validation issue order and actions, attachment readiness, request-key idempotency, test-send and start acknowledgements, navigation, loading and error states, accessibility, markup, classes, icons, and copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed Campaign monitor route
+
+- Moved the campaign monitor into a typed route module, leaving the root application file responsible only for providers, protection, and route composition.
+- Preserved polling and cancellation, campaign and job rendering, status controls, pause, resume, export and copy actions, loading, error and empty states, accessibility, markup, classes, icons, and copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
