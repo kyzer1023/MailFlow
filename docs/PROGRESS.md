@@ -596,3 +596,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Replaced the large base stylesheet with focused token, global, landing, shell, overview, wizard, data, recipient, review, campaign, and responsive files behind one ordered stylesheet entrypoint.
 - Preserved the exact active declaration order and kept the existing wizard, campaign, and visual-polish override layers last in the cascade. Confirmed every retained class token is referenced by current source.
 - Verification passed: normalized declaration and order comparison, both production builds, 15 test files, all 122 tests, and `git diff --check`. A repository-wide typecheck follows completion of a concurrent component extraction.
+
+### 2026-09-03 - Worker runtime extraction
+
+- Moved queue-batch processing and scheduled attachment cleanup into a dedicated Worker runtime module while keeping compatibility re-exports from the API composition module.
+- Preserved malformed-message acknowledgement before lazy service initialization, shared services for valid batch messages, retry and acknowledgement behavior, cleanup, errors, and Worker-facing signatures.
+- Verification passed: exact runtime implementation and export comparisons, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`. A repository-wide typecheck follows completion of a concurrent component extraction.
