@@ -632,3 +632,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the campaign monitor into a typed route module, leaving the root application file responsible only for providers, protection, and route composition.
 - Preserved polling and cancellation, campaign and job rendering, status controls, pause, resume, export and copy actions, loading, error and empty states, accessibility, markup, classes, icons, and copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed frontend composition boundary
+
+- Converted the root application file to TypeScript after reducing it to provider, route-protection, and route-table composition.
+- Preserved provider and route order exactly. The reachable frontend graph now contains 51 code modules and 157 resolved import edges with no cycles, unresolved relative imports, stale `App.jsx` or `base.css` references, or old inline component definitions.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
