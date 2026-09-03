@@ -620,3 +620,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the Data step plus new and existing flow Template editors into typed route modules.
 - Preserved browser-side workbook parsing, sheet and header selection, column mapping, validation, token-editor refs, create/update behavior, navigation, loading and error states, accessibility attributes, markup, classes, icons, and copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed Recipients and Review routes
+
+- Moved recipient rule configuration, campaign review, and campaign creation orchestration into typed route and hook modules.
+- Preserved fixed and dynamic address rules, importance defaults, validation issue order and actions, attachment readiness, request-key idempotency, test-send and start acknowledgements, navigation, loading and error states, accessibility, markup, classes, icons, and copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
