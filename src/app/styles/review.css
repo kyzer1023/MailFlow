@@ -1,0 +1,41 @@
+/* Review */
+.review-layout { display: grid; grid-template-columns: minmax(165px, .42fr) minmax(560px, 1.7fr) minmax(315px, .95fr); gap: 18px; align-items: start; }
+.sample-card, .review-summary { padding: 20px; }
+.sample-card h2, .review-summary h2 { margin: .55rem 0 1rem; font-size: 1.12rem; }
+.sample-card > button { width: 100%; border: 1px solid transparent; border-radius: 9px; background: transparent; padding: .75rem; margin-bottom: .45rem; text-align: left; display: grid; grid-template-columns: 48px minmax(0,1fr); gap: .2rem .5rem; cursor: pointer; }
+.sample-card > button > span { grid-row: 1 / span 2; align-self: center; color: var(--muted); font: 700 .67rem/1 var(--font-mono); }
+.sample-card > button strong, .sample-card > button small { display: block; }
+.sample-card > button small { color: var(--muted); }
+.sample-card > button.selected { border-color: #b8ccbd; background: #e8efe9; box-shadow: inset 3px 0 var(--moss); }
+.sample-card footer, .table-footer { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .72rem; }
+.sample-card footer button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+.mailbox-preview { overflow: hidden; }
+.mail-toolbar { height: 44px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #eeece6; color: var(--muted); font-size: .7rem; }
+.mail-meta { display: grid; grid-template-columns: 40px minmax(0,1fr) auto; align-items: center; gap: .65rem; padding: 15px 18px 9px; }
+.mail-meta strong, .mail-meta small { display: block; }
+.mail-meta small { color: var(--muted); font-size: .68rem; }
+.mailbox-preview dl { margin: 0; padding: 0 18px 12px; display: grid; grid-template-columns: max-content minmax(0,1fr); column-gap: .75rem; }
+.mailbox-preview dl > div { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; padding: .42rem 0; border-bottom: 1px solid #e5e1d9; font-size: .76rem; }
+.mailbox-preview dt { color: var(--muted); white-space: nowrap; }
+.mailbox-preview dd { min-width: 0; margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.mail-attachment-summary { overflow-wrap: anywhere; line-height: 1.45; }
+.mailbox-preview iframe { width: 100%; height: 390px; border: 0; background: white; }
+.fact { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: .7rem; align-items: center; padding: .75rem 0; border-bottom: 1px solid #e7e2d9; }
+.fact > span { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #e5eee7; color: var(--moss); }
+.fact small, .fact strong { display: block; }
+.fact small { color: var(--muted); font-size: .66rem; }
+.fact strong { margin-top: .15rem; font-size: .76rem; overflow-wrap: anywhere; }
+.ack { margin-top: 1rem; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: .65rem; font-size: .76rem; line-height: 1.4; cursor: pointer; }
+.ack input { width: 19px; min-height: 19px; height: 19px; padding: 0; accent-color: var(--coral); }
+.accepted-note { margin-top: 1rem; padding: .75rem; border-radius: 8px; background: #f0eee7; color: var(--muted); display: flex; gap: .5rem; font-size: .68rem; line-height: 1.4; }
+.accepted-note svg { flex: 0 0 auto; }
+.test-status { min-height: 1.2rem; color: var(--moss-dark); font-size: .72rem; font-weight: 700; display: flex; align-items: center; gap: .4rem; }
+.review-blockers { margin-top: 1rem; padding: .8rem; border: 1px solid #edb2a6; border-radius: 8px; background: #fff2ee; }
+.review-blockers > div { display: flex; align-items: center; gap: .45rem; color: #a43726; }
+.review-blockers h3 { margin: 0; font-size: .78rem; }
+.review-blockers ul { margin: .65rem 0 0; padding-left: 1.15rem; display: grid; gap: .55rem; }
+.review-blockers li { color: #713025; font-size: .7rem; line-height: 1.35; }
+.review-blockers li span, .review-blockers li a { display: block; }
+.review-blockers li a { width: fit-content; margin-top: .15rem; color: var(--moss-dark); font-weight: 750; }
+.review-attachment-blocker { margin: .65rem 0 0; color: #713025; font-size: .7rem; line-height: 1.35; }
+.review-attachment-blocker a { color: var(--moss-dark); font-weight: 750; }

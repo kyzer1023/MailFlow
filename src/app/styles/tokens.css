@@ -1,0 +1,29 @@
+:root {
+  --ink: #17211f;
+  --moss: #516a59;
+  --moss-dark: #33483c;
+  --coral: #f0684f;
+  --coral-dark: #d9543e;
+  --coral-text: #a84334;
+  --coral-soft: #f9ded7;
+  --mist: #dce5de;
+  --paper: #f4f0e8;
+  --paper-bright: #fffdf8;
+  --paper-deep: #eae4d9;
+  --muted: #6c766f;
+  --line: #d0ccc3;
+  --step-line: #c6cbc6;
+  --step-muted: #626c66;
+  --danger: #b84a3c;
+  --warn: #c98229;
+  --token-bg: #e7efe9;
+  --token-border: #b9cbbf;
+  --token-text: #2f5840;
+  --font-display: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --sidebar: 264px;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-display);
+  font-synthesis: none;
+}

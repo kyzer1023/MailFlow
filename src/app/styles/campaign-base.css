@@ -1,0 +1,47 @@
+/* Campaign */
+.campaign-header { align-items: flex-start; margin-bottom: 18px; }
+.campaign-header h1 { margin-top: .5rem; font-size: clamp(2.15rem, 2.9vw, 3.15rem); }
+.campaign-header > div:first-child { max-width: 1120px; }
+.campaign-identity { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: .8rem; align-items: center; margin-bottom: 18px; }
+.campaign-identity h2 { margin: 0 0 .2rem; font-size: 1.08rem; }
+.campaign-identity code { color: var(--muted); font: .74rem var(--font-mono); }
+.route-summary { padding: 0; border: 0; background: transparent; }
+.route-counts { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); padding: 16px 24px; background: var(--paper-bright); border: 1px solid var(--line); border-radius: 14px; }
+.count { text-align: center; position: relative; }
+.count:not(:last-child)::after { content: ""; position: absolute; top: 22px; left: calc(50% + 25px); right: calc(-50% + 25px); border-top: 1px dashed #aab1ab; }
+.count > span { width: 46px; height: 46px; margin: 0 auto .4rem; border-radius: 50%; display: grid; place-items: center; background: #e9e8e2; color: #66716b; position: relative; z-index: 1; }
+.count--sending > span { background: var(--coral); color: white; box-shadow: 0 0 0 5px #f8ddd6; }
+.count--accepted > span { background: var(--moss); color: white; }
+.count--failed > span { background: #f3d9d4; color: var(--danger); }
+.count strong, .count small { display: block; }
+.count strong { font-size: 1.18rem; }
+.count small { margin-top: .15rem; color: var(--muted); font-size: .68rem; }
+.progress-meta { margin-top: .7rem; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .74rem; }
+.progress-meta strong { color: var(--ink); }
+.progress-track { height: 7px; margin-top: .55rem; border-radius: 99px; background: #deded8; overflow: hidden; }
+.progress-track i { display: block; height: 100%; background: var(--moss); border-radius: inherit; transition: width .3s ease; }
+.campaign-lower { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(290px, .78fr); gap: 20px; align-items: start; }
+.jobs-panel { padding: 19px 0 10px; overflow: hidden; }
+.jobs-panel > .section-heading { padding: 0 20px 12px; }
+.jobs-panel .table-wrap { overflow-x: auto; }
+.jobs-panel table { min-width: 820px; }
+.jobs-panel .text-link { margin-top: .3rem; border: 0; padding: 0; background: transparent; color: var(--moss-dark); font-size: .68rem; font-weight: 750; display: flex; align-items: center; gap: .25rem; cursor: pointer; }
+.table-footer { margin: 0 20px; }
+.table-footer div { display: flex; gap: .35rem; }
+.table-footer button { border: 1px solid var(--line); }
+.campaign-aside { display: grid; gap: 20px; }
+.recovery-card { padding: 14px 18px; }
+.recovery-card .route-dot { width: 34px; height: 34px; }
+.recovery-card h2 { margin: .65rem 0 .35rem; font-size: 1.04rem; }
+.recovery-card p { margin: 0; color: var(--muted); font-size: .82rem; }
+.recovery-card > strong { display: block; margin: .35rem 0 .8rem; color: var(--moss-dark); font-size: .8rem; line-height: 1.35; }
+.campaign-details { padding: 20px; }
+.campaign-details h2 { margin: .35rem 0 0; font-size: 1.05rem; }
+.campaign-details dl { margin: 1rem 0 0; display: grid; gap: .75rem; }
+.campaign-details dl > div { padding-bottom: .7rem; border-bottom: 1px solid var(--line); }
+.campaign-details dl > div:last-child { border-bottom: 0; }
+.campaign-details dt { color: var(--muted); font: 650 .62rem/1.2 var(--font-mono); text-transform: uppercase; }
+.campaign-details dd { margin: .3rem 0 0; font-size: .78rem; font-weight: 700; overflow-wrap: anywhere; }
+.campaign-details dd:has(.button) { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.campaign-details dd:has(.button) code { min-width: 0; }
+.campaign-details dd:has(.button) .button { flex: 0 0 auto; white-space: nowrap; }

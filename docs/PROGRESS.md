@@ -590,3 +590,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved campaign test-send, start, pause, and resume routes with their shared start helper into a dedicated mutation module.
 - Preserved session and acknowledgement checks, provider and attachment gates, conditional transitions, queue handling, cleanup, audit order, provider result handling, and response contracts.
 - Verification passed: normalized implementation comparisons, TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
+
+### 2026-09-03 - Frontend stylesheet decomposition
+
+- Replaced the large base stylesheet with focused token, global, landing, shell, overview, wizard, data, recipient, review, campaign, and responsive files behind one ordered stylesheet entrypoint.
+- Preserved the exact active declaration order and kept the existing wizard, campaign, and visual-polish override layers last in the cascade. Confirmed every retained class token is referenced by current source.
+- Verification passed: normalized declaration and order comparison, both production builds, 15 test files, all 122 tests, and `git diff --check`. A repository-wide typecheck follows completion of a concurrent component extraction.
