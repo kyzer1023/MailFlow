@@ -48,15 +48,12 @@ import {
   createTemplateVersion,
   enqueueTick,
   id,
-  jobCsv,
   nowIso,
   parseOrError,
   publicCampaign,
-  publicJob,
   recipientAddressIssues,
   attachmentErrorResponse,
   requireMutationSession,
-  requireSession,
   responseError,
   routeParam,
   versionConfigFromInput,
@@ -68,6 +65,7 @@ import {
 import { registerAuthRoutes } from "./routes/auth";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { registerFlowRoutes } from "./routes/flows";
+import { registerCampaignDetailRoutes, registerCampaignListRoute } from "./routes/campaign-reads";
 
 export type { MailFlowAppEnv, MailFlowContext } from "./context";
 export { cleanupCampaignAttachments, loadCampaignAttachments } from "./attachments";
@@ -86,17 +84,9 @@ app.use("/api/*", async (context, next) => {
 registerAuthRoutes(app);
 registerAttachmentRoutes(app);
 registerFlowRoutes(app);
+registerCampaignListRoute(app);
 
 // --- Campaigns ------------------------------------------------------------
-
-app.get("/api/campaigns", async (context) => {
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return authenticated;
-  const rawLimit = new URL(context.req.url).searchParams.get("limit");
-  const limit = rawLimit ? integerEnv(rawLimit, 50, 1, 200) : 50;
-  const campaigns = await repositories(context).campaigns.listByOwner(authenticated.user.id, limit);
-  return context.json({ campaigns: campaigns.map(publicCampaign) });
-});
 
 app.post("/api/campaigns", async (context) => {
   const authenticated = await requireMutationSession(context);
@@ -285,44 +275,7 @@ app.post("/api/campaigns", async (context) => {
   return context.json({ campaign: publicCampaign(validated), counts: await repo.recipientJobs.counts(campaign.id) }, 201);
 });
 
-app.get("/api/campaigns/:id", async (context) => {
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return authenticated;
-  const repo = repositories(context);
-  const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
-  if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
-  return context.json({ campaign: publicCampaign(campaign), counts: await repo.recipientJobs.counts(campaign.id) });
-});
-
-app.get("/api/campaigns/:id/jobs", async (context) => {
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return authenticated;
-  const repo = repositories(context);
-  const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
-  if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
-  const search = new URL(context.req.url).searchParams;
-  const limit = integerEnv(search.get("limit") ?? undefined, 100, 1, 500);
-  const offset = integerEnv(search.get("offset") ?? undefined, 0, 0, 10_000);
-  const jobs = await repo.recipientJobs.listByCampaign(campaign.id, limit, offset);
-  return context.json({ jobs: jobs.map(publicJob), counts: await repo.recipientJobs.counts(campaign.id), limit, offset });
-});
-
-app.get("/api/campaigns/:id/export.csv", async (context) => {
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return authenticated;
-  const repo = repositories(context);
-  const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
-  if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
-  const jobs: RecipientJobRecord[] = [];
-  for (let offset = 0; offset < 10_000; offset += 500) {
-    const page = await repo.recipientJobs.listByCampaign(campaign.id, 500, offset);
-    jobs.push(...page);
-    if (page.length < 500) break;
-  }
-  context.header("Content-Type", "text/csv; charset=utf-8");
-  context.header("Content-Disposition", `attachment; filename="${campaign.id}-results.csv"`);
-  return context.body(jobCsv(jobs));
-});
+registerCampaignDetailRoutes(app);
 
 app.post("/api/campaigns/:id/test-send", async (context) => {
   const authenticated = await requireMutationSession(context);

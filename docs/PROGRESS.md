@@ -548,3 +548,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved audit-event and attachment-set/file D1 adapters into dedicated modules while retaining compatibility exports and composition through `d1.ts`.
 - Exact normalized comparisons confirm that SQL, row mappings, ownership checks, conditional batches, cleanup queries, and limits remain unchanged.
 - All 122 unit tests and the database-scoped whitespace check passed at this checkpoint. The full typecheck follows completion of a concurrent API extraction.
+
+### 2026-09-03 - Campaign read API extraction
+
+- Moved campaign listing, campaign detail, recipient-job listing, and CSV export into a dedicated route module while keeping campaign creation and mutations in the application composition module.
+- Preserved route order, authentication and ownership checks, paging limits, response shapes, CSV headers, and the 10,000-job export bound.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`.
