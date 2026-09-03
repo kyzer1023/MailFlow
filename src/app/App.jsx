@@ -3,14 +3,13 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } 
 import {
   ArrowLeft, ArrowRight, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
-  House, Info,
-  MicrosoftOutlookLogo, MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play, Plus,
-  Rows, SignOut, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
+  Info,
+  MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play,
+  Rows, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
   Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
   ApiRequestError,
-  archiveFlow,
   createCampaign as createCampaignRequest,
   createFlow as createFlowRequest,
   createTemplateVersion as createTemplateVersionRequest,
@@ -40,85 +39,22 @@ import { attachmentSummaryText } from "./lib/attachments";
 import { bodyHtmlFromDraft, dynamicFieldLabel } from "./lib/editor-dom";
 import { formatDate } from "./lib/format";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
-import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
+import { columnOptions, findColumn } from "./lib/view-models";
 import { AttachmentPicker } from "./components/attachments/AttachmentPicker";
 import { AddressRuleField } from "./components/recipients/AddressRuleField";
 import { DynamicValueChip } from "./components/common/DynamicValueChip";
 import { Field } from "./components/common/Field";
 import { StatusChip } from "./components/common/StatusChip";
-import { CampaignTable } from "./components/overview/CampaignTable";
-import { FlowCard } from "./components/overview/FlowCard";
 import { AppShell } from "./components/shell/AppShell";
-import { Brand } from "./components/shell/Brand";
 import { TokenMessageEditor } from "./components/editor/TokenMessageEditor";
 import { WizardShell } from "./components/wizard/WizardShell";
-import { useFlowActions } from "./hooks/use-flow-actions";
-import { useSignOut } from "./hooks/use-sign-out";
 import { AppDataProvider, useApi } from "./state/api-context";
 import { DraftProvider, useDraft } from "./state/draft-context";
 import { RequireProductSession } from "./routing/RequireProductSession";
-
-function LandingAction({ compact = false, allowSignOut = false }) {
-  const { status, user } = useApi();
-  const [leaving, setLeaving] = useState(false);
-  const { signOut, signingOut, signOutError } = useSignOut();
-  const authenticated = status === "authenticated" && Boolean(user);
-  const checking = status === "loading";
-
-  if (authenticated) {
-    return <div className="landing-auth-actions"><a className={compact ? "button button--outline button--small landing-action" : "button button--coral button--hero landing-action"} href="/dashboard"><House weight="bold" />{compact ? "Dashboard" : "Go to dashboard"}</a>{allowSignOut && <button className="button button--text button--small" type="button" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />} Sign out</button>}{signOutError && <span className="error-text" role="alert">{signOutError}</span>}</div>;
-  }
-
-  const onClick = () => { setLeaving(true); window.location.assign(`/auth/microsoft/start?returnTo=${encodeURIComponent("/dashboard")}`); };
-  const label = checking ? "Checking session" : leaving ? (compact ? "Opening" : "Opening Microsoft") : compact ? "Sign in" : "Continue with Microsoft";
-  return <button className={compact ? "button button--outline button--small landing-action" : "button button--coral button--hero landing-action"} type="button" onClick={onClick} disabled={checking || leaving} aria-busy={checking || leaving}>{checking || leaving ? <SpinnerGap className="spin" weight="bold" /> : <MicrosoftOutlookLogo weight="fill" />}{label}</button>;
-}
-
-function LandingPage() {
-  return <div className="landing">
-    <header className="marketing-header"><Brand /><LandingAction compact allowSignOut /></header>
-    <main className="landing-hero">
-      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Microsoft OAuth</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
-    </main>
-  </div>;
-}
-
-function DashboardPage() {
-  const { user, dashboard } = useApi();
-  const { openingFlowId, openFlowError, openFlow, startNewFlow } = useFlowActions();
-  const flows = dashboard.flows ? dashboard.flows.map(displayFlow) : [];
-  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
-  const hasRemoteError = dashboard.status === "error";
-  const campaignTarget = campaigns[0]?.id;
-  return <AppShell><div className="page dashboard-page"><header className="page-header"><div><h1>Good afternoon, {user?.displayName?.split(" ")[0] || "there"}.</h1><p>Your society mail, in one clear view.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{dashboard.error && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /> {dashboard.error}</div>}{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}<section className="section-heading"><h2>Reusable flows</h2><Link to="/flows">View all flows <ArrowRight /></Link></section>{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : hasRemoteError ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-grid">{flows.slice(0, 2).map((flow) => <FlowCard compact flow={flow} key={flow.id} loading={openingFlowId === flow.id} onUse={() => void openFlow(flow, "use")} />)}</div> : <div className="panel empty-state"><h2>No flows yet</h2><p>Start with a spreadsheet so Mail Flow can discover the fields available for personalization.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}<div className="dashboard-lower"><section className="panel campaign-list"><div className="section-heading"><h2>Recent campaigns</h2>{campaignTarget ? <Link to="/campaigns">View campaigns <ArrowRight /></Link> : <span className="empty-link">No campaigns yet</span>}</div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : hasRemoteError ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns.slice(0, 3)} /> : <p className="empty-state">No campaigns yet. Your first reviewed send will appear here.</p>}</section><aside className="panel route-card"><h2>Today&apos;s route</h2>{[["Draft", `${flows.length} flows ready`, Check], ["Validated", `${campaigns.filter((campaign) => campaign.failed > 0).length} need attention`, WarningCircle], ["Accepted", `${campaigns.reduce((sum, campaign) => sum + campaign.accepted, 0)} by Microsoft`, PaperPlaneTilt]].map(([label, value, Icon], index) => <div className="route-row" key={label}><span className={`route-dot route-dot--${index}`}><Icon weight="bold" /></span><span><strong>{label}</strong><small>{value}</small></span></div>)}{campaignTarget ? <Link to={`/campaigns/${campaignTarget}`}>View route details <ArrowRight /></Link> : <span className="empty-link">No campaign route yet</span>}</aside></div></div></AppShell>;
-}
-
-function FlowsPage() {
-  const { dashboard, csrfToken, refreshDashboard } = useApi();
-  const { openingFlowId, openFlowError, openFlow, startNewFlow } = useFlowActions();
-  const [removeState, setRemoveState] = useState({ confirmingId: null, workingId: null, error: "" });
-  const flows = dashboard.flows ? dashboard.flows.map(displayFlow) : [];
-  const confirmRemove = (flowId) => setRemoveState({ confirmingId: flowId, workingId: null, error: "" });
-  const cancelRemove = () => setRemoveState({ confirmingId: null, workingId: null, error: "" });
-  const removeFlow = async (flowId) => {
-    if (removeState.workingId) return;
-    setRemoveState({ confirmingId: flowId, workingId: flowId, error: "" });
-    try {
-      await archiveFlow(flowId, csrfToken);
-      setRemoveState({ confirmingId: null, workingId: null, error: "" });
-      await refreshDashboard();
-    } catch (error) {
-      setRemoveState({ confirmingId: flowId, workingId: null, error: error instanceof Error ? error.message : "The flow could not be removed." });
-    }
-  };
-  return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Your reusable flows.</h1><p>Use an existing message with a new file, or edit its saved template.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}{removeState.error && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {removeState.error}</div>}{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : dashboard.status === "error" ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-library-grid">{flows.map((flow) => <FlowCard flow={flow} key={flow.id} loading={openingFlowId === flow.id} removing={removeState.workingId === flow.id} confirmingRemove={removeState.confirmingId === flow.id} onUse={() => void openFlow(flow, "use")} onEdit={() => void openFlow(flow, "edit")} onBeginRemove={() => confirmRemove(flow.id)} onCancelRemove={cancelRemove} onConfirmRemove={() => void removeFlow(flow.id)} />)}</div> : <div className="panel empty-state empty-state--large"><span className="empty-state-icon"><FlowArrow weight="duotone" /></span><h2>No flows yet</h2><p>Import a CSV or Excel file first. Its headers become the dynamic fields in your message.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}</div></AppShell>;
-}
-
-function CampaignsPage() {
-  const { dashboard } = useApi();
-  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
-  return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Campaign history.</h1><p>Every spreadsheet row keeps its own auditable outcome.</p></div></header><section className="panel campaign-list campaign-list--page"><div className="section-heading"><h2>All campaigns</h2><span className="empty-link">Newest first</span></div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : dashboard.status === "error" ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns} /> : <div className="empty-state"><h2>No campaigns yet</h2><p>Completed reviews and sends will appear here.</p></div>}</section></div></AppShell>;
-}
+import { LandingPage } from "./routes/public/LandingPage";
+import { CampaignsPage } from "./routes/overview/CampaignsPage";
+import { DashboardPage } from "./routes/overview/DashboardPage";
+import { FlowsPage } from "./routes/overview/FlowsPage";
 
 function TemplatePage() {
   const { draft, updateDraft, flowId, mapping, setFlowId, setTemplateVersionId, table } = useDraft();

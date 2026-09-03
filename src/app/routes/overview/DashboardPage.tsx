@@ -1,0 +1,19 @@
+import { ArrowRight, Check, PaperPlaneTilt, Plus, WarningCircle, type Icon } from "@phosphor-icons/react";
+import { Link } from "react-router-dom";
+import { CampaignTable } from "../../components/overview/CampaignTable";
+import { FlowCard } from "../../components/overview/FlowCard";
+import { AppShell } from "../../components/shell/AppShell";
+import { useFlowActions } from "../../hooks/use-flow-actions";
+import { displayCampaign, displayFlow } from "../../lib/view-models";
+import { useApi } from "../../state/api-context";
+
+export function DashboardPage() {
+  const { user, dashboard } = useApi();
+  const { openingFlowId, openFlowError, openFlow, startNewFlow } = useFlowActions();
+  const flows = dashboard.flows ? dashboard.flows.map(displayFlow) : [];
+  const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
+  const hasRemoteError = dashboard.status === "error";
+  const campaignTarget = campaigns[0]?.id;
+  const routeItems: readonly (readonly [string, string, Icon])[] = [["Draft", `${flows.length} flows ready`, Check], ["Validated", `${campaigns.filter((campaign) => campaign.failed > 0).length} need attention`, WarningCircle], ["Accepted", `${campaigns.reduce((sum, campaign) => sum + campaign.accepted, 0)} by Microsoft`, PaperPlaneTilt]];
+  return <AppShell><div className="page dashboard-page"><header className="page-header"><div><h1>Good afternoon, {user?.displayName?.split(" ")[0] || "there"}.</h1><p>Your society mail, in one clear view.</p></div><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> New flow</button></header>{dashboard.error && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /> {dashboard.error}</div>}{openFlowError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {openFlowError}</div>}<section className="section-heading"><h2>Reusable flows</h2><Link to="/flows">View all flows <ArrowRight /></Link></section>{dashboard.status === "loading" && !dashboard.flows ? <div className="panel empty-state">Loading your flows...</div> : hasRemoteError ? <div className="panel empty-state">Your flows could not be loaded. Try again shortly.</div> : flows.length > 0 ? <div className="flow-grid">{flows.slice(0, 2).map((flow) => <FlowCard compact flow={flow} key={flow.id} loading={openingFlowId === flow.id} onUse={() => void openFlow(flow, "use")} />)}</div> : <div className="panel empty-state"><h2>No flows yet</h2><p>Start with a spreadsheet so Mail Flow can discover the fields available for personalization.</p><button className="button button--coral" onClick={startNewFlow}><Plus weight="bold" /> Create your first flow</button></div>}<div className="dashboard-lower"><section className="panel campaign-list"><div className="section-heading"><h2>Recent campaigns</h2>{campaignTarget ? <Link to="/campaigns">View campaigns <ArrowRight /></Link> : <span className="empty-link">No campaigns yet</span>}</div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : hasRemoteError ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns.slice(0, 3)} /> : <p className="empty-state">No campaigns yet. Your first reviewed send will appear here.</p>}</section><aside className="panel route-card"><h2>Today&apos;s route</h2>{routeItems.map(([label, value, IconComponent], index) => <div className="route-row" key={label}><span className={`route-dot route-dot--${index}`}><IconComponent weight="bold" /></span><span><strong>{label}</strong><small>{value}</small></span></div>)}{campaignTarget ? <Link to={`/campaigns/${campaignTarget}`}>View route details <ArrowRight /></Link> : <span className="empty-link">No campaign route yet</span>}</aside></div></div></AppShell>;
+}

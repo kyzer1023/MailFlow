@@ -608,3 +608,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the wizard stepper and shell, token-aware message editor, recipient address-rule field, and attachment picker into typed component modules.
 - Preserved the editor ref contract and selection behavior, source mode and sanitization, fixed and dynamic address modes, attachment upload/retry/removal, accessibility attributes, markup, classes, icons, and copy.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed public and overview routes
+
+- Moved the landing page, dashboard, flow library, and campaign history into typed route modules while leaving the central application route table as the composition boundary.
+- Preserved session and API behavior, navigation, flow confirmation states, loading, empty and error rendering, markup, classes, icons, links, and visible copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
