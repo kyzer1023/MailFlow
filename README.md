@@ -1,8 +1,8 @@
 # Mail Flow
 
-Mail Flow is a focused mail-merge application for USM student societies. Members sign in with their USM Microsoft account, import recipient data, personalize an HTML message, validate every row, preview representative emails, send a test to themselves, and start a paced campaign through Microsoft Graph.
+Mail Flow is a focused mail-merge application for USM student societies. Members sign in with their USM Microsoft account, import recipient data, personalize an HTML message, validate every row, preview representative emails, send a test to themselves, and start a paced campaign through delegated OAuth SMTP.
 
-The deployed application uses Cloudflare only: Workers Static Assets, a Worker API, D1, Queues, and Worker secrets. Microsoft Entra ID provides identity and delegated authorization. Microsoft Graph sends from the signed-in member's Outlook mailbox.
+The deployed application uses Cloudflare only: Workers Static Assets, a Worker API, D1, Queues, and Worker secrets. Microsoft Entra ID provides identity and delegated authorization. Delegated OAuth SMTP sends from the signed-in member's Outlook mailbox, with delegated Microsoft Graph `Mail.Send` retained as a deployment-selectable rollback path.
 
 Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
 
@@ -24,7 +24,7 @@ Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
 - `docs/TESTING.md`: local, integration, visual, and real-mail verification plan.
 - `docs/DECISIONS.md`: architecture decision log.
 - `docs/OPERATIONS.md`: Cloudflare, Entra, smoke-test, evidence, and recovery runbook.
-- `design-qa.md`: source-to-implementation visual comparison record and current QA result.
+- `docs/archive/`: superseded investigation notes retained for historical context.
 - `mock-images/`: approved visual references.
 
 ## Application commands
@@ -61,6 +61,6 @@ real-mail test gates are recorded in `docs/TESTING.md` and `docs/PROGRESS.md`.
 
 - Never commit `.env`, `.dev.vars`, access tokens, refresh tokens, passwords, or client secrets.
 - Never use stored student passwords in the deployed application. User authentication is interactive Microsoft OAuth.
-- Never request application-level `Mail.Send`. Mail Flow uses delegated `Mail.Send` for the signed-in mailbox.
+- Never request application-level Microsoft permissions. Mail Flow uses delegated OAuth permissions for the signed-in member; delegated Graph `Mail.Send` is the rollback transport.
 - Never call a Graph `202 Accepted` response "delivered". The correct state is "Accepted by Microsoft".
 - Never automatically resend an ambiguous outcome. Surface it as `unknown` and require a human decision.

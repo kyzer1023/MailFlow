@@ -57,7 +57,7 @@ For each mock route:
 3. Capture the implementation.
 4. Compare reference and capture together.
 5. Fix P0, P1, and P2 differences.
-6. Record the final comparison in `design-qa.md`.
+6. Record the final comparison and any remaining blocker in `docs/PROGRESS.md`.
 
 Also test 1440 x 900, 1024 x 768, and 390 x 844. Check keyboard focus, contrast, overflow, and reduced motion.
 

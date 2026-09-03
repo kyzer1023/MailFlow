@@ -2,6 +2,8 @@
 
 Date: 2026-09-02
 
+> Archive note: this document records the feasibility investigation as it stood on 2026-09-02. The current implementation and deployment status are maintained in [the architecture](../ARCHITECTURE.md), [the decision log](../DECISIONS.md), and [the progress log](../PROGRESS.md); the proposed Graph draft path and rollout gates below are historical context.
+
 Status: storage direction accepted by ADR-009. The Graph draft and `Mail.ReadWrite` delivery path below is historical; delegated OAuth SMTP now handles delivery while OneDrive App Folder supplies per-user storage.
 
 ## Recommendation

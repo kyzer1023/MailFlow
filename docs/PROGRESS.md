@@ -469,3 +469,10 @@ Keep this append-only except when updating the short current-state summary. Neve
 
 - Removed the unused `dev:worker` command and redundant `build:client` alias. The documented `npm run dev` full-stack workflow and the standard build, preview, migration, deployment, and test commands remain.
 - Verification passed: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests. Existing dependency-comment and client chunk-size warnings remain.
+
+### 2026-09-03 - Documentation lifecycle cleanup
+
+- Updated the README and ADR-008 to describe delegated OAuth SMTP as the deployed transport and Graph as the deployment-selectable rollback path.
+- Removed active gates and repository-map references to the deleted `design-qa.md`; visual verification remains required and is recorded in this progress log.
+- Moved the superseded OneDrive attachment feasibility investigation to `docs/archive/` with an archive note pointing to the authoritative architecture, decision, and progress records.
+- Documentation link checks and `git diff --check` passed.

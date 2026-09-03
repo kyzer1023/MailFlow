@@ -64,6 +64,6 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 - No attachment deployment unless SMTP mode, migrations `0004` and `0005`, `SMTP.Send` reauthorization, the shared OAuth callback, and `Files.ReadWrite.AppFolder` consent are ready together.
 - No deployment before `.env` and `.dev.vars` are ignored and Git history is checked for secrets.
 - No automatic retry for `unknown` outcomes.
-- No visual handoff before `design-qa.md` says `final result: passed` or accurately records a blocker.
+- No visual handoff before reference and implementation states are compared at the required viewports and any remaining blocker is recorded.
 - No completion claim before the deployed journey is tested in a real browser.
 
