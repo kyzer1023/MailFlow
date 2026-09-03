@@ -457,3 +457,10 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Verification passed from the repository root: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests; `npx wrangler deploy --dry-run` passed; `npx wrangler d1 migrations list mailflow-db --local` reported no pending migrations; `git diff --check` passed. Existing dependency-comment and client chunk-size warnings remain.
 - Started the full-stack preview from the root on port 5173. HTTP checks returned 200 for the landing page, client entry, and logo asset, 401 for unauthenticated `/api/me`, and 302 for sign-in with delegated `SMTP.Send` and the localhost callback.
 - Cloudflare Git builds must use the repository root as their build directory when this change is rolled out. This checkpoint does not alter remote build settings or deploy production code.
+
+### 2026-09-03 - Local artifact and dead-file cleanup
+
+- Removed the unused `src/app/fixtures.ts` module and unreferenced `public/assets/campaign-audit-receipt.png` asset. Retained the two public assets used by the application.
+- Cleared obsolete local Playwright output, QA captures, generated build output, Wrangler dry-run files, and Wrangler observability traces while retaining `node_modules`, local environment files, and local D1 state.
+- Removed the clean, fully merged `feature/smtp-campaign-attachments` Codex worktree and deleted its local branch. Windows continues to hold the final empty worktree directory open, but its contents and Git registration are gone.
+- Verification passed: `npm test` completed TypeScript checks, both production builds, 15 test files, and all 122 tests. Existing dependency-comment and client chunk-size warnings remain.
