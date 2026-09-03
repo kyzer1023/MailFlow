@@ -1,13 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
-  Code, DownloadSimple, Envelope, Eraser, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
-  ArrowClockwise, CloudArrowUp, FilePdf, FileText, FileXls,
-  HighlighterCircle, House, Info, LinkSimple, ListBullets, ListNumbers,
+  ArrowLeft, ArrowRight, CaretLeft, CaretRight, Check, CheckCircle, Clock,
+  DownloadSimple, Envelope, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
+  House, Info,
   MicrosoftOutlookLogo, MinusCircle, Paperclip, PaperPlaneTilt, Pause, Play, Plus,
   Rows, SignOut, SpinnerGap, TextAlignCenter, TextAlignLeft, TextAlignRight, TextB,
-  TextItalic, TextUnderline, Users, WarningCircle, X,
+  Users, WarningCircle, X,
 } from "@phosphor-icons/react";
 import {
   ApiRequestError,
@@ -28,29 +27,22 @@ import {
 import {
   buildPreviewSrcDoc,
   buildMessagePreviews,
-  ATTACHMENT_ACCEPT,
-  ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_FILES,
-  attachmentMediaType,
-  attachmentTotalBytes,
   createCampaignPayload,
   extractPlaceholders,
-  formatAttachmentSize,
   getHeaderRowCandidates,
   mappingsForCurrentTable,
   mappingToRecipientConfiguration,
   parseSpreadsheet,
   selectSpreadsheetTable,
   sanitizeTemplateHtml,
-  validateAttachmentSelection,
 } from "../client";
-import { escapeMergeValue } from "../client/template";
 import { attachmentSummaryText } from "./lib/attachments";
-import { bodyHtmlFromDraft, dynamicFieldLabel, appendTokenEditorContent, normalizeHtmlForComparison, serializeTokenEditor } from "./lib/editor-dom";
+import { bodyHtmlFromDraft, dynamicFieldLabel } from "./lib/editor-dom";
 import { formatDate } from "./lib/format";
-import { localAttachmentId } from "./lib/ids";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
 import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
+import { AttachmentPicker } from "./components/attachments/AttachmentPicker";
+import { AddressRuleField } from "./components/recipients/AddressRuleField";
 import { DynamicValueChip } from "./components/common/DynamicValueChip";
 import { Field } from "./components/common/Field";
 import { StatusChip } from "./components/common/StatusChip";
@@ -58,6 +50,8 @@ import { CampaignTable } from "./components/overview/CampaignTable";
 import { FlowCard } from "./components/overview/FlowCard";
 import { AppShell } from "./components/shell/AppShell";
 import { Brand } from "./components/shell/Brand";
+import { TokenMessageEditor } from "./components/editor/TokenMessageEditor";
+import { WizardShell } from "./components/wizard/WizardShell";
 import { useFlowActions } from "./hooks/use-flow-actions";
 import { useSignOut } from "./hooks/use-sign-out";
 import { AppDataProvider, useApi } from "./state/api-context";
@@ -124,380 +118,6 @@ function CampaignsPage() {
   const { dashboard } = useApi();
   const campaigns = dashboard.campaigns ? dashboard.campaigns.map((entry) => displayCampaign(entry.campaign, entry.counts, entry.flowName)) : [];
   return <AppShell><div className="page library-page"><header className="page-header"><div><h1>Campaign history.</h1><p>Every spreadsheet row keeps its own auditable outcome.</p></div></header><section className="panel campaign-list campaign-list--page"><div className="section-heading"><h2>All campaigns</h2><span className="empty-link">Newest first</span></div>{dashboard.status === "loading" && !dashboard.campaigns ? <p className="empty-state">Loading campaign results...</p> : dashboard.status === "error" ? <p className="empty-state">Campaign results could not be loaded. Try again shortly.</p> : campaigns.length > 0 ? <CampaignTable campaigns={campaigns} /> : <div className="empty-state"><h2>No campaigns yet</h2><p>Completed reviews and sends will appear here.</p></div>}</section></div></AppShell>;
-}
-
-const steps = [["Data", "/flows/new/data"], ["Template", "/flows/new/template"], ["Recipients", "/flows/new/recipients"], ["Review", "/flows/new/review"]];
-function WizardStepper({ current }) {
-  return <div className="stepper-wrap">
-    <ol className="stepper" aria-label={`Step ${current + 1} of ${steps.length}`}>
-      {steps.map(([label, to], index) => {
-        const state = index < current ? "complete" : index === current ? "current" : "future";
-        const content = <><span className="stepper-node" aria-hidden="true">{state === "complete" ? <Check weight="bold" /> : index + 1}</span><span className="stepper-label">{label}</span></>;
-        return <li className={state} key={label}>{state === "future" ? <span className="stepper-future">{content}</span> : <Link to={to} aria-current={state === "current" ? "step" : undefined}>{content}</Link>}</li>;
-      })}
-    </ol>
-    <span className="wizard-count" aria-hidden="true">{current + 1} of {steps.length}</span>
-  </div>;
-}
-function WizardShell({ current, title, subtitle, actions, children }) { return <AppShell><WizardStepper current={current} /><div className="page wizard-page"><header className="page-header wizard-header"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="header-actions">{actions}</div></header>{children}</div></AppShell>; }
-
-export const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
-  const rootRef = useRef(null);
-  const sourceRef = useRef(null);
-  const savedRangeRef = useRef(null);
-  const lastEmittedRef = useRef(null);
-  const [mode, setMode] = useState("visual");
-  const sourceHtml = bodyHtmlFromDraft(value);
-  const sanitizedSourceHtml = sanitizeTemplateHtml(sourceHtml);
-  const sourceWasCleaned = normalizeHtmlForComparison(sourceHtml) !== normalizeHtmlForComparison(sanitizedSourceHtml);
-
-  const saveRange = useCallback(() => {
-    const root = rootRef.current;
-    const selection = window.getSelection();
-    if (!root || !selection?.rangeCount) return;
-    const range = selection.getRangeAt(0);
-    if (root.contains(range.commonAncestorContainer)) savedRangeRef.current = range.cloneRange();
-  }, []);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || mode !== "visual") return;
-    if (lastEmittedRef.current === String(value || "")) {
-      lastEmittedRef.current = null;
-      return;
-    }
-    if (serializeTokenEditor(root) !== sanitizedSourceHtml) appendTokenEditorContent(root, sanitizedSourceHtml, options);
-  }, [value, options, mode, sanitizedSourceHtml]);
-
-  const emitVisualChange = useCallback(() => {
-    const html = serializeTokenEditor(rootRef.current);
-    lastEmittedRef.current = html;
-    onChange(html);
-  }, [onChange]);
-
-  const restoreRange = useCallback(() => {
-    const root = rootRef.current;
-    const selection = window.getSelection();
-    if (!root || !selection) return;
-    const range = savedRangeRef.current?.cloneRange();
-    if (range && root.contains(range.commonAncestorContainer)) {
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return;
-    }
-    const fallback = document.createRange();
-    fallback.selectNodeContents(root);
-    fallback.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(fallback);
-  }, []);
-
-  const runCommand = useCallback((command, commandValue = null) => {
-    const root = rootRef.current;
-    if (!root) return;
-    root.focus();
-    restoreRange();
-    document.execCommand?.(command, false, commandValue);
-    saveRange();
-    emitVisualChange();
-  }, [emitVisualChange, restoreRange, saveRange]);
-
-  const insertHtml = useCallback((html) => {
-    const root = rootRef.current;
-    if (!root) return;
-    root.focus();
-    restoreRange();
-    const insertedWithHistory = document.execCommand?.("insertHTML", false, html) ?? false;
-    if (!insertedWithHistory) {
-      const selection = window.getSelection();
-      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-      if (range) {
-        range.deleteContents();
-        const fragment = range.createContextualFragment(html);
-        const lastNode = fragment.lastChild;
-        range.insertNode(fragment);
-        if (lastNode) {
-          range.setStartAfter(lastNode);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      }
-    }
-    saveRange();
-    emitVisualChange();
-  }, [emitVisualChange, restoreRange, saveRange]);
-
-  const switchMode = useCallback((nextMode) => {
-    if (nextMode === mode) return;
-    if (nextMode === "html") emitVisualChange();
-    else {
-      lastEmittedRef.current = null;
-      onChange(sanitizedSourceHtml);
-    }
-    setMode(nextMode);
-  }, [emitVisualChange, mode, onChange, sanitizedSourceHtml]);
-
-  useImperativeHandle(forwardedRef, () => ({
-    insertToken(key) {
-      if (mode === "html") {
-        const source = sourceRef.current;
-        if (!source) return;
-        const start = source.selectionStart ?? source.value.length;
-        const end = source.selectionEnd ?? start;
-        const token = `{{${key}}}`;
-        const nextValue = `${source.value.slice(0, start)}${token}${source.value.slice(end)}`;
-        onChange(nextValue);
-        requestAnimationFrame(() => {
-          source.focus();
-          source.setSelectionRange(start + token.length, start + token.length);
-        });
-        return;
-      }
-      const root = rootRef.current;
-      if (!root) return;
-      root.focus();
-      const selection = window.getSelection();
-      const range = savedRangeRef.current?.cloneRange() || document.createRange();
-      if (!savedRangeRef.current || !root.contains(range.commonAncestorContainer)) range.selectNodeContents(root), range.collapse(false);
-      const token = document.createElement("span");
-      token.className = "dynamic-inline-token";
-      token.contentEditable = "false";
-      token.dataset.dynamicField = key;
-      token.setAttribute("aria-label", `Dynamic value: ${dynamicFieldLabel(key, options)}`);
-      token.textContent = dynamicFieldLabel(key, options);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      // insertHTML participates in the browser's editing transaction history,
-      // unlike Range.insertNode. This makes dynamic token insertion and text
-      // replacement reversible with the same Ctrl+Z flow as ordinary typing.
-      const insertedWithHistory = document.execCommand?.("insertHTML", false, token.outerHTML) ?? false;
-      if (!insertedWithHistory) {
-        range.deleteContents();
-        range.insertNode(token);
-        range.setStartAfter(token);
-        range.collapse(true);
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }
-      saveRange();
-      emitVisualChange();
-    },
-  }), [emitVisualChange, mode, onChange, options, saveRange]);
-
-  const insertPlainText = (text) => {
-    const html = escapeMergeValue(text).replace(/\r?\n/gu, "<br>");
-    insertHtml(html);
-  };
-
-  const toolbarButton = (label, Icon, command, commandValue = null) => <button type="button" aria-label={label} title={label} onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand(command, commandValue)}><Icon weight="bold" /></button>;
-
-  const addLink = () => {
-    const href = window.prompt("Paste an HTTPS or mailto link");
-    if (!href) return;
-    const normalized = href.trim();
-    if (!/^(?:https?:|mailto:)/iu.test(normalized)) return;
-    runCommand("createLink", normalized);
-  };
-
-  return <div className={`html-message-composer html-message-composer--${mode}`}>
-    <div className="editor-toolbar" role="toolbar" aria-label="Message formatting">
-      {mode === "visual" ? <>
-        <select aria-label="Font" defaultValue="" onChange={(event) => { if (event.target.value) runCommand("fontName", event.target.value); event.target.value = ""; }}>
-          <option value="">Font</option>
-          <option value="Arial">Arial</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Times New Roman">Times New Roman</option>
-        </select>
-        <select aria-label="Font size" defaultValue="3" onChange={(event) => runCommand("fontSize", event.target.value)}>
-          <option value="2">10</option>
-          <option value="3">12</option>
-          <option value="4">14</option>
-          <option value="5">18</option>
-        </select>
-        <span className="editor-toolbar__divider" aria-hidden="true" />
-        {toolbarButton("Bold", TextB, "bold")}
-        {toolbarButton("Italic", TextItalic, "italic")}
-        {toolbarButton("Underline", TextUnderline, "underline")}
-        {toolbarButton("Highlight", HighlighterCircle, "hiliteColor", "#f1df9d")}
-        {toolbarButton("Bulleted list", ListBullets, "insertUnorderedList")}
-        {toolbarButton("Numbered list", ListNumbers, "insertOrderedList")}
-        {toolbarButton("Align left", TextAlignLeft, "justifyLeft")}
-        {toolbarButton("Align center", TextAlignCenter, "justifyCenter")}
-        {toolbarButton("Align right", TextAlignRight, "justifyRight")}
-        <button type="button" aria-label="Add link" title="Add link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><LinkSimple weight="bold" /></button>
-        {toolbarButton("Clear formatting", Eraser, "removeFormat")}
-      </> : <span className="editor-toolbar__source-label"><Code weight="bold" /> HTML source</span>}
-      <button type="button" className={`editor-source-toggle${mode === "html" ? " active" : ""}`} aria-label={mode === "html" ? "Return to visual editor" : "Edit HTML source"} aria-pressed={mode === "html"} title={mode === "html" ? "Return to visual editor" : "Edit HTML source"} onClick={() => switchMode(mode === "html" ? "visual" : "html")}><Code weight="bold" /></button>
-    </div>
-    {mode === "visual" ? <div
-      ref={rootRef}
-      className="message-editor token-message-editor"
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
-      aria-multiline="true"
-      aria-label="Message body"
-      data-placeholder={placeholder}
-      onFocus={(event) => { saveRange(); onFocus?.(event); }}
-      onKeyUp={saveRange}
-      onMouseUp={saveRange}
-      onInput={() => { saveRange(); emitVisualChange(); }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); insertPlainText("\n"); }
-      }}
-      onPaste={(event) => {
-        event.preventDefault();
-        const pastedHtml = event.clipboardData.getData("text/html");
-        if (pastedHtml) {
-          const safeHtml = sanitizeTemplateHtml(pastedHtml);
-          insertHtml(safeHtml);
-          return;
-        }
-        insertPlainText(event.clipboardData.getData("text/plain"));
-      }}
-    /> : <>
-      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
-      <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
-    </>}
-  </div>;
-});
-
-function AddressRuleField({ fieldKey, label, value, mode, column, options, onValue, onMode, onColumn, hint }) {
-  const [pending, setPending] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const fieldRef = useRef(null);
-  const addresses = splitFixedAddresses(value);
-
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const close = (event) => { if (!fieldRef.current?.contains(event.target)) setMenuOpen(false); };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [menuOpen]);
-
-  const commitPending = (raw = pending) => {
-    const additions = splitFixedAddresses(raw);
-    if (additions.length > 0) {
-      const seen = new Set(addresses.map((address) => address.toLowerCase()));
-      onValue([...addresses, ...additions.filter((address) => !seen.has(address.toLowerCase()))].join("; "));
-    }
-    setPending("");
-  };
-  const removeAddress = (index) => onValue(addresses.filter((_, itemIndex) => itemIndex !== index).join("; "));
-  const removeDynamic = () => { onMode("fixed"); onColumn(""); };
-
-  return <div className="recipient-rule" ref={fieldRef}>
-    <label htmlFor={`${fieldKey}-fixed-input`}>{label}</label>
-    <div className={`address-chip-input${mode === "column" ? " address-chip-input--dynamic" : ""}`}>
-      <div className="address-chip-values">
-        {mode === "column" && column ? <span className="selected-dynamic-value"><DynamicValueChip value={column} options={options} /><button type="button" onClick={removeDynamic} aria-label={`Remove dynamic ${label} value`}><X /></button></span> : addresses.map((address, index) => <span className="address-chip" key={`${address}-${index}`}><span aria-hidden="true">{address.charAt(0).toUpperCase()}</span><span className="address-chip-label">{address}</span><button type="button" onClick={() => removeAddress(index)} aria-label={`Remove ${address}`}><X /></button></span>)}
-        {mode === "fixed" && <input id={`${fieldKey}-fixed-input`} value={pending} onChange={(event) => setPending(event.target.value)} onBlur={() => commitPending()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === "," || event.key === ";") { event.preventDefault(); commitPending(); } else if (event.key === "Backspace" && !pending && addresses.length > 0) removeAddress(addresses.length - 1); }} placeholder={addresses.length ? "Add another" : "Add email addresses"} autoComplete="off" />}
-      </div>
-      <button type="button" className="dynamic-menu-trigger" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-haspopup="listbox" aria-label={`Choose a dynamic value for ${label}`} title="Choose a spreadsheet value"><BracketsCurly weight="bold" /></button>
-    </div>
-    {menuOpen && <div className="dynamic-value-menu" role="listbox" aria-label={`Dynamic values for ${label}`} onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}><div><strong>Dynamic values</strong><small>Choose a spreadsheet column containing email addresses.</small></div>{options.length > 0 ? options.map((option) => <button type="button" role="option" aria-selected={mode === "column" && column === option.value} key={option.value} onClick={() => { onMode("column"); onColumn(option.value); setPending(""); setMenuOpen(false); }}><DynamicValueChip value={option.value} options={options} compact />{mode === "column" && column === option.value && <Check weight="bold" />}</button>) : <p>No spreadsheet fields are available.</p>}</div>}
-    {hint && <small className="recipient-rule-hint">{hint}</small>}
-  </div>;
-}
-
-function AttachmentIcon({ mediaType }) {
-  if (mediaType === "application/pdf") return <FilePdf weight="duotone" />;
-  if (mediaType.includes("spreadsheet") || mediaType.includes("excel") || mediaType.endsWith("/csv")) return <FileXls weight="duotone" />;
-  if (mediaType.startsWith("text/") || mediaType.includes("word") || mediaType.includes("presentation")) return <FileText weight="duotone" />;
-  return <Files weight="duotone" />;
-}
-
-function AttachmentPicker() {
-  const state = useDraft();
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef(null);
-  const locked = Boolean(state.campaignResponse);
-  const totalBytes = attachmentTotalBytes(state.attachments.filter((item) => item.status !== "error"));
-
-  const addFiles = (fileList) => {
-    if (locked) return;
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
-    const result = validateAttachmentSelection(files, state.attachments);
-    const rejectedEntries = result.rejected.map((error) => ({
-      id: localAttachmentId(),
-      name: error.name || "Unnamed file",
-      mediaType: error.mediaType,
-      byteSize: error.size,
-      status: "error",
-      error: error.message,
-    }));
-    const acceptedEntries = result.accepted.map((file) => ({
-      id: localAttachmentId(),
-      name: file.name,
-      mediaType: attachmentMediaType(file),
-      byteSize: file.size,
-      status: "uploading",
-    }));
-    if (rejectedEntries.length > 0 || acceptedEntries.length > 0) {
-      state.setAttachments((current) => [...current, ...rejectedEntries, ...acceptedEntries]);
-    }
-    result.accepted.forEach((file, index) => {
-      void state.uploadAttachment(acceptedEntries[index].id, file);
-    });
-  };
-
-  const onInput = (event) => {
-    addFiles(event.currentTarget.files);
-    // Permit selecting the same file again after removing or retrying it.
-    event.currentTarget.value = "";
-  };
-  const onDrop = (event) => {
-    event.preventDefault();
-    setDragging(false);
-    addFiles(event.dataTransfer.files);
-  };
-  const onKeyDown = (event) => {
-    if (locked) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      inputRef.current?.click();
-    }
-  };
-
-  return <section className="attachment-picker" aria-labelledby="campaign-attachments-heading">
-    <div className="attachment-picker__heading">
-      <div><span className="section-kicker">CAMPAIGN FILES</span><h2 id="campaign-attachments-heading">Add attachments</h2><p>Every recipient receives the same files in this campaign.</p></div>
-      <Paperclip aria-hidden="true" />
-    </div>
-    <label
-      className={`attachment-dropzone${dragging ? " attachment-dropzone--dragging" : ""}${locked ? " attachment-dropzone--locked" : ""}`}
-      htmlFor="campaign-attachments-input"
-      role="button"
-      tabIndex={locked ? -1 : 0}
-      aria-disabled={locked}
-      onKeyDown={onKeyDown}
-      onDragEnter={(event) => { event.preventDefault(); if (!locked) setDragging(true); }}
-      onDragOver={(event) => { event.preventDefault(); if (!locked) setDragging(true); }}
-      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
-      onDrop={onDrop}
-    >
-      <CloudArrowUp aria-hidden="true" />
-      <span><strong>{locked ? "Attachments locked" : "Drop files here or choose files"}</strong><small>PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG</small></span>
-      <input ref={inputRef} id="campaign-attachments-input" className="attachment-picker__input" type="file" accept={ATTACHMENT_ACCEPT} multiple disabled={locked} onChange={onInput} />
-    </label>
-    <div className="attachment-picker__limits"><span>{state.attachments.length} of {ATTACHMENT_MAX_FILES} files</span><span>{formatAttachmentSize(totalBytes)} of {formatAttachmentSize(ATTACHMENT_MAX_BYTES)}</span></div>
-    {locked && <p className="attachment-lock-note" role="status"><CheckCircle weight="fill" /> Attachments are locked for this campaign.</p>}
-    {state.attachments.length > 0 && <ul className="attachment-list" aria-label="Campaign attachments">
-      {state.attachments.map((attachment) => <li className={`attachment-item attachment-item--${attachment.status}`} key={attachment.id} aria-busy={attachment.status === "uploading"}>
-        <span className="attachment-item__icon"><AttachmentIcon mediaType={attachment.mediaType} /></span>
-        <div className="attachment-item__body"><strong>{attachment.name}</strong><small>{formatAttachmentSize(attachment.byteSize)} · <span className={`attachment-item__status attachment-item__status--${attachment.status}`}>{attachment.status === "uploading" ? "Uploading" : attachment.status === "ready" ? "Ready" : "Upload failed"}</span></small>{attachment.error && <span className="attachment-item__error" role="alert">{attachment.error}</span>}</div>
-        <div className="attachment-item__actions">
-          {attachment.status === "uploading" && <SpinnerGap className="spin" aria-label={`Uploading ${attachment.name}`} />}
-          {attachment.status === "error" && <button type="button" className="attachment-action" onClick={() => state.retryAttachment(attachment.id)} disabled={locked} aria-label={`Retry upload ${attachment.name}`} title="Retry upload"><ArrowClockwise /></button>}
-          {!locked && <button type="button" className="attachment-action" onClick={() => void state.removeAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`} title="Remove attachment"><X /></button>}
-        </div>
-      </li>)}
-    </ul>}
-    {state.attachmentsUploading && <p className="attachment-live-status" role="status" aria-live="polite">Uploading attachments...</p>}
-    {state.attachmentsHaveErrors && <p className="attachment-live-status attachment-live-status--error" role="alert">Remove failed attachments or retry before continuing to Review.</p>}
-  </section>;
 }
 
 function TemplatePage() {

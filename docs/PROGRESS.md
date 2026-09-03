@@ -602,3 +602,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved queue-batch processing and scheduled attachment cleanup into a dedicated Worker runtime module while keeping compatibility re-exports from the API composition module.
 - Preserved malformed-message acknowledgement before lazy service initialization, shared services for valid batch messages, retry and acknowledgement behavior, cleanup, errors, and Worker-facing signatures.
 - Verification passed: exact runtime implementation and export comparisons, both production builds, 15 test files, all 122 tests, exact comparison of all 27 composed route declarations, and `git diff --check`. A repository-wide typecheck follows completion of a concurrent component extraction.
+
+### 2026-09-03 - Typed frontend wizard components
+
+- Moved the wizard stepper and shell, token-aware message editor, recipient address-rule field, and attachment picker into typed component modules.
+- Preserved the editor ref contract and selection behavior, source mode and sanitization, fixed and dynamic address modes, attachment upload/retry/removal, accessibility attributes, markup, classes, icons, and copy.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
