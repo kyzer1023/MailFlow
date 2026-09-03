@@ -482,3 +482,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added one internal D1 helper module for JSON serialization and fallback parsing, statement binding, prepared-statement binding, and affected-row counts. Both domain repositories and authentication stores now use the shared implementation.
 - Repository classes, SQL, transaction ordering, attachment guards, claim behavior, and clock injection remain unchanged.
 - Verification passed: TypeScript checks, both production builds, 15 test files, and all 122 tests. `git diff --check` passed with only informational Windows line-ending notices.
+
+### 2026-09-03 - Frontend entrypoint relocation
+
+- Moved the React application and its component test under `src/app/`, and moved the global stylesheet to `src/app/styles/base.css`. Updated entrypoint and relative imports while preserving the existing stylesheet cascade and application behavior.
+- The relocated stylesheet matches its original contents apart from the adjacent load-order comment, which now names `base.css`.
+- Verification passed: the production build, all 122 unit tests, and the focused 15-test application suite. Full TypeScript verification is recorded after the concurrent server extraction phases complete.

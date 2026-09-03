@@ -3,10 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./app/api";
+import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./api";
 
-vi.mock("./app/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./app/api")>();
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
   return {
     ...actual,
     archiveFlow: vi.fn(),

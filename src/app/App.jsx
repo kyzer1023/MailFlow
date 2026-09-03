@@ -31,7 +31,7 @@ import {
   startCampaign,
   uploadAttachmentFile as uploadAttachmentFileRequest,
   updateFlow as updateFlowRequest,
-} from "./app/api";
+} from "./api";
 import {
   buildPreviewSrcDoc,
   buildMessagePreviews,
@@ -53,8 +53,8 @@ import {
   sanitizeTemplateHtml,
   validateAttachmentSelection,
   validateClientCampaign,
-} from "./client";
-import { escapeMergeValue } from "./client/template";
+} from "../client";
+import { escapeMergeValue } from "../client/template";
 
 const DraftContext = createContext(null);
 const ApiContext = createContext(null);
