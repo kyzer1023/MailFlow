@@ -488,3 +488,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the React application and its component test under `src/app/`, and moved the global stylesheet to `src/app/styles/base.css`. Updated entrypoint and relative imports while preserving the existing stylesheet cascade and application behavior.
 - The relocated stylesheet matches its original contents apart from the adjacent load-order comment, which now names `base.css`.
 - Verification passed: the production build, all 122 unit tests, and the focused 15-test application suite. Full TypeScript verification is recorded after the concurrent server extraction phases complete.
+
+### 2026-09-03 - API shared-boundary extraction
+
+- Extracted API context types, runtime dependency construction, attachment serialization and integrity bridges, and common request, session, response, template, CSV, and queue helpers from the main Hono module.
+- Kept all route declarations in `app.ts` in their original order and preserved its Worker-facing compatibility exports. Route paths, response contracts, authorization order, queue behavior, and error handling remain unchanged.
+- Verification passed: TypeScript checks, both production builds, 15 test files, and all 122 tests. Route declarations match the pre-extraction list and `git diff --check` passed.

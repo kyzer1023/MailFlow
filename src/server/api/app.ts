@@ -1,56 +1,37 @@
 import { Hono } from "hono";
-import type { Context } from "hono";
 import { makeSendKey, validateRecipientRows } from "../../domain";
 import type {
-  AuditEventType,
   CampaignRecord,
   FlowRecord,
-  RecipientConfiguration,
   RecipientJobRecord,
   TemplateVersionRecord,
 } from "../../domain/types";
 import {
   CSRF_COOKIE_NAME,
-  DEFAULT_SESSION_TTL_SECONDS,
   OAUTH_STATE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   clearCookie,
-  createCsrfToken,
-  parseCookie,
-  readSession,
-  renewSession,
   revokeSession,
-  serializeCookie,
-  verifyCsrfToken,
 } from "../auth/session";
-import { AuthFlowError, MicrosoftAuthService } from "../auth/service";
+import { AuthFlowError } from "../auth/service";
 import { createD1AuthStores } from "../database/d1-auth";
 import { createD1Repositories } from "../database/d1";
-import type { Repositories } from "../database/contracts";
 import {
   delegatedGraphMailProvider,
   delegatedSmtpMailProvider,
-  ExchangeOnlineSmtpClient,
   GraphApiError,
-  GraphMailProvider,
-  ONEDRIVE_ENTRA_SCOPES,
   resolveMailTransport,
   sendProviderTestToSelf,
   sendTestToSelf,
-  SMTP_ENTRA_SCOPES,
   TestSendError,
 } from "../microsoft";
-import type { MailTransport } from "../microsoft";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_FILES,
   AttachmentError,
   createAttachmentService,
   OneDriveAppFolderAttachmentStore,
-  type AttachmentPayload,
   type AttachmentService,
-  type AttachmentFileRecord,
-  type AttachmentSetRecord,
 } from "../attachments";
 import type { MailAttachment } from "../../domain/mail-provider";
 import { OAuthProviderError } from "../microsoft/oauth";
@@ -64,23 +45,51 @@ import {
   pauseSchema,
   templateVersionSchema,
   testSendSchema,
-  validationIssues,
 } from "./schemas";
-import type { MailFlowBindings, MailFlowExecutionContext, MailFlowVariables, QueueBatch } from "./contracts";
+import type { MailFlowBindings, MailFlowExecutionContext, QueueBatch } from "./contracts";
 import { isCampaignTickMessage } from "./contracts";
+import { safeSourceFilename, templatePlaceholders, validateTemplateHtml, validateTemplateSubject } from "./security";
+import type { MailFlowAppEnv, MailFlowContext } from "./context";
 import {
-  safeSourceFilename,
-  templatePlaceholders,
-  validateTemplateHtml,
-  validateTemplateSubject,
-} from "./security";
+  attachmentInfrastructureAvailable,
+  attachmentServiceFor,
+  configFor,
+  integerEnv,
+  oneDriveAuthorizedFor,
+  repositories,
+  smtpAuthorizedFor,
+  textEnv,
+} from "./dependencies";
+import {
+  audit,
+  createTemplateVersion,
+  enqueueTick,
+  id,
+  jobCsv,
+  nowIso,
+  parseOrError,
+  publicCampaign,
+  publicFlow,
+  publicJob,
+  publicUser,
+  recipientAddressIssues,
+  attachmentErrorResponse,
+  csrfTokenFor,
+  requireMutationSession,
+  requireSession,
+  responseError,
+  routeParam,
+  versionConfigFromInput,
+} from "./helpers";
+import {
+  cleanupCampaignAttachments,
+  loadCampaignAttachments,
+  publicAttachmentFile,
+  publicAttachmentSet,
+} from "./attachments";
 
-export type MailFlowAppEnv = {
-  Bindings: MailFlowBindings;
-  Variables: MailFlowVariables;
-};
-
-export type MailFlowContext = Context<MailFlowAppEnv>;
+export type { MailFlowAppEnv, MailFlowContext } from "./context";
+export { cleanupCampaignAttachments, loadCampaignAttachments } from "./attachments";
 
 const app = new Hono<MailFlowAppEnv>();
 
@@ -92,483 +101,6 @@ app.use("/api/*", async (context, next) => {
   context.header("Cache-Control", "private, no-store, max-age=0");
   context.header("Pragma", "no-cache");
 });
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function id(prefix: string): string {
-  return `${prefix}_${crypto.randomUUID()}`;
-}
-
-function textEnv(value: string | undefined, fallback = ""): string {
-  return value?.trim() || fallback;
-}
-
-function integerEnv(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
-}
-
-function repositories(context: MailFlowContext): Repositories {
-  return createD1Repositories(context.env.DB);
-}
-
-function attachmentServiceFor(context: MailFlowContext, repo = repositories(context)): AttachmentService | null {
-  if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return null;
-  const { storageAuth } = configFor(context);
-  return createAttachmentService(
-    repo.attachments,
-    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => {
-      try {
-        return (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken;
-      } catch (error) {
-        console.warn("OneDrive token refresh failed", {
-          name: error instanceof Error ? error.name : "unknown",
-          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
-        });
-        throw error;
-      }
-    }),
-  );
-}
-
-function attachmentInfrastructureAvailable(context: MailFlowContext): boolean {
-  return resolveMailTransport(context.env.MAIL_TRANSPORT) === "smtp";
-}
-
-function hasSmtpSendScope(scopes: readonly string[]): boolean {
-  return scopes.some((scope) => {
-    const normalized = scope.trim().toLowerCase();
-    return normalized === "smtp.send" || normalized.endsWith("/smtp.send");
-  });
-}
-
-async function smtpAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
-  if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return false;
-  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "smtp");
-  return Boolean(token && hasSmtpSendScope(token.grantedScopes));
-}
-
-function hasOneDriveAppFolderScope(scopes: readonly string[]): boolean {
-  return scopes.some((scope) => {
-    const normalized = scope.trim().toLowerCase();
-    return normalized === "files.readwrite.appfolder" || normalized.endsWith("/files.readwrite.appfolder");
-  });
-}
-
-async function oneDriveAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
-  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "onedrive");
-  return Boolean(token && hasOneDriveAppFolderScope(token.grantedScopes));
-}
-
-function publicAttachmentSet(set: AttachmentSetRecord): Record<string, unknown> {
-  // Upload keys, owner identifiers, expiry timestamps, and deletion details
-  // are server metadata. The browser only needs this bounded progress shape.
-  return {
-    id: set.id,
-    fileCount: set.fileCount,
-    totalBytes: set.totalBytes,
-    state: set.state,
-  };
-}
-
-function publicAttachmentFile(file: AttachmentFileRecord): Record<string, unknown> {
-  // Never expose the private OneDrive locator through any API response.
-  return {
-    id: file.id,
-    originalFilename: file.originalFilename,
-    mediaType: file.mediaType,
-    byteSize: file.byteSize,
-    sha256: file.sha256,
-    position: file.position,
-  };
-}
-
-/**
- * Resolve and verify the immutable attachment set associated with a campaign.
- * The association is intentionally discovered through D1 rather than a
- * client-supplied identifier, so queue payloads and campaign reads never need
- * to carry attachment bytes or private object keys.
- */
-export async function loadCampaignAttachments(
-  repo: Repositories,
-  service: AttachmentService,
-  campaign: CampaignRecord,
-): Promise<readonly MailAttachment[]> {
-  const set = await repo.attachments.getSetByCampaignId(campaign.id);
-  if (!set) return [];
-  if (set.ownerUserId !== campaign.ownerUserId || set.state === "deleted") {
-    throw new AttachmentError("integrity_error", "The campaign attachment set is no longer available");
-  }
-  if (set.fileCount < 1) {
-    throw new AttachmentError("integrity_error", "The campaign attachment set is empty");
-  }
-  const payloads: readonly AttachmentPayload[] = await service.readSet(campaign.ownerUserId, set.id);
-  const totalBytes = payloads.reduce((total, payload) => total + payload.bytes.byteLength, 0);
-  if (payloads.length !== set.fileCount || totalBytes !== set.totalBytes) {
-    throw new AttachmentError("integrity_error", "The campaign attachment metadata does not match its files");
-  }
-  return payloads.map(({ file, bytes }) => ({
-    filename: file.originalFilename,
-    contentType: file.mediaType,
-    content: bytes,
-  }));
-}
-
-export async function cleanupCampaignAttachments(
-  repo: Repositories,
-  service: AttachmentService | null,
-  campaignId: string,
-): Promise<void> {
-  if (!service) return;
-  const set = await repo.attachments.getSetByCampaignId(campaignId);
-  if (set) await service.cleanupSetBytes(set.id);
-}
-
-function applicationOrigin(context: MailFlowContext): string {
-  const requestUrl = new URL(context.req.url);
-  if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) return requestUrl.origin;
-  const configured = textEnv(context.env.PUBLIC_ORIGIN);
-  if (!configured) return requestUrl.origin;
-  try {
-    return new URL(configured).origin;
-  } catch {
-    return requestUrl.origin;
-  }
-}
-
-function sameOrigin(context: MailFlowContext): boolean {
-  const requestUrl = new URL(context.req.url);
-  if (applicationOrigin(context) !== requestUrl.origin) return false;
-  const origin = context.req.header("Origin");
-  if (origin) {
-    try {
-      if (new URL(origin).origin !== requestUrl.origin) return false;
-    } catch {
-      return false;
-    }
-  }
-  const fetchSite = context.req.header("Sec-Fetch-Site");
-  return !fetchSite || fetchSite === "same-origin" || fetchSite === "same-site" || fetchSite === "none";
-}
-
-function publicUser(user: MailFlowVariables["user"]): Record<string, unknown> {
-  return {
-    id: user.id,
-    displayName: user.displayName,
-    principalName: user.principalName,
-    mailboxAddress: user.mailboxAddress,
-  };
-}
-
-function publicFlow(flow: FlowRecord): Record<string, unknown> {
-  return { ...flow };
-}
-
-function publicCampaign(campaign: CampaignRecord): Record<string, unknown> {
-  const { idempotencyKey: _idempotencyKey, ...safe } = campaign;
-  void _idempotencyKey;
-  return safe;
-}
-
-function publicJob(job: RecipientJobRecord): Record<string, unknown> {
-  return {
-    id: job.id,
-    campaignId: job.campaignId,
-    sourceRow: job.sourceRow,
-    recipient: job.recipient,
-    cc: job.cc,
-    bcc: job.bcc,
-    replyTo: job.replyTo,
-    importance: job.importance ?? "normal",
-    status: job.status,
-    attemptCount: job.attemptCount,
-    claimedAt: job.claimedAt,
-    sendingAt: job.sendingAt,
-    acceptedAt: job.acceptedAt,
-    nextAttemptAt: job.nextAttemptAt,
-    lastErrorCategory: job.lastErrorCategory,
-    lastErrorMessage: job.lastErrorMessage,
-    providerMessageId: job.providerMessageId,
-    providerRequestId: job.providerRequestId,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-  };
-}
-
-function responseError(
-  context: MailFlowContext,
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503,
-  code: string,
-  message: string,
-  issues?: readonly unknown[],
-): Response {
-  return context.json({ error: { code, message, ...(issues && issues.length > 0 ? { issues } : {}) } }, status);
-}
-
-function attachmentErrorResponse(context: MailFlowContext, error: unknown): Response {
-  if (!(error instanceof AttachmentError)) {
-    console.warn("Attachment request failed", {
-      name: error instanceof Error ? error.name : "unknown",
-      code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
-    });
-    return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
-  }
-  const status: 400 | 404 | 409 | 413 | 422 | 503 =
-    error.code === "not_found" ? 404
-      : error.code === "immutable" || error.code === "already_associated" ? 409
-        : error.code === "size_limit_exceeded" ? 413
-          : error.code === "storage_error" || error.code === "integrity_error" ? 503
-            : 422;
-  const message = error.code === "storage_error" || error.code === "integrity_error"
-    ? "Campaign attachments are temporarily unavailable. Try again shortly."
-    : error.message;
-  return responseError(context, status, `attachment_${error.code}`, message);
-}
-
-async function bodyJson(context: MailFlowContext): Promise<unknown | null> {
-  try {
-    return await context.req.json<unknown>();
-  } catch {
-    return null;
-  }
-}
-
-async function requireSession(context: MailFlowContext): Promise<{ user: MailFlowVariables["user"]; sessionToken: string; csrfToken: string } | Response> {
-  const sessionToken = parseCookie(context.req.header("Cookie"), SESSION_COOKIE_NAME);
-  if (!sessionToken) return responseError(context, 401, "not_authenticated", "Sign in with your USM Microsoft account to continue.");
-  const repo = repositories(context);
-  const sessionStore = createD1AuthStores(context.env.DB).sessionStore;
-  const session = await readSession(sessionStore, sessionToken);
-  if (!session) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
-  const user = await repo.users.getById(session.userId);
-  if (!user) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
-  const csrfToken = await csrfTokenFor(context, sessionToken);
-  await renewSession(sessionStore, session);
-  context.header("Set-Cookie", serializeCookie(SESSION_COOKIE_NAME, sessionToken, {
-    secure: new URL(context.req.url).protocol === "https:",
-    sameSite: "Lax",
-    path: "/",
-    maxAgeSeconds: DEFAULT_SESSION_TTL_SECONDS,
-  }), { append: true });
-  return { user: {
-    id: user.id,
-    tenantId: user.tenantId,
-    objectId: user.objectId,
-    displayName: user.displayName,
-    principalName: user.principalName,
-    mailboxAddress: user.mailboxAddress,
-  }, sessionToken, csrfToken };
-}
-
-async function csrfTokenFor(context: MailFlowContext, sessionToken: string): Promise<string> {
-  const secret = textEnv(context.env.SESSION_SECRET);
-  if (!secret) throw new Error("SESSION_SECRET is not configured");
-  const token = await createCsrfToken(sessionToken, secret);
-  // CSRF is intentionally readable by browser JavaScript.  The session and
-  // OAuth state cookies remain HttpOnly.
-  const cookie = serializeCookie(CSRF_COOKIE_NAME, token, {
-    secure: new URL(context.req.url).protocol === "https:",
-    sameSite: "Lax",
-    path: "/",
-    maxAgeSeconds: DEFAULT_SESSION_TTL_SECONDS,
-  }).replace("; HttpOnly", "");
-  context.header("Set-Cookie", cookie, { append: true });
-  return token;
-}
-
-async function requireMutationSession(context: MailFlowContext): Promise<{ user: MailFlowVariables["user"]; sessionToken: string; csrfToken: string } | Response> {
-  if (!sameOrigin(context)) return responseError(context, 403, "same_origin_required", "This action must come from the Mail Flow website.");
-  const authenticated = await requireSession(context);
-  if (authenticated instanceof Response) return authenticated;
-  const provided = context.req.header("X-CSRF-Token") ?? context.req.header("X-XSRF-TOKEN");
-  const secret = textEnv(context.env.SESSION_SECRET);
-  if (!secret || !(await verifyCsrfToken(authenticated.sessionToken, provided, secret))) {
-    return responseError(context, 403, "csrf_failed", "Refresh the page and try the action again.");
-  }
-  return authenticated;
-}
-
-function configFor(context: MailFlowContext, redirectOrigin?: string): { graph: GraphMailProvider; smtp: ExchangeOnlineSmtpClient; auth: MicrosoftAuthService; storageAuth: MicrosoftAuthService; mailTransport: MailTransport } {
-  const tenantId = textEnv(context.env.ENTRA_TENANT_ID);
-  const clientId = textEnv(context.env.ENTRA_CLIENT_ID);
-  const clientSecret = textEnv(context.env.ENTRA_CLIENT_SECRET);
-  const tokenSecret = textEnv(context.env.TOKEN_ENCRYPTION_KEY_B64);
-  const sessionSecret = textEnv(context.env.SESSION_SECRET);
-  if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
-  const origin = redirectOrigin ?? applicationOrigin(context);
-  const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
-  const mailTransport = resolveMailTransport(context.env.MAIL_TRANSPORT);
-  const config = {
-    tenantId,
-    clientId,
-    clientSecret,
-    redirectUri,
-    ...(mailTransport === "smtp" ? { scopes: SMTP_ENTRA_SCOPES } : {}),
-  };
-  const graph = new GraphMailProvider({ requestTimeoutMs: 30_000 });
-  const smtp = new ExchangeOnlineSmtpClient({ timeoutMs: 30_000 });
-  const stores = createD1AuthStores(context.env.DB);
-  const auth = new MicrosoftAuthService(config, mailTransport === "graph" ? graph : null, {
-    userStore: stores.userStore,
-    sessionStore: stores.sessionStore,
-    tokenStore: stores.tokenStore,
-    stateStore: stores.stateStore,
-    stateSecret: sessionSecret,
-    tokenEncryptionSecret: tokenSecret,
-    secureCookies: new URL(context.req.url).protocol === "https:",
-    sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
-    sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
-  });
-  const storageAuth = new MicrosoftAuthService({
-    tenantId,
-    clientId,
-    clientSecret,
-    redirectUri,
-    scopes: ONEDRIVE_ENTRA_SCOPES,
-  }, null, {
-    userStore: stores.userStore,
-    sessionStore: stores.sessionStore,
-    tokenStore: stores.tokenStore,
-    stateStore: stores.stateStore,
-    stateSecret: sessionSecret,
-    tokenEncryptionSecret: tokenSecret,
-    secureCookies: new URL(context.req.url).protocol === "https:",
-    sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
-    sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
-  });
-  return { graph, smtp, auth, storageAuth, mailTransport };
-}
-
-function routeParam(context: MailFlowContext, name: string): string {
-  return context.req.param(name) ?? "";
-}
-
-function audit(
-  repo: Repositories,
-  eventType: AuditEventType,
-  values: { actorUserId?: string | null; campaignId?: string | null; recipientJobId?: string | null; metadata?: Record<string, unknown> },
-): Promise<void> {
-  return repo.audit.append({
-    id: id("audit"),
-    actorUserId: values.actorUserId ?? null,
-    campaignId: values.campaignId ?? null,
-    recipientJobId: values.recipientJobId ?? null,
-    eventType,
-    metadata: values.metadata ?? {},
-    createdAt: nowIso(),
-  });
-}
-
-function recipientAddressIssues(result: ReturnType<typeof validateRecipientRows>): readonly Record<string, unknown>[] {
-  return result.issues.map((issue) => ({ code: issue.code, field: issue.field, row: issue.row, message: issue.message }));
-}
-
-type RecipientConfigurationInput = {
-  toField: string;
-  ccField?: string | null;
-  bccField?: string | null;
-  replyToField?: string | null;
-  ccFixed?: string | null;
-  bccFixed?: string | null;
-  replyToFixed?: string | null;
-  placeholderMappings?: Readonly<Record<string, string>>;
-  importance?: "low" | "normal" | "high";
-  separator: "comma" | "semicolon" | "newline" | "auto";
-};
-
-/**
- * Normalize recipient settings at the persistence boundary. The JSON stored
- * by older template versions contains only the mapped column fields, so all
- * newly introduced values are optional on input and receive stable defaults
- * here. Fixed values and placeholder mappings are kept in the template
- * version; campaign rows still carry the already-resolved, validated values.
- */
-function versionConfigFromInput(input: RecipientConfigurationInput): RecipientConfiguration {
-  const placeholderMappings: Record<string, string> = {};
-  for (const [placeholder, field] of Object.entries(input.placeholderMappings ?? {})) {
-    const normalizedPlaceholder = placeholder.trim();
-    const normalizedField = field.trim();
-    if (normalizedPlaceholder && normalizedField) placeholderMappings[normalizedPlaceholder] = normalizedField;
-  }
-  return {
-    toField: input.toField.trim(),
-    ccField: input.ccField?.trim() || null,
-    bccField: input.bccField?.trim() || null,
-    replyToField: input.replyToField?.trim() || null,
-    ccFixed: input.ccFixed?.trim() || null,
-    bccFixed: input.bccFixed?.trim() || null,
-    replyToFixed: input.replyToFixed?.trim() || null,
-    placeholderMappings,
-    importance: input.importance ?? "normal",
-    separator: input.separator,
-  };
-}
-
-async function createTemplateVersion(
-  repo: Repositories,
-  flow: FlowRecord,
-  input: { subjectTemplate: string; bodyHtml: string; placeholderManifest?: readonly string[]; recipientConfiguration: TemplateVersionRecord["recipientConfiguration"] },
-): Promise<TemplateVersionRecord> {
-  const subject = validateTemplateSubject(input.subjectTemplate);
-  if (!subject.ok) throw new Error(subject.message);
-  const body = validateTemplateHtml(input.bodyHtml);
-  if (!body.ok) throw new Error(body.message);
-  const versions = await repo.templateVersions.listByFlow(flow.id);
-  const version: TemplateVersionRecord = {
-    id: id("template"),
-    flowId: flow.id,
-    version: (versions[0]?.version ?? 0) + 1,
-    subjectTemplate: subject.subject,
-    bodyHtml: body.html,
-    recipientConfiguration: input.recipientConfiguration,
-    placeholderManifest: templatePlaceholders(subject.subject, body.html),
-    createdAt: nowIso(),
-  };
-  await repo.templateVersions.create(version);
-  const updatedFlow: FlowRecord = { ...flow, currentTemplateVersionId: version.id, updatedAt: version.createdAt };
-  await repo.flows.update(updatedFlow);
-  return version;
-}
-
-function csvValue(value: string): string {
-  const safe = /^[=+\-@]/u.test(value) ? `'${value}` : value;
-  return /[",\r\n]/u.test(safe) ? `"${safe.replace(/"/gu, '""')}"` : safe;
-}
-
-function jobCsv(jobs: readonly RecipientJobRecord[]): string {
-  const columns = ["row_number", "recipient", "status", "attempt_count", "created_at", "claimed_at", "sending_at", "accepted_at", "last_error_category", "last_error_message"];
-  const lines = [columns.join(",")];
-  for (const job of jobs) {
-    lines.push([
-      String(job.sourceRow),
-      job.recipient,
-      job.status,
-      String(job.attemptCount),
-      job.createdAt,
-      job.claimedAt ?? "",
-      job.sendingAt ?? "",
-      job.acceptedAt ?? "",
-      job.lastErrorCategory ?? "",
-      job.lastErrorMessage ?? "",
-    ].map(csvValue).join(","));
-  }
-  return `${lines.join("\r\n")}\r\n`;
-}
-
-async function enqueueTick(context: MailFlowContext, campaignId: string): Promise<void> {
-  if (!context.env.CAMPAIGN_QUEUE || typeof context.env.CAMPAIGN_QUEUE.send !== "function") throw new Error("Campaign queue is not configured on this Worker");
-  await cloudflareQueueAdapter(context.env.CAMPAIGN_QUEUE).enqueue({ type: "campaign.tick", campaignId }, { delaySeconds: 0 });
-}
-
-async function parseOrError<T>(context: MailFlowContext, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: import("zod").ZodError } }): Promise<T | Response> {
-  const raw = await bodyJson(context);
-  if (raw === null) return responseError(context, 400, "invalid_json", "Send a valid JSON request body.");
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) return responseError(context, 422, "invalid_input", "Review the highlighted fields and try again.", validationIssues(parsed.error));
-  return parsed.data;
-}
 
 // --- Authentication -------------------------------------------------------
 
