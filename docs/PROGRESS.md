@@ -500,3 +500,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved the user, flow, and template-version D1 adapters into dedicated modules. The existing `d1.ts` facade continues to export their classes and compose the same repository factory.
 - Extracted adapter blocks match the prior implementations; SQL, row mapping, JSON fallbacks, and behavior remain unchanged.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the database-scoped whitespace check.
+
+### 2026-09-03 - Authentication API route extraction
+
+- Moved Microsoft sign-in, the shared Microsoft and OneDrive callback, OneDrive consent start, logout, and `/api/me` registration into a dedicated authentication route module.
+- The root Hono application registers the extracted routes at the same position. Composed route order, cookies, response contracts, and permission gates remain unchanged.
+- Focused authentication security tests and TypeScript checks passed at the extraction checkpoint. A repository-wide rerun follows the concurrent database and frontend phases.
