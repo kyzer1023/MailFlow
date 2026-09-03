@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, BracketsCurly, CaretLeft, CaretRight, Check, CheckCircle, Clock,
   Code, DownloadSimple, Envelope, Eraser, FileArrowUp, FileCsv, Files, FlowArrow, Gauge,
@@ -51,14 +51,15 @@ import { formatDate } from "./lib/format";
 import { localAttachmentId } from "./lib/ids";
 import { splitFixedAddresses, uniqueValidationIssues, validationIssueAction } from "./lib/review";
 import { columnOptions, displayCampaign, displayFlow, findColumn } from "./lib/view-models";
+import { DynamicValueChip } from "./components/common/DynamicValueChip";
+import { Field } from "./components/common/Field";
+import { StatusChip } from "./components/common/StatusChip";
+import { AppShell } from "./components/shell/AppShell";
+import { Brand } from "./components/shell/Brand";
 import { useSignOut } from "./hooks/use-sign-out";
 import { AppDataProvider, useApi } from "./state/api-context";
 import { DraftProvider, useDraft } from "./state/draft-context";
 import { RequireProductSession } from "./routing/RequireProductSession";
-
-function Brand({ compact = false }) {
-  return <Link className={`brand ${compact ? "brand--compact" : ""}`} to="/" aria-label="MailFlow home"><img src="/assets/mailflow-logo-horizontal.png" alt="MailFlow" /></Link>;
-}
 
 function LandingAction({ compact = false, allowSignOut = false }) {
   const { status, user } = useApi();
@@ -84,24 +85,6 @@ function LandingPage() {
     </main>
   </div>;
 }
-
-function Sidebar() {
-  const { user } = useApi();
-  const { signOut, signingOut, signOutError } = useSignOut();
-  const navItems = [["/dashboard", "Overview", House], ["/flows", "Flows", FlowArrow], ["/campaigns", "Campaigns", PaperPlaneTilt]];
-  const initials = user?.displayName?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "US";
-  return <aside className="sidebar"><div className="sidebar-brand"><Brand /></div><p className="society-name">For student societies</p><nav aria-label="Product navigation">{navItems.map(([to, label, Icon]) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon weight="bold" /><span>{label}</span></NavLink>)}</nav><div className="sidebar-bottom">{signOutError && <p className="sidebar-error" role="alert">{signOutError}</p>}<div className="member-card"><span className="avatar">{initials}</span><span><strong>{user?.displayName || "USM member"}</strong><small>{user?.mailboxAddress || user?.principalName || "Signed in with Microsoft"}</small></span><button type="button" title="Sign out" aria-label="Sign out" onClick={() => void signOut()} disabled={signingOut}>{signingOut ? <SpinnerGap className="spin" /> : <SignOut />}</button></div></div></aside>;
-}
-
-function SupportFooter() {
-  return <footer className="support-footer">Need help? Contact us at <a href="mailto:support@example.org">support@example.org</a></footer>;
-}
-
-function AppShell({ children }) {
-  return <div className="app-frame"><a className="skip-link" href="#main">Skip to content</a><Sidebar /><main className="workspace" id="main"><div className="workspace-content">{children}</div><SupportFooter /></main></div>;
-}
-
-function StatusChip({ status, children }) { return <span className={`status status--${status}`}><span aria-hidden="true" />{children || status}</span>; }
 
 function FlowCard({ flow, loading = false, removing = false, confirmingRemove = false, onUse, onEdit, onBeginRemove, onCancelRemove, onConfirmRemove, compact = false }) {
   const busy = loading || removing;
@@ -198,11 +181,6 @@ function WizardStepper({ current }) {
   </div>;
 }
 function WizardShell({ current, title, subtitle, actions, children }) { return <AppShell><WizardStepper current={current} /><div className="page wizard-page"><header className="page-header wizard-header"><div><h1>{title}</h1><p>{subtitle}</p></div><div className="header-actions">{actions}</div></header>{children}</div></AppShell>; }
-function Field({ label, children, hint, error, errorId }) { return <label className={`field${error ? " field--error" : ""}`}><span>{label}</span>{children}{error ? <small className="field-error" id={errorId} role="alert">{error}</small> : hint && <small>{hint}</small>}</label>; }
-
-function DynamicValueChip({ value, options = [], compact = false }) {
-  return <span className={`dynamic-value-chip${compact ? " dynamic-value-chip--compact" : ""}`}><BracketsCurly weight="bold" aria-hidden="true" />{dynamicFieldLabel(value, options)}</span>;
-}
 
 export const TokenMessageEditor = forwardRef(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
   const rootRef = useRef(null);

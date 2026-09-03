@@ -566,3 +566,9 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Moved draft, workbook, mapping, attachment, and campaign state into a typed draft context while preserving state across wizard route navigation.
 - Kept upload serialization, cancellation generations, source-file retry references, attachment-set promise reuse, cleanup, and reset behavior together within the provider.
 - Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and `git diff --check`.
+
+### 2026-09-03 - Typed frontend shell components
+
+- Moved the brand, navigation sidebar, support footer, application shell, status chip, field wrapper, and dynamic-value chip into typed shared component modules.
+- Preserved their markup, classes, icons, active navigation, sign-out behavior, keyboard behavior, and visible copy while leaving route-specific and interactive components for later phases.
+- Verification passed: TypeScript checks, both production builds, 15 test files, all 122 tests, and the frontend-scoped whitespace check.
