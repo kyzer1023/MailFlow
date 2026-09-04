@@ -1,3 +1,5 @@
+import { isValidEmail } from "../domain/validation";
+export { isValidEmail } from "../domain/validation";
 import {
   DEFAULT_PACE_PER_MINUTE,
   estimateCampaignDurationSeconds,
@@ -15,7 +17,6 @@ import type {
 
 export const DEFAULT_CLIENT_CAMPAIGN_LIMIT = 300;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
 
 export type AddressValue = string | readonly string[] | null | undefined;
@@ -46,10 +47,7 @@ export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function isValidEmail(value: string): boolean {
-  const normalized = normalizeEmail(value);
-  return normalized.length <= 320 && EMAIL_PATTERN.test(normalized);
-}
+
 
 function splitPattern(separator: AddressSeparator): RegExp {
   switch (separator) {
@@ -233,7 +231,7 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
 
   const placeholders = extractPlaceholders(input.subjectTemplate, input.bodyHtml);
   for (const placeholder of placeholders) {
-    const mappedField = input.mappedFields?.[placeholder]?.trim();
+    const mappedField = (input.mappedFields && Object.hasOwn(input.mappedFields, placeholder) ? input.mappedFields[placeholder] : undefined)?.trim();
     if (!mappedField) {
       issues.push({
         code: "missing_mapping",
@@ -255,9 +253,9 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
   const invalidRows = new Set(rowResult.invalidRows);
   for (const row of rowResult.validRows) {
     for (const placeholder of placeholders) {
-      const mappedField = input.mappedFields?.[placeholder]?.trim();
+      const mappedField = (input.mappedFields && Object.hasOwn(input.mappedFields, placeholder) ? input.mappedFields[placeholder] : undefined)?.trim();
       if (!mappedField) continue;
-      const value = row.mergeData[mappedField];
+      const value = Object.hasOwn(row.mergeData, mappedField) ? row.mergeData[mappedField] : undefined;
       if (value === undefined || value.trim() === "") {
         issues.push({
           code: "empty_required_value",

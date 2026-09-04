@@ -1,3 +1,10 @@
+import { assertOfficePackage, decodeFileText } from "../domain/attachment-policy";
+
+export const SPREADSHEET_MAX_BYTES = 20 * 1024 * 1024;
+const MAX_SOURCE_ROWS = 10_000;
+const MAX_COLUMNS = 100;
+const MAX_CELL_LENGTH = 20_000;
+
 import ExcelJS from "exceljs";
 import type {
   ParsedSpreadsheet,
@@ -65,7 +72,7 @@ export function normalizeHeaderKey(label: string, fallback = "column"): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, "_")
     .replace(/^_+|_+$/gu, "") || "column";
-  const key = normalized || safeFallback;
+  const key = (normalized || safeFallback).slice(0, 148);
   return /^[a-z]/u.test(key) ? key : `${safeFallback}_${key}`;
 }
 
@@ -100,14 +107,8 @@ export function normalizeHeaders(labels: readonly string[]): readonly Spreadshee
  * BOMs are accepted as a convenience for files exported by desktop Excel.
  */
 export function decodeSpreadsheetText(input: ArrayBuffer | Uint8Array): string {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return new TextDecoder("utf-16le").decode(bytes.subarray(2));
-  }
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return new TextDecoder("utf-16be").decode(bytes.subarray(2));
-  }
-  return new TextDecoder("utf-8").decode(bytes);
+  try { return decodeFileText(input instanceof Uint8Array ? input : new Uint8Array(input)); }
+  catch { throw new SpreadsheetParseError("invalid_content", "The CSV must contain valid UTF-8 or BOM-marked UTF-16 text."); }
 }
 
 /**
@@ -120,6 +121,9 @@ export function parseCsvText(text: string, delimiter = ","): readonly RawSpreads
     throw new SpreadsheetParseError("invalid_content", "CSV delimiter must be one character.");
   }
 
+  if (text.length > SPREADSHEET_MAX_BYTES || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) {
+    throw new SpreadsheetParseError("invalid_content", "The CSV contains unsupported content or is too large.");
+  }
   const source = text.replace(/^\uFEFF/u, "");
   if (!source) return [];
 
@@ -127,20 +131,25 @@ export function parseCsvText(text: string, delimiter = ","): readonly RawSpreads
   let values: string[] = [];
   let value = "";
   let inQuotes = false;
+  let closedQuote = false;
   let rowNumber = 1;
 
   const pushValue = (): void => {
+    assertCellBounds(values.length + 1, value);
     values.push(value);
     value = "";
+    closedQuote = false;
   };
   const pushRow = (): void => {
     // A terminal newline does not represent an additional spreadsheet row.
+    if (rowNumber > MAX_SOURCE_ROWS) throw new SpreadsheetParseError("invalid_content", "Imports are limited to 10,000 source rows.");
     rows.push({ sourceRow: rowNumber, values: values.slice() });
     values = [];
     rowNumber += 1;
   };
 
   for (let index = 0; index < source.length; index += 1) {
+    if (value.length > MAX_CELL_LENGTH) throw new SpreadsheetParseError("invalid_content", "Spreadsheet cells are limited to 20,000 characters.");
     const character = source[index];
     if (inQuotes) {
       if (character === '"') {
@@ -149,6 +158,7 @@ export function parseCsvText(text: string, delimiter = ","): readonly RawSpreads
           index += 1;
         } else {
           inQuotes = false;
+          closedQuote = true;
         }
       } else {
         value += character;
@@ -156,7 +166,11 @@ export function parseCsvText(text: string, delimiter = ","): readonly RawSpreads
       continue;
     }
 
-    if (character === '"' && value.length === 0) {
+    if (closedQuote && character !== delimiter && character !== "\n" && character !== "\r") {
+      throw new SpreadsheetParseError("invalid_content", "The CSV contains text after a closing quote.");
+    }
+    if (character === '"' && value.length > 0) throw new SpreadsheetParseError("invalid_content", "The CSV contains an unexpected quote.");
+    if (character === '"' && value.length === 0 && !closedQuote) {
       inQuotes = true;
     } else if (character === delimiter) {
       pushValue();
@@ -214,12 +228,21 @@ function worksheetVisibility(state: unknown): SpreadsheetWorksheet["visibility"]
   return "visible";
 }
 
+function assertCellBounds(column: number, value: string): void {
+  if (column > MAX_COLUMNS || value.length > MAX_CELL_LENGTH) {
+    throw new SpreadsheetParseError("invalid_content", "Imports allow 100 columns and 20,000 characters per cell.");
+  }
+}
+
 function worksheetToRows(worksheet: ExcelJS.Worksheet): readonly RawSpreadsheetRow[] {
   const rows: RawSpreadsheetRow[] = [];
+  if (worksheet.rowCount > MAX_SOURCE_ROWS || worksheet.columnCount > MAX_COLUMNS) throw new SpreadsheetParseError("invalid_content", "Imports allow 10,000 source rows and 100 columns.");
   worksheet.eachRow((row, rowNumber) => {
     const values: string[] = [];
     for (let column = 1; column <= row.cellCount; column += 1) {
-      values.push(cellValueToString(row.getCell(column).value));
+      const value = cellValueToString(row.getCell(column).value);
+      assertCellBounds(column, value);
+      values.push(value);
     }
     // ExcelJS may expose a formatting-only row. It is not useful as input,
     // and omitting it avoids creating thousands of empty records in exports.
@@ -231,6 +254,8 @@ function worksheetToRows(worksheet: ExcelJS.Worksheet): readonly RawSpreadsheetR
 /** Parse an XLSX ArrayBuffer with ExcelJS in the browser. */
 export async function parseXlsx(input: ArrayBuffer | Uint8Array, fileName: string | null = null): Promise<ParsedSpreadsheet> {
   try {
+    if (input.byteLength > SPREADSHEET_MAX_BYTES) throw new SpreadsheetParseError("invalid_content", "Spreadsheet files must be 20 MiB or smaller.");
+    assertOfficePackage(new Uint8Array(toArrayBuffer(input)), ".xlsx");
     const workbook = new ExcelJS.Workbook();
     // ExcelJS's browser build accepts ArrayBuffer at runtime while its
     // declaration retains the Node Buffer type. Keep the cast at this adapter
@@ -273,6 +298,12 @@ function looksLikeXlsx(input: ArrayBuffer | Uint8Array): boolean {
 }
 
 function inferFormat(input: SpreadsheetInput, options: ParseSpreadsheetOptions): SpreadsheetFormat {
+  if (options.fileName && !/\.(csv|xlsx)$/iu.test(options.fileName)) {
+    throw new SpreadsheetParseError("unsupported_format", "Choose a CSV or XLSX spreadsheet.");
+  }
+  if (options.format && options.fileName && !options.fileName.toLowerCase().endsWith(`.${options.format}`)) {
+    throw new SpreadsheetParseError("unsupported_format", "The spreadsheet format and filename do not match.");
+  }
   if (options.format) return options.format;
   const fileName = options.fileName?.toLocaleLowerCase() ?? "";
   if (fileName.endsWith(".xlsx")) return "xlsx";
@@ -285,6 +316,7 @@ export async function parseSpreadsheet(
   input: SpreadsheetInput,
   options: ParseSpreadsheetOptions = {},
 ): Promise<ParsedSpreadsheet> {
+  if ((typeof input === "string" ? new TextEncoder().encode(input).byteLength : input.byteLength) > SPREADSHEET_MAX_BYTES) throw new SpreadsheetParseError("invalid_content", "Spreadsheet files must be 20 MiB or smaller.");
   const format = inferFormat(input, options);
   if (format === "csv") {
     if (typeof input === "string") return parseCsv(input, { fileName: options.fileName, delimiter: options.csvDelimiter });

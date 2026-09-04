@@ -19,22 +19,7 @@ import type {
   RepresentativeRow,
 } from "./types";
 
-const ATTACHMENT_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
-  ".pdf": "application/pdf",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".csv": "text/csv",
-  ".txt": "text/plain",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-};
-
-const ATTACHMENT_ALLOWED_MIMES = new Set(Object.values(ATTACHMENT_MIME_BY_EXTENSION));
+import { normalizeAttachmentContentType, sanitizeAttachmentFilename } from "../domain/attachment-policy";
 
 export type AttachmentCandidate = Pick<File, "name" | "size" | "type">;
 
@@ -51,23 +36,15 @@ export interface AttachmentSelectionResult {
   readonly rejected: readonly AttachmentSelectionError[];
 }
 
-function attachmentExtension(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot >= 0 ? name.slice(dot).toLowerCase() : "";
-}
-
-/** Infer the safe media type when a browser omits File.type. */
+/** Infer only supported, extension-matching media types. */
 export function attachmentMediaType(file: AttachmentCandidate): string {
-  const extensionType = ATTACHMENT_MIME_BY_EXTENSION[attachmentExtension(file.name)];
-  return file.type || extensionType || "application/octet-stream";
+  try { return normalizeAttachmentContentType(sanitizeAttachmentFilename(file.name), file.type); }
+  catch { return "application/octet-stream"; }
 }
 
 export function isSupportedAttachment(file: AttachmentCandidate): boolean {
-  const extensionType = ATTACHMENT_MIME_BY_EXTENSION[attachmentExtension(file.name)];
-  if (!extensionType) return false;
-  // Some browsers report application/octet-stream for known local files. The
-  // extension still has to be an explicitly supported one in that case.
-  return !file.type || file.type === "application/octet-stream" || ATTACHMENT_ALLOWED_MIMES.has(file.type);
+  try { normalizeAttachmentContentType(sanitizeAttachmentFilename(file.name), file.type); return true; }
+  catch { return false; }
 }
 
 /** Validate a native multi-file selection before any upload begins. */
@@ -88,7 +65,7 @@ export function validateAttachmentSelection(
     if (file.size <= 0) {
       error = { ...base, code: "empty", message: "Empty files cannot be attached." };
     } else if (!isSupportedAttachment(file)) {
-      error = { ...base, code: "unsupported", message: "This file type is not supported. Choose PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG." };
+      error = { ...base, code: "unsupported", message: "This file type is not supported. Choose PDF, DOCX, XLSX, PPTX, CSV, TXT, PNG, or JPEG." };
     } else if (seenNames.has(file.name.trim().toLocaleLowerCase())) {
       error = { ...base, code: "duplicate", message: "This file was already added." };
     } else if (active.length + accepted.length >= ATTACHMENT_MAX_FILES) {

@@ -108,8 +108,8 @@ export function registerFlowRoutes(app: Hono<MailFlowAppEnv>): void {
         recipientConfiguration: versionConfigFromInput(input.recipientConfiguration),
       });
       return context.json({ version }, 201);
-    } catch (errorValue) {
-      const message = errorValue instanceof Error ? errorValue.message : "The template could not be saved.";
+    } catch {
+      const message = "The template could not be saved. Try again shortly.";
       return responseError(context, 422, "invalid_template", message);
     }
   });

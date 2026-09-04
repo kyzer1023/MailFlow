@@ -201,8 +201,8 @@ function renderString(
 ): string {
   TEMPLATE_PLACEHOLDER_PATTERN.lastIndex = 0;
   return template.replace(TEMPLATE_PLACEHOLDER_PATTERN, (_token, placeholder: string) => {
-    const sourceField = fieldMappings?.[placeholder] ?? placeholder;
-    const value = values[sourceField];
+    const sourceField = fieldMappings && Object.hasOwn(fieldMappings, placeholder) ? fieldMappings[placeholder] : placeholder;
+    const value = Object.hasOwn(values, sourceField) ? values[sourceField] : undefined;
     if (value === undefined || value === null) {
       missing.add(placeholder);
       return "";

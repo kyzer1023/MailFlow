@@ -6,10 +6,9 @@
  * domain or attachment policy modules.
  */
 
-export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES } from "../../domain/attachment-policy";
+export { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES, ATTACHMENT_MAX_FILENAME_LENGTH } from "../../domain/attachment-policy";
 export const ATTACHMENT_ORPHAN_TTL_MS = 24 * 60 * 60 * 1000;
-export const ATTACHMENT_MAX_FILENAME_LENGTH = 120;
 
 // Descriptive aliases make the limits easy to discover at call sites.
 export const MAX_ATTACHMENT_FILES = ATTACHMENT_MAX_FILES;
@@ -122,46 +121,4 @@ export interface AttachmentPayload {
   bytes: Uint8Array;
 }
 
-export type AttachmentErrorCode =
-  | "invalid_input"
-  | "invalid_filename"
-  | "unsupported_type"
-  | "empty_file"
-  | "executable_content"
-  | "file_limit_exceeded"
-  | "size_limit_exceeded"
-  | "duplicate_file"
-  | "not_found"
-  | "immutable"
-  | "already_associated"
-  | "authorization_error"
-  | "network_error"
-  | "throttled"
-  | "service_unavailable"
-  | "missing_object"
-  | "storage_error"
-  | "storage_missing"
-  | "storage_temporary"
-  | "integrity_error";
-
-/** A policy or storage error that the API can map without parsing messages. */
-export class AttachmentError extends Error {
-  readonly code: AttachmentErrorCode;
-  /** True only when no provider submission occurred and an automatic retry is safe. */
-  readonly transient: boolean;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(
-    code: AttachmentErrorCode,
-    message: string,
-    options: { transient?: boolean; retryAfterSeconds?: number | null } = {},
-  ) {
-    super(message);
-    this.name = "AttachmentError";
-    this.code = code;
-    this.transient = options.transient === true;
-    this.retryAfterSeconds = Number.isFinite(options.retryAfterSeconds)
-      ? Math.max(1, Math.floor(options.retryAfterSeconds!))
-      : null;
-  }
-}
+export { AttachmentError, type AttachmentErrorCode } from "../../domain/attachment-policy";

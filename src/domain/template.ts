@@ -28,11 +28,11 @@ export function renderTemplate(
   escapeValue: (value: unknown) => string = escapeHtml,
 ): string {
   return template.replace(/\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu, (_match, key: string) => {
-    return escapeValue(values[key] ?? "");
+    return escapeValue(Object.hasOwn(values, key) ? values[key] : "");
   });
 }
 
 export function missingTemplateValues(template: string, values: TemplateValues): string[] {
-  return extractPlaceholders(template, "").filter((key) => values[key] === undefined || values[key] === null || String(values[key]).trim() === "");
+  return extractPlaceholders(template, "").filter((key) => !Object.hasOwn(values, key) || values[key] === undefined || values[key] === null || String(values[key]).trim() === "");
 }
 

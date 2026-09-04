@@ -1,7 +1,9 @@
+import { isValidEmail } from "../../domain/validation";
 import { z } from "zod";
 import { MAX_RECIPIENT_SNAPSHOT_BYTES } from "../../domain/campaign-limits";
 
 const nonEmpty = (max: number) => z.string().trim().min(1).max(max);
+const mailbox = nonEmpty(320).refine(isValidEmail, "Enter one valid email address.");
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
 const optionalRecipientField = (max: number) => z.string().trim().max(max).nullable().optional().default(null);
 const optionalAddressText = (max: number) => z.string().trim().max(max).nullable().optional().default(null);
@@ -29,10 +31,10 @@ const mergeDataSchema = z.record(z.string().trim().min(1).max(160), z.string().m
 
 export const campaignRecipientSchema = z.object({
   sourceRow: z.number().int().min(1).max(1_000_000),
-  to: nonEmpty(320),
-  cc: z.array(nonEmpty(320)).max(50).default([]),
-  bcc: z.array(nonEmpty(320)).max(50).default([]),
-  replyTo: z.array(nonEmpty(320)).max(50).default([]),
+  to: mailbox,
+  cc: z.array(mailbox).max(50).default([]),
+  bcc: z.array(mailbox).max(50).default([]),
+  replyTo: z.array(mailbox).max(50).default([]),
   mergeData: mergeDataSchema.default({}),
   renderedSubject: nonEmpty(998),
   renderedBodyHtml: nonEmpty(200_000),
@@ -100,9 +102,9 @@ export const testSendSchema = z.object({
   sourceRow: z.number().int().min(1).max(1_000_000),
   subject: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
-  cc: z.array(nonEmpty(320)).max(50).default([]),
-  bcc: z.array(nonEmpty(320)).max(50).default([]),
-  replyTo: z.array(nonEmpty(320)).max(50).default([]),
+  cc: z.array(mailbox).max(50).default([]),
+  bcc: z.array(mailbox).max(50).default([]),
+  replyTo: z.array(mailbox).max(50).default([]),
   importance: z.enum(["low", "normal", "high"]).default("normal"),
 }).strict();
 

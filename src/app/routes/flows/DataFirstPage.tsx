@@ -1,3 +1,4 @@
+import { SPREADSHEET_MAX_BYTES } from "../../../client/spreadsheet";
 import { ArrowLeft, ArrowRight, CheckCircle, FileArrowUp, FileCsv, Rows, SpinnerGap, Users, WarningCircle } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import { useState, type ChangeEvent } from "react";
@@ -41,9 +42,12 @@ export function DataFirstPage() {
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setWorkbook(null);
+    setTable(null);
     setUploadState("loading");
     setUploadError("");
     try {
+      if (file.size > SPREADSHEET_MAX_BYTES) throw new Error("Spreadsheet files must be 20 MiB or smaller.");
       const parsed = await parseSpreadsheet(await file.arrayBuffer(), { fileName: file.name });
       setWorkbook(parsed);
       const first = parsed.worksheets.find((item) => item.visibility === "visible") || parsed.worksheets[0];

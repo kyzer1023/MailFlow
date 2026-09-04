@@ -1,27 +1,14 @@
+import { MIME_BY_EXTENSION } from "../domain/attachment-policy";
 import type { AddressSeparator, MailImportance } from "../domain/types";
 
 /** File formats accepted by the browser import step. */
 export type SpreadsheetFormat = "csv" | "xlsx";
 
 /** Limits for the first campaign attachment delivery path. */
-export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+export { ATTACHMENT_MAX_FILES, ATTACHMENT_MAX_BYTES } from "../domain/attachment-policy";
 
 /** File types accepted by the browser attachment picker. */
-export const ATTACHMENT_ACCEPT = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".csv",
-  ".txt",
-  ".png",
-  ".jpg",
-  ".jpeg",
-].join(",");
+export const ATTACHMENT_ACCEPT = Object.keys(MIME_BY_EXTENSION).join(",");
 
 export type AttachmentUploadStatus = "uploading" | "ready" | "error";
 

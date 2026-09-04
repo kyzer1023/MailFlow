@@ -1,3 +1,4 @@
+import { boundedMultipartForm, RequestBodyTooLarge } from "../request-body";
 import type { Hono } from "hono";
 import {
   ATTACHMENT_MAX_BYTES,
@@ -73,8 +74,11 @@ export function registerAttachmentRoutes(app: Hono<MailFlowAppEnv>): void {
     if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
     let uploaded: FormDataEntryValue | null = null;
     try {
-      uploaded = (await context.req.raw.formData()).get("file");
-    } catch {
+      const form = await boundedMultipartForm(context.req.raw, ATTACHMENT_MAX_BYTES + 64 * 1024);
+      if ([...form.keys()].length !== 1) return responseError(context, 422, "invalid_input", "Choose one attachment file per upload.");
+      uploaded = form.get("file");
+    } catch (error) {
+      if (error instanceof RequestBodyTooLarge) return responseError(context, 413, "attachment_size_limit_exceeded", "The combined attachment size exceeds 20 MiB.");
       return responseError(context, 422, "invalid_input", "Choose an attachment file and try again.");
     }
     if (!uploaded || typeof uploaded === "string" || typeof uploaded.arrayBuffer !== "function" || typeof uploaded.name !== "string") {
