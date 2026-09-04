@@ -571,7 +571,7 @@ describe("authenticated information architecture", () => {
     expect(document.body.textContent).not.toMatch(/wake_|attempt_|lease_/u);
   });
 
-  it("shows every recipient job in the campaign monitor", async () => {
+  it("pages every recipient job within the campaign monitor", async () => {
     window.history.replaceState({}, "", "/campaigns/campaign-full-list");
     const campaign = {
       id: "campaign-full-list",
@@ -625,9 +625,30 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("recipient108@example.test")).toBeInTheDocument();
-    expect(screen.getAllByRole("row")).toHaveLength(109);
-    expect(screen.getByText("All 108 recipient jobs shown")).toBeInTheDocument();
+    expect(await screen.findByText("recipient001@example.test")).toBeInTheDocument();
+    expect(screen.getByText("recipient009@example.test")).toBeInTheDocument();
+    expect(screen.queryByText("recipient010@example.test")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(10);
+    expect(screen.getByText("Showing 1-9 of 108 recipient jobs")).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 12")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous recipient jobs page" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next recipient jobs page" }));
+
+    expect(screen.queryByText("recipient001@example.test")).not.toBeInTheDocument();
+    expect(screen.getByText("recipient010@example.test")).toBeInTheDocument();
+    expect(screen.getByText("recipient018@example.test")).toBeInTheDocument();
+    expect(screen.getByText("Showing 10-18 of 108 recipient jobs")).toBeInTheDocument();
+    expect(screen.getByText("Page 2 of 12")).toBeInTheDocument();
+
+    for (let page = 2; page < 12; page += 1) {
+      fireEvent.click(screen.getByRole("button", { name: "Next recipient jobs page" }));
+    }
+
+    expect(screen.getByText("recipient108@example.test")).toBeInTheDocument();
+    expect(screen.getByText("Showing 100-108 of 108 recipient jobs")).toBeInTheDocument();
+    expect(screen.getByText("Page 12 of 12")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next recipient jobs page" })).toBeDisabled();
     expect(mockedGetCampaignJobs).toHaveBeenCalledWith("campaign-full-list", 500, 0);
   });
 });

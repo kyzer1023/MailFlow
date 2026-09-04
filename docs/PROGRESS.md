@@ -728,3 +728,12 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Deployed production Worker version `e0248ac1-dec0-4be8-bc50-3f172f448dab` to `https://mailflow.kyzer-hono-test.workers.dev` with the existing production D1, Queue producer and consumer, static assets, SMTP configuration, and hourly schedule.
 - Non-sending hosted smoke checks passed: landing `200 text/html`, the newly built JavaScript asset `200 text/javascript`, unauthenticated `/api/me` `401 application/json`, and an unknown API route `404 application/json`. Deployment status confirmed the new version receives 100 percent of production traffic.
 - No Microsoft authorization, test-send, campaign creation, real mail, recipient contact, or production campaign-data mutation was performed.
+
+### 2026-09-05 - Fixed-height recipient pagination
+
+- Replaced the unbounded recipient-job table with nine-row client-side pages while retaining the API's 500-row fetch, so every job remains reachable without allowing the campaign monitor to grow indefinitely.
+- Added explicit visible-range and page-count feedback plus keyboard-accessible Previous and Next controls with disabled boundary states.
+- Matched the desktop Recipient Jobs panel to the complete right-hand audit column height. Below the desktop breakpoint, the existing stacked responsive layout keeps its natural content height.
+- Expanded the 108-recipient component regression to verify the first, second, and final pages, including row 108 and both pagination boundaries. `npm test` passed TypeScript, both production builds, 21 test files, and all 158 tests; `git diff --check` also passed.
+- Local in-app browser QA passed at the 1909 by 911 reference viewport using synthetic local campaign data. The Recipient Jobs panel and audit column measured the same 633.58 px height, keyboard pagination advanced from rows 1-9 to 10-18, and the narrower layout stacked without clipping. No Microsoft authorization, mail submission, campaign creation, deployment, or production data access occurred.
+- Refined the pagination controls to compact arrow-only buttons while retaining descriptive accessible names, native hover titles, disabled boundary states, and 40 px targets.

@@ -53,6 +53,41 @@
   z-index: 3;
 }
 
+.campaign-page .jobs-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.campaign-page .jobs-panel .table-footer {
+  margin-top: auto;
+}
+
+.campaign-page .table-pagination {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ink);
+}
+
+.campaign-page .table-pagination > span {
+  min-width: 5.8rem;
+  text-align: center;
+  font: 650 .68rem var(--font-mono);
+}
+
+.campaign-page .table-pagination .button {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+@media (min-width: 1181px) {
+  .campaign-page .campaign-lower {
+    align-items: stretch;
+  }
+}
+
 /* The desktop receipt artwork is intentionally removed before the narrow
    workspace has to stack the monitor columns. Keeping the facts on a solid
    Paper surface prevents the transparent artwork from obscuring them. */
@@ -170,8 +205,14 @@
   }
 
   .campaign-page .table-footer {
+    align-items: flex-start;
     gap: .75rem;
     flex-wrap: wrap;
+  }
+
+  .campaign-page .table-pagination {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .campaign-page .audit-copy {

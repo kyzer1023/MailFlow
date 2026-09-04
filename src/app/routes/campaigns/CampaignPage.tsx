@@ -1,4 +1,6 @@
 import {
+  CaretLeft,
+  CaretRight,
   Check,
   Clock,
   DownloadSimple,
@@ -33,6 +35,7 @@ import { useApi } from "../../state/api-context";
 type CampaignAction = "idle" | "pause" | "resume";
 
 const CAMPAIGN_JOB_PAGE_SIZE = 500;
+const RECIPIENT_JOBS_PER_PAGE = 9;
 
 export function CampaignPage() {
   const { campaignId } = useParams<{ campaignId: string }>();
@@ -44,6 +47,7 @@ export function CampaignPage() {
   const [loadError, setLoadError] = useState("");
   const [actionState, setActionState] = useState<CampaignAction>("idle");
   const [copied, setCopied] = useState(false);
+  const [jobPage, setJobPage] = useState(1);
   const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
@@ -58,6 +62,10 @@ export function CampaignPage() {
       setCampaignState(campaignResponse.campaign);
       setCounts(campaignResponse.counts);
       setJobs(jobsResponse.jobs);
+      setJobPage((currentPage) => Math.min(
+        currentPage,
+        Math.max(1, Math.ceil(jobsResponse.jobs.length / RECIPIENT_JOBS_PER_PAGE)),
+      ));
       setLoadError("");
     } catch (error) {
       if (sequence !== loadSequence.current) return;
@@ -69,6 +77,7 @@ export function CampaignPage() {
   }, [campaignId]);
 
   useEffect(() => {
+    setJobPage(1);
     void load();
     if (!campaignId) return undefined;
     const timer = window.setInterval(() => void load(), 5000);
@@ -105,6 +114,11 @@ export function CampaignPage() {
     ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
   ];
   const displayJobs = jobs || [];
+  const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
+  const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
+  const visibleJobs = displayJobs.slice(firstJobIndex, firstJobIndex + RECIPIENT_JOBS_PER_PAGE);
+  const firstVisibleJob = displayJobs.length > 0 ? firstJobIndex + 1 : 0;
+  const lastVisibleJob = Math.min(firstJobIndex + RECIPIENT_JOBS_PER_PAGE, displayJobs.length);
   const sender = campaignState?.senderAddress || user?.mailboxAddress || "Sender not available";
   const statusKind = campaignState?.state || "unknown";
   const waiting = Boolean(campaignState?.schedulerMessage && ["queued", "running"].includes(campaignState.state));
@@ -255,7 +269,7 @@ export function CampaignPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {displayJobs.map((job) => {
+                      {visibleJobs.map((job) => {
                         const status = job.status;
                         const note = job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
                         return (
@@ -276,7 +290,32 @@ export function CampaignPage() {
                     </tbody>
                   </table>
                 </div>
-                <footer className="table-footer"><span>All {displayJobs.length} recipient jobs shown</span></footer>
+                <footer className="table-footer">
+                  <span>Showing {firstVisibleJob}-{lastVisibleJob} of {displayJobs.length} recipient jobs</span>
+                  <nav className="table-pagination" aria-label="Recipient job pages">
+                    <button
+                      className="button button--outline button--small"
+                      type="button"
+                      aria-label="Previous recipient jobs page"
+                      title="Previous page"
+                      onClick={() => setJobPage((page) => Math.max(1, page - 1))}
+                      disabled={jobPage === 1}
+                    >
+                      <CaretLeft aria-hidden="true" />
+                    </button>
+                    <span aria-live="polite">Page {jobPage} of {jobPageCount}</span>
+                    <button
+                      className="button button--outline button--small"
+                      type="button"
+                      aria-label="Next recipient jobs page"
+                      title="Next page"
+                      onClick={() => setJobPage((page) => Math.min(jobPageCount, page + 1))}
+                      disabled={jobPage === jobPageCount}
+                    >
+                      <CaretRight aria-hidden="true" />
+                    </button>
+                  </nav>
+                </footer>
               </>
             ) : (
               <div className="empty-state">{campaignState ? "Recipient jobs will appear as the campaign starts." : "Loading recipient jobs..."}</div>
