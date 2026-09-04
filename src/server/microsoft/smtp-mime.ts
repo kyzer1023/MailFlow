@@ -1,11 +1,15 @@
 import { Buffer } from "node:buffer";
 import type { MailAttachment, MailMessage } from "../../domain/mail-provider";
+import { sha256Hex } from "../auth/crypto";
 
 const encoder = new TextEncoder();
 const BASE64_INPUT_CHUNK_BYTES = 57 * 1024;
 
-export const MAX_SMTP_ATTACHMENTS = 20;
+export const MAX_SMTP_ATTACHMENTS = 5;
 export const MAX_SMTP_RAW_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_SMTP_HTML_BODY_BYTES = 1024 * 1024;
+export const MAX_SMTP_SUBJECT_BYTES = 4 * 1024;
+export const MAX_SMTP_MIME_CHUNK_BYTES = 80 * 1024;
 
 function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -35,7 +39,7 @@ function wrapBase64(value: string): string {
 
 function requireAddress(value: string): string {
   const address = value.trim();
-  if (!address || /[^\x21-\x7e]/.test(address) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+  if (!address || address.length > 320 || /[^\x21-\x7e]/.test(address) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
     throw new Error("A mail recipient address is invalid");
   }
   return address;
@@ -49,11 +53,13 @@ function requireHeader(value: string, label: string): string {
 function filenameParameter(filename: string): string {
   const clean = requireHeader(filename.trim(), "Attachment filename");
   if (!clean) throw new Error("Attachment filename is required");
+  if (encoder.encode(clean).byteLength > 512) throw new Error("Attachment filename exceeds the MIME safety limit");
   return `UTF-8''${encodeURIComponent(clean).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`;
 }
 
 function contentType(attachment: MailAttachment): string {
   const value = requireHeader(attachment.contentType.trim(), "Attachment content type").toLowerCase();
+  if (value.length > 200) throw new Error("Attachment content type exceeds the MIME safety limit");
   return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(value) ? value : "application/octet-stream";
 }
 
@@ -85,6 +91,10 @@ function* attachmentBodyChunks(content: Uint8Array): Generator<string> {
   }
 }
 
+function* encodedBodyChunks(content: Uint8Array): Generator<string> {
+  yield* attachmentBodyChunks(content);
+}
+
 export interface MimeBuildOptions {
   senderAddress: string;
   boundary?: string;
@@ -94,6 +104,7 @@ export interface MimeBuildOptions {
 
 interface PreparedMimeMessage {
   headers: string[];
+  htmlBody: Uint8Array;
   attachments: readonly {
     attachment: MailAttachment;
     headers: string;
@@ -106,8 +117,18 @@ function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): Pr
   const to = requireAddress(message.to);
   const cc = message.cc.map(requireAddress);
   const replyTo = message.replyTo.map(requireAddress);
-  message.bcc.map(requireAddress);
+  const bcc = message.bcc.map(requireAddress);
+  if (cc.length > 50 || bcc.length > 50 || replyTo.length > 50) {
+    throw new Error("A mail recipient header contains too many addresses");
+  }
   const subject = requireHeader(message.subject, "Subject");
+  if (encoder.encode(subject).byteLength > MAX_SMTP_SUBJECT_BYTES) {
+    throw new Error("The mail subject exceeds MailFlow's MIME safety limit");
+  }
+  const htmlBody = encoder.encode(message.htmlBody);
+  if (htmlBody.byteLength > MAX_SMTP_HTML_BODY_BYTES) {
+    throw new Error("The HTML body exceeds MailFlow's MIME safety limit");
+  }
   const sourceAttachments = [...(message.attachments ?? [])];
   if (sourceAttachments.length > MAX_SMTP_ATTACHMENTS) {
     throw new Error(`A message can contain at most ${MAX_SMTP_ATTACHMENTS} attachments`);
@@ -118,11 +139,13 @@ function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): Pr
   }
   const boundary = options.boundary ?? `mailflow_${crypto.randomUUID().replaceAll("-", "")}`;
   requireHeader(boundary, "MIME boundary");
+  if (!boundary || boundary.length > 200) throw new Error("MIME boundary exceeds the safety limit");
   const attachments = sourceAttachments.map((attachment) => ({
     attachment,
     headers: attachmentHeaders(boundary, attachment),
   }));
   const messageId = requireHeader(options.messageId ?? `<${crypto.randomUUID()}@mailflow.local>`, "Message ID");
+  if (!messageId || messageId.length > 998) throw new Error("Message ID exceeds the MIME safety limit");
   const headers = [
     `From: ${sender}`,
     `To: ${to}`,
@@ -134,7 +157,35 @@ function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): Pr
     ...importanceHeaders(message.importance),
     "MIME-Version: 1.0",
   ];
-  return { headers, attachments, boundary };
+  const preamble = [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+  ].join("\r\n");
+  if (encoder.encode(preamble).byteLength > MAX_SMTP_MIME_CHUNK_BYTES) {
+    throw new Error("MIME headers exceed MailFlow's chunk safety limit");
+  }
+  if (attachments.some((attachment) => encoder.encode(attachment.headers).byteLength > MAX_SMTP_MIME_CHUNK_BYTES)) {
+    throw new Error("Attachment MIME headers exceed MailFlow's chunk safety limit");
+  }
+  return { headers, htmlBody, attachments, boundary };
+}
+
+/** Stable MIME identity for proven pre-submission retries of one send key. */
+export async function smtpMimeIdentityForSendKey(sendKey: string): Promise<Pick<MimeBuildOptions, "boundary" | "messageId">> {
+  const key = sendKey.trim();
+  if (!key || key.length > 300 || /[\u0000-\u001f\u007f]/u.test(key)) {
+    throw new Error("A valid send key is required for deterministic MIME identity");
+  }
+  const digest = await sha256Hex(encoder.encode(key));
+  return {
+    boundary: `mailflow_${digest.slice(0, 32)}`,
+    messageId: `<${digest.slice(0, 48)}@mailflow.local>`,
+  };
 }
 
 /**
@@ -147,20 +198,19 @@ export function buildMimeMessageChunks(message: MailMessage, options: MimeBuildO
   // an SMTP DATA transaction begins.
   const prepared = prepareMimeMessage(message, options);
   return (function* chunks(): Generator<string> {
-    const { headers, attachments, boundary } = prepared;
+    const { headers, htmlBody, attachments, boundary } = prepared;
     if (!attachments.length) {
-      yield [
+      yield `${[
         ...headers,
         'Content-Type: text/html; charset="UTF-8"',
         "Content-Transfer-Encoding: base64",
         "",
-        wrapBase64(utf8Base64(message.htmlBody)),
-        "",
-      ].join("\r\n");
+      ].join("\r\n")}\r\n`;
+      yield* encodedBodyChunks(htmlBody);
       return;
     }
 
-    yield [
+    yield `${[
       ...headers,
       `Content-Type: multipart/mixed; boundary="${boundary}"`,
       "",
@@ -168,9 +218,8 @@ export function buildMimeMessageChunks(message: MailMessage, options: MimeBuildO
       'Content-Type: text/html; charset="UTF-8"',
       "Content-Transfer-Encoding: base64",
       "",
-      wrapBase64(utf8Base64(message.htmlBody)),
-      "",
-    ].join("\r\n");
+    ].join("\r\n")}\r\n`;
+    yield* encodedBodyChunks(htmlBody);
 
     for (const { attachment, headers: attachmentHeaderBlock } of attachments) {
       yield `${attachmentHeaderBlock}\r\n`;

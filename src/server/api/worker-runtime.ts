@@ -8,6 +8,7 @@ import {
 } from "../microsoft";
 import {
   AttachmentError,
+  ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN,
   createAttachmentService,
   OneDriveAppFolderAttachmentStore,
   type AttachmentService,
@@ -55,7 +56,13 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
         attachmentLoader: async (campaign) => {
           const set = await repo.attachments.getSetByCampaignId(campaign.id);
           if (!set) return [];
-          if (!attachmentService) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+          if (!attachmentService) {
+            throw new AttachmentError(
+              "storage_temporary",
+              "Campaign attachments are temporarily unavailable",
+              { transient: true },
+            );
+          }
           return loadCampaignAttachments(repo, attachmentService, campaign);
         },
         attachmentCleanup: async (campaignId) => {
@@ -116,14 +123,18 @@ export async function processScheduledCleanup(bindings: MailFlowBindings): Promi
     repo.attachments,
     new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
   );
-  for (const campaignId of watchdog.completedCampaignIds) {
+  let attachmentCleanupBudget = ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN;
+  for (const campaignId of watchdog.completedCampaignIds.slice(0, attachmentCleanupBudget)) {
     try {
       await cleanupCampaignAttachments(repo, service, campaignId);
     } catch {
       // A later retention pass can retry storage cleanup without reopening the campaign.
     }
+    attachmentCleanupBudget -= 1;
   }
-  await service.cleanupExpiredOrphans(100);
+  if (attachmentCleanupBudget > 0) {
+    await service.cleanupExpiredOrphans(attachmentCleanupBudget);
+  }
 }
 
 /** Compatibility name retained for existing imports and focused tests. */

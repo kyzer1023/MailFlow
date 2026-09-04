@@ -76,4 +76,74 @@ describe("OneDrive App Folder attachment store", () => {
       message: "Reconnect OneDrive before using campaign attachments",
     });
   });
+
+  it("classifies Graph throttles and network failures as transient pre-send storage errors", async () => {
+    const throttled = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      fetchImpl: vi.fn(async () => new Response(null, { status: 429, headers: { "Retry-After": "120" } })) as unknown as typeof fetch,
+    });
+    await expect(throttled.get("user-1", key)).rejects.toMatchObject({
+      code: "storage_temporary",
+      transient: true,
+      retryAfterSeconds: 120,
+    });
+
+    const offline = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      fetchImpl: vi.fn(async () => { throw new TypeError("network unavailable"); }) as unknown as typeof fetch,
+    });
+    await expect(offline.get("user-1", key)).rejects.toMatchObject({
+      code: "storage_temporary",
+      transient: true,
+    });
+  });
+
+  it("reports a file deleted after Graph issued its download redirect", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/special/approot")) return new Response(JSON.stringify({ id: "app-root" }), { status: 200 });
+      if (String(input).startsWith("https://graph.microsoft.test")) {
+        return new Response(null, { status: 302, headers: { Location: "https://download.microsoft.test/content" } });
+      }
+      return new Response(null, { status: 404 });
+    }) as unknown as typeof fetch;
+    const store = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      graphBaseUrl: "https://graph.microsoft.test/v1.0",
+      fetchImpl,
+    });
+
+    await expect(store.get("user-1", key)).rejects.toMatchObject({
+      code: "storage_missing",
+      message: expect.stringContaining("deleted from OneDrive"),
+    });
+  });
+
+  it("stops a changed OneDrive response at the reviewed byte bound", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/special/approot")) return new Response(JSON.stringify({ id: "app-root" }), { status: 200 });
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+    }) as unknown as typeof fetch;
+    const store = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      graphBaseUrl: "https://graph.example.test/v1.0",
+      fetchImpl,
+    });
+    const object = await store.get("user-1", key);
+
+    await expect(object!.arrayBuffer(3)).rejects.toMatchObject({ code: "integrity_error" });
+  });
+
+  it("marks a same-page listing as truncated when the match limit stops scanning", async () => {
+    const names = Array.from({ length: 7 }, (_, index) => ({
+      name: `mailflow-attachment_set_fixture-attachment_file_${index}.bin`,
+    }));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => String(input).includes("/special/approot")
+      ? new Response(JSON.stringify({ id: "app-root" }), { status: 200 })
+      : new Response(JSON.stringify({ value: names }), { status: 200 })) as unknown as typeof fetch;
+    const store = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      graphBaseUrl: "https://graph.example.test/v1.0",
+      fetchImpl,
+    });
+
+    await expect(store.list("user-1", { prefix: "mailflow-attachment_set_fixture-", limit: 5 })).resolves.toMatchObject({
+      truncated: true,
+      objects: expect.arrayContaining(names.slice(0, 5).map(({ name }) => ({ key: name }))),
+    });
+  });
 });

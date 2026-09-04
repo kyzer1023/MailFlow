@@ -49,16 +49,19 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
     const status = errorValue.code === "not_found" ? 404
       : errorValue.code === "immutable" || errorValue.code === "already_associated" ? 409
         : errorValue.code === "size_limit_exceeded" ? 413
-          : errorValue.code === "storage_error" || errorValue.code === "integrity_error" ? 503
+          : errorValue.code === "storage_missing" || errorValue.code === "integrity_error" ? 409
+            : errorValue.code === "storage_error" || errorValue.code === "storage_temporary" ? 503
             : 422;
     return {
+      // Attachment loading is completed before the provider boundary, so a
+      // deliberate retry with the same test-send key cannot duplicate mail.
       safeToRetry: true,
+      retryAfter: errorValue.retryAfterSeconds,
+      category: errorValue.code,
       failure: {
         status,
         code: `attachment_${errorValue.code}`,
-        message: errorValue.code === "storage_error" || errorValue.code === "integrity_error"
-          ? "Campaign attachments are temporarily unavailable. Try again shortly."
-          : errorValue.message,
+        message: errorValue.message,
       },
     };
   }
@@ -90,6 +93,22 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
       ? errorValue.category
       : null;
   return { safeToRetry, retryAfter, category, failure: { status, code: "test_send_failed", message } };
+}
+
+function campaignAttachmentFailureMessage(error: unknown): string {
+  if (!(error instanceof AttachmentError)) {
+    return "The campaign attachments could not be verified. No message was sent.";
+  }
+  if (error.code === "storage_missing") {
+    return "A campaign attachment was deleted from OneDrive. No message was sent.";
+  }
+  if (error.code === "integrity_error") {
+    return "A campaign attachment changed in OneDrive and no longer matches the reviewed file. No message was sent.";
+  }
+  if (error.code === "storage_error") {
+    return "OneDrive access for these campaign attachments is no longer available. No message was sent.";
+  }
+  return "The campaign attachments could not be verified. No message was sent.";
 }
 
 /** Register campaign test-send and state mutation routes. */
@@ -140,7 +159,13 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
           let attachments: readonly MailAttachment[] = [];
           if (attachmentSet) {
             const service = attachmentServiceFor(context, repo);
-            if (!service) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+            if (!service) {
+              throw new AttachmentError(
+                "storage_temporary",
+                "Campaign attachments are temporarily unavailable. Try again shortly",
+                { transient: true },
+              );
+            }
             attachments = await loadCampaignAttachments(repo, service, campaign);
           }
           const { auth, graph, smtp, mailTransport } = configFor(context);
@@ -239,23 +264,23 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   }
   const attachmentService = attachmentServiceFor(context, repo);
   if (attachmentSet && !attachmentService) {
-    const error = new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
-    const failed = await repo.campaigns.fail(campaign.id, nowIso(), "The campaign attachments could not be verified. No message was sent.");
-    const latest = failed ? null : await repo.campaigns.getById(campaign.id);
-    if (failed || latest?.state === "completed" || latest?.state === "failed") {
-      try {
-        await cleanupCampaignAttachments(repo, attachmentService, campaign.id);
-      } catch {
-        // Scheduled cleanup will retry when storage is available again.
-      }
-    }
-    return attachmentErrorResponse(context, error);
+    return attachmentErrorResponse(
+      context,
+      new AttachmentError(
+        "storage_temporary",
+        "Campaign attachments are temporarily unavailable. Try again shortly",
+        { transient: true },
+      ),
+    );
   }
   if (attachmentSet && attachmentService) {
     try {
       await loadCampaignAttachments(repo, attachmentService, campaign);
     } catch (error) {
-      const failed = await repo.campaigns.fail(campaign.id, nowIso(), "The campaign attachments could not be verified. No message was sent.");
+      if (error instanceof AttachmentError && error.transient) {
+        return attachmentErrorResponse(context, error);
+      }
+      const failed = await repo.campaigns.fail(campaign.id, nowIso(), campaignAttachmentFailureMessage(error));
       const latest = failed ? null : await repo.campaigns.getById(campaign.id);
       if (failed || latest?.state === "completed" || latest?.state === "failed") {
         try {

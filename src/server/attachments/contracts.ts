@@ -60,7 +60,8 @@ export interface AttachmentObjectPutOptions {
 }
 
 export interface AttachmentObjectBody {
-  arrayBuffer(): Promise<ArrayBuffer>;
+  /** Read no more than the caller's verified metadata bound. */
+  arrayBuffer(maxBytes?: number): Promise<ArrayBuffer>;
   readonly size?: number;
 }
 
@@ -134,15 +135,28 @@ export type AttachmentErrorCode =
   | "immutable"
   | "already_associated"
   | "storage_error"
+  | "storage_missing"
+  | "storage_temporary"
   | "integrity_error";
 
 /** A policy or storage error that the API can map without parsing messages. */
 export class AttachmentError extends Error {
   readonly code: AttachmentErrorCode;
+  /** True only when no provider submission occurred and an automatic retry is safe. */
+  readonly transient: boolean;
+  readonly retryAfterSeconds: number | null;
 
-  constructor(code: AttachmentErrorCode, message: string) {
+  constructor(
+    code: AttachmentErrorCode,
+    message: string,
+    options: { transient?: boolean; retryAfterSeconds?: number | null } = {},
+  ) {
     super(message);
     this.name = "AttachmentError";
     this.code = code;
+    this.transient = options.transient === true;
+    this.retryAfterSeconds = Number.isFinite(options.retryAfterSeconds)
+      ? Math.max(1, Math.floor(options.retryAfterSeconds!))
+      : null;
   }
 }

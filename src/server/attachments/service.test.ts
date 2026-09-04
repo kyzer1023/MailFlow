@@ -24,7 +24,10 @@ class MemoryObjectStore implements AttachmentObjectStore {
     if (!value) return null;
     return {
       size: value.byteLength,
-      async arrayBuffer() {
+      async arrayBuffer(maxBytes?: number) {
+        if (maxBytes !== undefined && value.byteLength > maxBytes) {
+          throw new Error("bounded read exceeded");
+        }
         return value.slice().buffer;
       },
     };
@@ -259,6 +262,44 @@ describe("attachment service", () => {
     expect((await repository.listFiles(first.set.id, true))[0]?.deletedAt).toBeTruthy();
   });
 
+  it("distinguishes deleted OneDrive bytes from changed bytes before a send", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, objectStore } = createService(now);
+    const first = await service.createSet("user-1", "missing-and-changed");
+    const result = await addText(service, "user-1", first.set.id, "reviewed");
+
+    objectStore.values.delete(result.file.objectKey);
+    await expect(service.readSet("user-1", first.set.id)).rejects.toMatchObject({
+      code: "storage_missing",
+      message: expect.stringContaining("deleted from OneDrive"),
+      transient: false,
+    });
+
+    objectStore.values.set(result.file.objectKey, new TextEncoder().encode("longer than reviewed"));
+    await expect(service.readSet("user-1", first.set.id)).rejects.toMatchObject({
+      code: "integrity_error",
+      message: expect.stringContaining("changed in OneDrive"),
+      transient: false,
+    });
+  });
+
+  it("rejects inconsistent set totals before reading any OneDrive object", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, repository, objectStore } = createService(now);
+    const first = await service.createSet("user-1", "metadata-corruption");
+    await addText(service, "user-1", first.set.id, "reviewed");
+    const stored = repository.sets.get(first.set.id)!;
+    repository.sets.set(first.set.id, { ...stored, totalBytes: ATTACHMENT_MAX_BYTES + 1 });
+    let reads = 0;
+    objectStore.get = async () => {
+      reads += 1;
+      return null;
+    };
+
+    await expect(service.readSet("user-1", first.set.id)).rejects.toMatchObject({ code: "integrity_error" });
+    expect(reads).toBe(0);
+  });
+
   it("retries failed orphan cleanup after the object store recovers", async () => {
     const now = { value: "2026-09-02T00:00:00.000Z" };
     const { service, repository, objectStore } = createService(now);
@@ -273,6 +314,26 @@ describe("attachment service", () => {
     objectStore.failDelete = false;
     const cleaned = await service.cleanupExpiredOrphans();
     expect(cleaned.deleted).toBe(1);
+    expect((await repository.getSetById(first.set.id))?.state).toBe("deleted");
+  });
+
+  it("bounds untracked-object cleanup and resumes it on the next pass", async () => {
+    const now = { value: "2026-09-02T00:00:00.000Z" };
+    const { service, repository, objectStore } = createService(now);
+    const first = await service.createSet("user-1", "bounded-cleanup");
+    for (let index = 0; index < 7; index += 1) {
+      objectStore.values.set(`mailflow-${first.set.id}-attachment_file_orphan_${index}.bin`, new Uint8Array([index]));
+    }
+    now.value = "2026-09-03T00:00:01.000Z";
+
+    const firstPass = await service.cleanupExpiredOrphans();
+    expect(firstPass.deleted).toBe(0);
+    expect(objectStore.deleted).toHaveLength(5);
+    expect((await repository.getSetById(first.set.id))?.state).toBe("open");
+
+    const secondPass = await service.cleanupExpiredOrphans();
+    expect(secondPass.deleted).toBe(1);
+    expect(objectStore.deleted).toHaveLength(7);
     expect((await repository.getSetById(first.set.id))?.state).toBe("deleted");
   });
 

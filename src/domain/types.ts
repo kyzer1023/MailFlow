@@ -158,6 +158,7 @@ export type AuditEventType =
   | "campaign.completed"
   | "campaign.failed"
   | "campaign.mailbox_waiting"
+  | "campaign.attachment_waiting"
   | "campaign.wake_recovered"
   | "test_send.requested"
   | "test_send.accepted"

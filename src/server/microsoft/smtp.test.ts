@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { MailMessage } from "../../domain/mail-provider";
 import { delegatedSmtpMailProvider } from "./smtp-adapter";
-import { buildMimeMessage, smtpEnvelopeRecipients } from "./smtp-mime";
+import {
+  buildMimeMessage,
+  buildMimeMessageChunks,
+  MAX_SMTP_HTML_BODY_BYTES,
+  MAX_SMTP_MIME_CHUNK_BYTES,
+  smtpEnvelopeRecipients,
+  smtpMimeIdentityForSendKey,
+} from "./smtp-mime";
 import { ExchangeOnlineSmtpClient } from "./smtp";
 import type { SmtpConnect, SmtpSocketLike } from "./smtp";
 import { sendProviderTestToSelf } from "./test-send";
@@ -136,6 +143,34 @@ describe("SMTP MIME generation", () => {
   it("rejects header injection and oversized attachment collections", () => {
     expect(() => buildMimeMessage(message({ subject: "hello\r\nBcc: attacker@example.test" }), { senderAddress: "sender@example.test" })).toThrow("Subject");
     expect(() => buildMimeMessage(message({ attachments: [{ filename: "large.bin", contentType: "application/octet-stream", content: new Uint8Array(20 * 1024 * 1024 + 1) }] }), { senderAddress: "sender@example.test" })).toThrow("20 MiB");
+    const sixFiles = Array.from({ length: 6 }, (_, index) => ({
+      filename: `${index}.txt`,
+      contentType: "text/plain",
+      content: new Uint8Array([index]),
+    }));
+    expect(() => buildMimeMessage(message({ attachments: sixFiles }), { senderAddress: "sender@example.test" })).toThrow("at most 5 attachments");
+    expect(() => buildMimeMessage(message({ htmlBody: "x".repeat(MAX_SMTP_HTML_BODY_BYTES + 1) }), { senderAddress: "sender@example.test" })).toThrow("HTML body");
+  });
+
+  it("keeps MIME output chunks bounded and derives a stable retry identity", async () => {
+    const content = new Uint8Array(1024 * 1024 + 17);
+    content.fill(0xab);
+    const chunks = [...buildMimeMessageChunks(message({
+      htmlBody: "<p>" + "body".repeat(25_000) + "</p>",
+      attachments: [{ filename: "bounded.bin", contentType: "application/octet-stream", content }],
+    }), {
+      senderAddress: "sender@example.test",
+      boundary: "bounded_boundary",
+      messageId: "<bounded@mailflow.local>",
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    })];
+    expect(Math.max(...chunks.map((chunk) => new TextEncoder().encode(chunk).byteLength))).toBeLessThanOrEqual(MAX_SMTP_MIME_CHUNK_BYTES);
+
+    const first = await smtpMimeIdentityForSendKey("campaign-1:row-1");
+    const retry = await smtpMimeIdentityForSendKey("campaign-1:row-1");
+    const other = await smtpMimeIdentityForSendKey("campaign-1:row-2");
+    expect(retry).toEqual(first);
+    expect(other).not.toEqual(first);
   });
 });
 

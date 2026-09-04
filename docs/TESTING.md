@@ -22,7 +22,7 @@
 - State transition guards and unique send keys.
 - Graph and SMTP error classification, MIME structure, envelope privacy, and STARTTLS/XOAUTH2 state transitions.
 - Attachment filename/type policy, executable signature rejection, duplicate detection, file-count and combined-size limits.
-- Bounded MIME attachment encoding, exact base64 content, pre-terminator retry safety, and post-terminator ambiguity.
+- Bounded MIME HTML and attachment encoding, exact base64 content, the five-file and 20 MiB transport limits, stable safe-retry MIME identity, pre-terminator retry safety, and post-terminator ambiguity.
 - Test-send provider helpers force the authenticated mailbox as the sole envelope recipient and suppress CC, BCC, and Reply-To for Graph and SMTP.
 
 ### Integration
@@ -44,7 +44,8 @@
 - `unknown` behavior for ambiguous transport failures.
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
 - Homepage SMTP-to-OneDrive chaining, separate resource-token persistence, SSO prompt omission, existing-grant and Graph-mode skips, cancellation and provider-failure recovery, identity mismatch rejection, missing-storage skip, safe return targets, and loop prevention.
-- Attachment-set ownership, idempotent creation, immutable association, OneDrive byte integrity, terminal cleanup, and 24-hour orphan cleanup.
+- Attachment-set ownership, idempotent creation, immutable association, aggregate metadata bounds before download, OneDrive deletion and byte-integrity distinction, bounded terminal cleanup, and resumable 24-hour orphan cleanup.
+- OneDrive throttles, service outages, network failures, and interrupted bounded reads retain the pending row and schedule a pre-claim retry. Deleted or changed immutable files fail before claiming a row, creating a delivery attempt, or consuming mailbox budget.
 - Campaign creation and test-send reject attachment sets unless SMTP mode plus stored `SMTP.Send` and `Files.ReadWrite.AppFolder` grants are present.
 - Test-send idempotent replay, changed-fingerprint rejection, safe pre-provider retry, ambiguous-outcome suppression, per-user limits, audit events without recipient jobs, and anonymous OAuth per-client/global limits.
 - Scheduled expiry cleanup drains full OAuth-state, session, rate-counter, and stale test-claim batches while retaining a hard per-run bound.
