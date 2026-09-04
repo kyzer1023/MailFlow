@@ -809,6 +809,16 @@ describe("campaign attachments", () => {
     vi.clearAllMocks();
   });
 
+  it("rejects signature mismatches before creating an attachment set or uploading", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: /Drop files here or choose files/ });
+    const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["plain text"], "fake.pdf", { type: "application/pdf" })] } });
+    expect(await screen.findByText("The file content does not match a supported file format.")).toBeInTheDocument();
+    expect(mockedCreateAttachmentSet).not.toHaveBeenCalled();
+    expect(mockedUploadAttachmentFile).not.toHaveBeenCalled();
+  });
+
   it("uploads multiple files, reports invalid files, supports retry, and removes ready files", async () => {
     let releaseFirstUpload!: () => void;
     const firstUpload = new Promise<void>((resolve) => { releaseFirstUpload = resolve; });
@@ -827,7 +837,7 @@ describe("campaign attachments", () => {
 
     expect(await screen.findByRole("button", { name: /Drop files here or choose files/ })).toBeInTheDocument();
     const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
-    const agenda = new File(["agenda"], "agenda.pdf", { type: "application/pdf" });
+    const agenda = new File(["%PDF-1.7\nagenda"], "agenda.pdf", { type: "application/pdf" });
     const notes = new File(["notes"], "notes.txt", { type: "text/plain" });
     fireEvent.change(input, { target: { files: [agenda, notes] } });
 
@@ -942,7 +952,7 @@ describe("campaign attachments", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue to recipients/ }));
     expect(await screen.findByRole("heading", { name: "Set the sending rules." })).toBeInTheDocument();
     const attachmentInput = document.getElementById("campaign-attachments-input") as HTMLInputElement;
-    fireEvent.change(attachmentInput, { target: { files: [new File(["agenda"], "agenda.pdf", { type: "application/pdf" })] } });
+    fireEvent.change(attachmentInput, { target: { files: [new File(["%PDF-1.7\nagenda"], "agenda.pdf", { type: "application/pdf" })] } });
     await waitFor(() => expect(screen.getByText("Ready")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Continue to review/ }));
     expect(await screen.findByRole("heading", { name: "Review summary" })).toBeInTheDocument();

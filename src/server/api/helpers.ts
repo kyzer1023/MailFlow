@@ -379,7 +379,7 @@ export async function parseOrError<T>(
   schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: import("zod").ZodError } },
   options: { readonly maxBytes?: number; readonly tooLargeCode?: string; readonly tooLargeMessage?: string } = {},
 ): Promise<T | Response> {
-  const raw = await bodyJson(context, options.maxBytes);
+  const raw = await bodyJson(context, options.maxBytes ?? 2 * 1024 * 1024);
   if (raw.kind === "too_large") {
     return responseError(
       context,

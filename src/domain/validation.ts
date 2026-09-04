@@ -50,7 +50,7 @@ export interface CampaignValidationSummary {
   estimatedDurationSeconds: number;
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+const EMAIL_PATTERN = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/iu;
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
 
 export function normalizeEmail(value: string): string {
@@ -59,7 +59,7 @@ export function normalizeEmail(value: string): string {
 
 export function isValidEmail(value: string): boolean {
   const normalized = normalizeEmail(value);
-  return normalized.length <= 320 && EMAIL_PATTERN.test(normalized);
+  return normalized.length <= 254 && normalized.split("@")[0].length <= 64 && EMAIL_PATTERN.test(normalized);
 }
 
 export function parseAddressList(
@@ -203,7 +203,7 @@ export function validateCampaign(input: CampaignValidationInput): CampaignValida
 
   const placeholders = extractPlaceholders(input.subjectTemplate, input.bodyHtml);
   for (const placeholder of placeholders) {
-    if (!input.mappedFields || !input.mappedFields[placeholder]) {
+    if (!input.mappedFields || !Object.hasOwn(input.mappedFields, placeholder) || !input.mappedFields[placeholder]) {
       issues.push({
         code: "missing_mapping",
         field: placeholder,
@@ -216,9 +216,9 @@ export function validateCampaign(input: CampaignValidationInput): CampaignValida
   issues.push(...rowResult.issues);
   for (const row of rowResult.validRows) {
     for (const placeholder of placeholders) {
-      const mappedField = input.mappedFields?.[placeholder];
+      const mappedField = input.mappedFields && Object.hasOwn(input.mappedFields, placeholder) ? input.mappedFields[placeholder] : undefined;
       if (!mappedField) continue;
-      const value = row.mergeData[mappedField];
+      const value = Object.hasOwn(row.mergeData, mappedField) ? row.mergeData[mappedField] : undefined;
       if (value === undefined || value.trim() === "") {
         issues.push({
           code: "empty_required_value",

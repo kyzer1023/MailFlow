@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isCampaignTickMessage } from "./contracts";
 import { safeSourceFilename, validateTemplateHtml, validateTemplateSubject } from "./security";
-import { attachmentSetCreateSchema, campaignCreateSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
+import { attachmentSetCreateSchema, campaignCreateSchema, campaignRecipientSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
 
 describe("Worker API security boundaries", () => {
   it("rejects active HTML and accepts a simple email template", () => {
@@ -18,6 +18,7 @@ describe("Worker API security boundaries", () => {
     expect(validateTemplateHtml('<div style="background:url&lpar;javascript&colon;alert(1)&rpar;">Open</div>')).toMatchObject({ ok: false });
     expect(validateTemplateHtml('<div style="background:url&lpar;&sol;&sol;evil.example/path&rpar;">Open</div>')).toMatchObject({ ok: false });
     expect(validateTemplateHtml('<div style="background:u\\72l(//evil.example/path)">Open</div>')).toMatchObject({ ok: false });
+    expect(validateTemplateHtml("<img/onerror=alert(1)>")).toMatchObject({ ok: false });
     expect(validateTemplateHtml("<script>alert(1)</script>")).toMatchObject({ ok: false });
   });
 
@@ -26,6 +27,8 @@ describe("Worker API security boundaries", () => {
     expect(validateTemplateSubject("forged\r\nBcc: attacker@example.test")).toMatchObject({ ok: false });
     expect(safeSourceFilename("C:\\Users\\member\\invitees.xlsx")).toBe("invitees.xlsx");
     expect(safeSourceFilename("../../invitees.xlsx")).toBe("invitees.xlsx");
+    expect(validateTemplateSubject("Hello\u0000world")).toMatchObject({ ok: false });
+    expect(safeSourceFilename("bad\u0000name.csv")).toBe("badname.csv");
   });
 
   it("validates queue messages at runtime before campaignId is used", () => {
@@ -35,6 +38,15 @@ describe("Worker API security boundaries", () => {
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "" })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: 123 })).toBe(false);
     expect(isCampaignTickMessage(null)).toBe(false);
+  });
+
+  it("requires each resolved metadata entry to be a single mailbox", () => {
+    const row = { sourceRow: 2, to: "member@example.test", renderedSubject: "Hello", renderedBodyHtml: "<p>Hello</p>" };
+    expect(campaignRecipientSchema.safeParse(row).success).toBe(true);
+    for (const field of ["cc", "bcc", "replyTo"]) {
+      expect(campaignRecipientSchema.safeParse({ ...row, [field]: ["one@example.test,two@example.test"] }).success).toBe(false);
+    }
+    expect(campaignRecipientSchema.safeParse({ ...row, to: "member@example.test;other@example.test" }).success).toBe(false);
   });
 
   it("rejects extra campaign fields and unsafe recipient totals", () => {

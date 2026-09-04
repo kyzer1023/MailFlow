@@ -1,3 +1,4 @@
+import { isValidEmail } from "../../domain/validation";
 import { Buffer } from "node:buffer";
 import type { MailAttachment, MailMessage } from "../../domain/mail-provider";
 import { sha256Hex } from "../auth/crypto";
@@ -39,7 +40,7 @@ function wrapBase64(value: string): string {
 
 function requireAddress(value: string): string {
   const address = value.trim();
-  if (!address || address.length > 320 || /[^\x21-\x7e]/.test(address) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+  if (!isValidEmail(address)) {
     throw new Error("A mail recipient address is invalid");
   }
   return address;

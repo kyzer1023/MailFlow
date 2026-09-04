@@ -253,3 +253,13 @@ The Wrangler `staging` environment is a separate Worker with independent D1, Que
 - SMTP MIME permits the same maximum of five files and 20 MiB raw bytes, chunks HTML and base64 attachment output into writes no larger than 80 KiB, and derives a stable MIME boundary and Message-ID from the opaque send key for proven pre-submission retries. This identity is not treated as provider idempotency, and ambiguous submissions are still never retried.
 - User-facing errors do not reveal tokens, Graph response bodies, or internal stack traces.
 - Production configuration is reproducible from `wrangler` configuration, migration files, and documented secret names.
+
+## Input boundary contract (2026-09-05)
+
+New attachment uploads accept only DOCX, XLSX, PPTX, PDF, CSV, TXT, PNG, JPG, and JPEG. Legacy binary DOC, XLS, and PPT are discontinued. Browser preflight and Worker upload use the same pure file policy, including filename normalization, extension-specific MIME aliases, executable rejection, format signatures, and Office ZIP package subtype checks. Generic or absent browser MIME is inferred only for an allowed extension. Text accepts strict UTF-8 or BOM-marked UTF-16 and rejects binary controls. These checks identify formats, not malware or full document validity. Existing immutable attachment snapshots are not rewritten.
+
+Office packages must have consistent local/central ZIP names, bounded entry counts and declared expansion, and the expected document part plus packaging metadata. Encrypted, ZIP64, ambiguous subtype, and macro-bearing packages are unsupported. Spreadsheet imports remain browser-only CSV/XLSX, with a 20 MiB file limit, 10,000 source rows, 100 columns, and 20,000 characters per cell; the campaign limit remains 300 selected recipient rows. The API retains its 8 MiB campaign request ceiling; all other JSON mutation bodies have a 2 MiB streaming ceiling. Template persistence failures expose only a stable recovery message.
+
+Mailbox validation uses one ASCII dot-atom rule across browser, domain, and SMTP MIME boundaries; display-name syntax, controls, delimiters within a mailbox, and malformed labels are rejected before submission. Dynamic template lookups use only own properties, so absent fields cannot resolve inherited JavaScript properties.
+
+Multipart upload counts actual streamed bytes through the 20 MiB plus 64 KiB envelope limit even without Content-Length, and accepts exactly one file field.

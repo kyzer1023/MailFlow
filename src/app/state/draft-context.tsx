@@ -1,3 +1,4 @@
+import { validateAttachmentInput } from "../../domain/attachment-policy";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createAttachmentSet as createAttachmentSetRequest,
@@ -139,6 +140,8 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       : attachment));
     attachmentSourcesRef.current.set(localId, file);
     try {
+      validateAttachmentInput({ filename: file.name, contentType: file.type, bytes: await file.arrayBuffer() });
+      if (attachmentGenerationRef.current !== generation) return;
       const setId = await ensureAttachmentSet();
       if (attachmentGenerationRef.current !== generation) return;
       const response = await uploadAttachmentFileRequest(setId, file, csrfToken);

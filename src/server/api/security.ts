@@ -37,7 +37,7 @@ export function validateTemplateHtml(value: string): { ok: true; html: string } 
   // Reject scripting, active document elements, event handlers, and unsafe
   // URL schemes.  This is intentionally fail-closed for the server boundary.
   const forbiddenTag = /<\/?(?:script|iframe|object|embed|form|svg|math|style|meta|link|base|input|textarea|select|video|audio|template)\b/iu;
-  const eventHandler = /\son[a-z][a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/iu;
+  const eventHandler = /(?:\s|\/)on[a-z][a-z0-9_-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/iu;
   const canonicalHtml = canonicalizeHtmlForValidation(html);
   const unsafeUrl = /(?:href|src|action|formaction|xlink:href)=["']?(?:javascript:|data:|vbscript:|\/\/)/iu;
   // Email templates do not need CSS URL fetches. Reject every inline url(),
@@ -54,7 +54,7 @@ export function validateTemplateSubject(value: string): { ok: true; subject: str
   const subject = value.trim();
   if (!subject) return { ok: false, message: "A subject is required." };
   if (subject.length > MAX_TEMPLATE_SUBJECT_LENGTH) return { ok: false, message: "The subject is too long." };
-  if (/[\r\n]/u.test(subject)) return { ok: false, message: "The subject cannot contain line breaks." };
+  if (/[\u0000-\u001f\u007f]/u.test(subject)) return { ok: false, message: "The subject cannot contain line breaks." };
   return { ok: true, subject };
 }
 
@@ -67,5 +67,5 @@ export function safeSourceFilename(value: string | null | undefined): string | n
   if (!value) return null;
   const name = value.trim().replace(/\\/gu, "/").split("/").pop()?.trim() ?? "";
   if (!name) return null;
-  return name.slice(0, 255);
+  return name.replace(/[\u0000-\u001f\u007f]/gu, "").slice(0, 255);
 }

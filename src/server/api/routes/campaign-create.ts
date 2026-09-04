@@ -193,7 +193,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
         if (concurrentVersion) {
           templateVersion = concurrentVersion;
         } else {
-          const message = errorValue instanceof Error ? errorValue.message : "The template could not be saved.";
+          const message = "The template could not be saved. Try again shortly.";
           return responseError(context, 422, "invalid_template", message);
         }
       }
