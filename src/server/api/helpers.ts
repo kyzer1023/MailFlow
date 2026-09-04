@@ -123,16 +123,17 @@ export function attachmentErrorResponse(context: MailFlowContext, error: unknown
     });
     return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
   }
+  if (error.transient && error.retryAfterSeconds) {
+    context.header("Retry-After", String(error.retryAfterSeconds));
+  }
   const status: 400 | 404 | 409 | 413 | 422 | 503 =
     error.code === "not_found" ? 404
       : error.code === "immutable" || error.code === "already_associated" ? 409
         : error.code === "size_limit_exceeded" ? 413
-          : error.code === "storage_error" || error.code === "integrity_error" ? 503
+          : error.code === "storage_missing" || error.code === "integrity_error" ? 409
+            : error.code === "storage_error" || error.code === "storage_temporary" ? 503
             : 422;
-  const message = error.code === "storage_error" || error.code === "integrity_error"
-    ? "Campaign attachments are temporarily unavailable. Try again shortly."
-    : error.message;
-  return responseError(context, status, `attachment_${error.code}`, message);
+  return responseError(context, status, `attachment_${error.code}`, error.message);
 }
 
 type JsonBodyResult =

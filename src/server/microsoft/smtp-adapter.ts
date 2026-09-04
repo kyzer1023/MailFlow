@@ -34,10 +34,10 @@ export function delegatedSmtpMailProvider(
   mailboxAddress: string,
 ): MailProvider {
   return {
-    async send(message: MailMessage): Promise<MailSendResult> {
+    async send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult> {
       try {
         const bearer = typeof accessToken === "function" ? await accessToken() : accessToken;
-        await smtp.send(bearer, mailboxAddress, message);
+        await smtp.send(bearer, mailboxAddress, message, { sendKey: options?.sendKey });
         return { kind: "accepted", providerMessageId: null, providerRequestId: null };
       } catch (error) {
         if (error instanceof SmtpProviderError) return smtpErrorResult(error);

@@ -34,6 +34,10 @@ export interface AttachmentOrphanCleanupResult {
   deleted: number;
 }
 
+/** Bound OneDrive cleanup work so the hourly Worker stays within its request budget. */
+export const ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN = 2;
+export const ATTACHMENT_CLEANUP_MAX_OBJECT_DELETES_PER_SET = ATTACHMENT_MAX_FILES;
+
 function defaultId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -233,20 +237,28 @@ export class AttachmentService {
   }
 
   async readFile(ownerUserId: string, file: AttachmentFileRecord): Promise<AttachmentPayload> {
-    if (file.deletedAt) throw new AttachmentError("storage_error", "This attachment is no longer available");
+    if (file.deletedAt) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from OneDrive");
     const object = await this.objectStore.get(ownerUserId, file.objectKey);
-    if (!object) throw new AttachmentError("storage_error", "The attachment object is missing");
+    if (!object) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from OneDrive");
+    if (object.size !== undefined && object.size !== file.byteSize) {
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
+    }
     let bytes: Uint8Array;
     try {
-      bytes = new Uint8Array(await object.arrayBuffer());
-    } catch {
-      throw new AttachmentError("storage_error", "The attachment object could not be read");
+      bytes = new Uint8Array(await object.arrayBuffer(file.byteSize));
+    } catch (error) {
+      if (error instanceof AttachmentError) throw error;
+      throw new AttachmentError(
+        "storage_temporary",
+        "OneDrive could not finish reading the campaign attachment",
+        { transient: true },
+      );
     }
     if (bytes.byteLength !== file.byteSize) {
-      throw new AttachmentError("integrity_error", "The attachment size does not match its metadata");
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
     }
     if ((await sha256Hex(bytes)) !== file.sha256) {
-      throw new AttachmentError("integrity_error", "The attachment checksum does not match its metadata");
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
     }
     return { file, bytes };
   }
@@ -254,8 +266,19 @@ export class AttachmentService {
   async readSet(ownerUserId: string, attachmentSetId: string): Promise<AttachmentPayload[]> {
     const set = await this.repository.getSetByIdForOwner(attachmentSetId, ownerUserId);
     if (!set) throw new AttachmentError("not_found", "Attachment set not found");
-    if (set.state === "deleted") throw new AttachmentError("storage_error", "This attachment set is no longer available");
+    if (set.state === "deleted") throw new AttachmentError("storage_missing", "This campaign attachment set is no longer available");
     const files = await this.repository.listFiles(attachmentSetId);
+    const metadataBytes = files.reduce((total, file) => total + file.byteSize, 0);
+    if (
+      set.fileCount < 0
+      || set.fileCount > ATTACHMENT_MAX_FILES
+      || set.totalBytes < 0
+      || set.totalBytes > ATTACHMENT_MAX_BYTES
+      || files.length !== set.fileCount
+      || metadataBytes !== set.totalBytes
+    ) {
+      throw new AttachmentError("integrity_error", "The campaign attachment metadata does not match its reviewed files");
+    }
     const payloads: AttachmentPayload[] = [];
     for (const file of files) payloads.push(await this.readFile(ownerUserId, file));
     return payloads;
@@ -267,45 +290,74 @@ export class AttachmentService {
     const timestamp = nowIso(this.now);
     const deletedFileIds: string[] = [];
     const failedFileIds: string[] = [];
-    const files = await this.repository.listFiles(attachmentSetId);
-    for (const file of files) {
+    const files = (await this.repository.listFiles(attachmentSetId))
+      .slice(0, ATTACHMENT_CLEANUP_MAX_OBJECT_DELETES_PER_SET);
+    if (files.length > 0) {
       try {
-        await this.objectStore.delete(set.ownerUserId, file.objectKey);
-        await this.repository.markFileBytesDeleted(file.id, timestamp);
-        deletedFileIds.push(file.id);
+        await this.objectStore.delete(set.ownerUserId, files.map((file) => file.objectKey));
+        for (const file of files) {
+          if (await this.repository.markFileBytesDeleted(file.id, timestamp)) deletedFileIds.push(file.id);
+          else failedFileIds.push(file.id);
+        }
       } catch {
-        // Leave metadata untouched so a later scheduled run can retry. OneDrive
-        // delete is idempotent, so a successful delete followed by a D1
-        // transient error is safe to repeat.
-        failedFileIds.push(file.id);
+        // A batched OneDrive delete may partially succeed. Metadata stays active
+        // and the next bounded pass safely repeats the idempotent delete.
+        failedFileIds.push(...files.map((file) => file.id));
       }
     }
     if (failedFileIds.length > 0) {
       return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: set.state === "deleted" };
     }
-    // An object put can succeed while its metadata insert or compensating
-    // delete fails. Sweep this private set namespace too, so such bytes do
-    // not outlive the set merely because they have no attachment_files row.
-    // Re-listing after each bounded delete makes progress without retaining
-    // a cursor across scheduled invocations.
-    for (let page = 0; page < 10; page += 1) {
-      const objects = await this.objectStore.list(set.ownerUserId, { prefix: `mailflow-${attachmentSetId}-`, limit: 1000 });
-      if (objects.objects.length) await this.objectStore.delete(set.ownerUserId, objects.objects.map((object) => object.key));
-      if (!objects.truncated) break;
-      if (page === 9) return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
-    }
     const remaining = await this.repository.listFiles(attachmentSetId);
+    if (remaining.length > 0) {
+      return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
+    }
+
+    const fallbackDeleteBudget = ATTACHMENT_CLEANUP_MAX_OBJECT_DELETES_PER_SET - files.length;
+
+    // An object put can succeed while its metadata insert or compensating
+    // delete fails. Sweep at most one small private-namespace batch per run.
+    // A truncated result deliberately leaves the set active for the next pass.
+    try {
+      const objects = await this.objectStore.list(set.ownerUserId, {
+        prefix: `mailflow-${attachmentSetId}-`,
+        limit: Math.max(1, fallbackDeleteBudget),
+      });
+      if (objects.objects.length) {
+        if (fallbackDeleteBudget < 1) {
+          return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
+        }
+        await this.objectStore.delete(set.ownerUserId, objects.objects.map((object) => object.key));
+      }
+      if (objects.truncated) {
+        return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
+      }
+    } catch {
+      return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted: false };
+    }
+
     let setDeleted = set.state === "deleted";
-    if (remaining.length === 0 && set.state !== "deleted") {
+    if (set.state !== "deleted") {
       setDeleted = await this.repository.markSetBytesDeleted(attachmentSetId, timestamp);
     }
     return { setId: attachmentSetId, deletedFileIds, failedFileIds, setDeleted };
   }
 
-  async cleanupExpiredOrphans(limit = 100): Promise<AttachmentOrphanCleanupResult> {
-    const sets = await this.repository.listOrphanSets(nowIso(this.now), Math.max(1, Math.min(500, Math.floor(limit))));
+  async cleanupExpiredOrphans(limit = ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN): Promise<AttachmentOrphanCleanupResult> {
+    const sets = await this.repository.listOrphanSets(
+      nowIso(this.now),
+      Math.max(1, Math.min(ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN, Math.floor(limit))),
+    );
     const results: AttachmentCleanupResult[] = [];
-    for (const set of sets) results.push(await this.cleanupSetBytes(set.id));
+    for (const set of sets) {
+      try {
+        results.push(await this.cleanupSetBytes(set.id));
+      } catch {
+        // Preserve the set for the next hourly pass and continue within the
+        // current bounded batch so one owner's outage cannot block another.
+        results.push({ setId: set.id, deletedFileIds: [], failedFileIds: [], setDeleted: false });
+      }
+    }
     return {
       sets: results,
       attempted: results.length,

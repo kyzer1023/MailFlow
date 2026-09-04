@@ -11,6 +11,7 @@ import type { MailAttachment, MailProvider, MailSendResult } from "../../domain/
 import { makeSendKey } from "../../domain/state";
 import type { AuditEventType, CampaignRecord } from "../../domain/types";
 import type { CampaignRepository } from "../database/contracts";
+import { AttachmentError } from "../attachments";
 import type { CampaignQueue, CampaignTickDependencies, CampaignTickMessage, TickResult } from "./contracts";
 
 function iso(now: Date): string {
@@ -33,6 +34,22 @@ function safeMessage(message: string | undefined, fallback: string): string {
 function delayForRetry(result: Extract<MailSendResult, { kind: "retryable" }>, now: Date, paceDelay: number): number {
   const retryAfter = parseRetryAfterSeconds(result.retryAfter, now);
   return Math.min(MAX_QUEUE_DELAY_SECONDS, Math.max(paceDelay, retryAfter ?? paceDelay));
+}
+
+function attachmentFailureMessage(error: unknown): string {
+  if (!(error instanceof AttachmentError)) {
+    return "The campaign attachments could not be verified. No additional message was sent.";
+  }
+  if (error.code === "storage_missing") {
+    return "A campaign attachment was deleted from OneDrive. No additional message was sent.";
+  }
+  if (error.code === "integrity_error") {
+    return "A campaign attachment changed in OneDrive and no longer matches the reviewed file. No additional message was sent.";
+  }
+  if (error.code === "storage_error") {
+    return "OneDrive access for these campaign attachments is no longer available. No additional message was sent.";
+  }
+  return "The campaign attachments could not be verified. No additional message was sent.";
 }
 
 async function safeAudit(
@@ -135,11 +152,42 @@ export async function processCampaignTick(
   let attachments: readonly MailAttachment[];
   try {
     attachments = await dependencies.attachmentLoader(campaign);
-  } catch {
+  } catch (error) {
+    if (error instanceof AttachmentError && error.transient) {
+      const delaySeconds = Math.min(
+        MAX_QUEUE_DELAY_SECONDS,
+        Math.max(60, error.retryAfterSeconds ?? 60),
+      );
+      const nextAttemptAt = new Date(nowDate.getTime() + delaySeconds * 1_000).toISOString();
+      const waitMessage = `OneDrive is temporarily unavailable. Attachment checks will retry after ${nextAttemptAt}.`;
+      await dependencies.campaigns.markSchedulerWaiting(campaign.id, nextAttemptAt, waitMessage, now);
+      await safeAudit(dependencies, "campaign.attachment_waiting", campaign, null, {
+        nextAttemptAt,
+        category: error.code,
+      });
+      const wake = await reserveCampaignWake({
+        campaigns: dependencies.campaigns,
+        queue: dependencies.queue,
+        campaignId: campaign.id,
+        dueAt: nextAttemptAt,
+        message: waitMessage,
+        now: nowDate,
+        token: dependencies.wakeToken?.(campaign.id, nowDate),
+      });
+      return {
+        kind: "waiting",
+        campaignId: campaign.id,
+        jobId: null,
+        reason: "attachments_temporarily_unavailable",
+        nextAttemptAt,
+        delaySeconds: wake.delaySeconds,
+      };
+    }
+    const failureMessage = attachmentFailureMessage(error);
     const failed = await dependencies.campaigns.fail(
       campaign.id,
       now,
-      "The campaign attachments could not be verified. No additional message was sent.",
+      failureMessage,
     );
     const latestAfterFailure = failed ? null : await dependencies.campaigns.getById(campaign.id);
     if (failed || latestAfterFailure?.state === "completed" || latestAfterFailure?.state === "failed") {
@@ -149,6 +197,9 @@ export async function processCampaignTick(
         // Scheduled cleanup retries an unavailable object store.
       }
     }
+    await safeAudit(dependencies, "campaign.failed", campaign, null, {
+      category: error instanceof AttachmentError ? error.code : "attachment_error",
+    });
     return { kind: "failed", campaignId: campaign.id, reason: "attachments_unavailable" };
   }
 

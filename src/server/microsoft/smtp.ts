@@ -1,5 +1,5 @@
 import type { MailMessage } from "../../domain/mail-provider";
-import { buildMimeMessageChunks, dotStuffMime, smtpEnvelopeRecipients } from "./smtp-mime";
+import { buildMimeMessageChunks, dotStuffMime, smtpEnvelopeRecipients, smtpMimeIdentityForSendKey } from "./smtp-mime";
 
 export interface SmtpSocketLike {
   readable: ReadableStream<Uint8Array>;
@@ -238,7 +238,12 @@ export class ExchangeOnlineSmtpClient {
     }
   }
 
-  async send(accessToken: string, mailboxAddress: string, message: MailMessage): Promise<SmtpSendAccepted> {
+  async send(
+    accessToken: string,
+    mailboxAddress: string,
+    message: MailMessage,
+    options: { sendKey?: string } = {},
+  ): Promise<SmtpSendAccepted> {
     const sender = requireMailbox(mailboxAddress);
     let submissionMayHaveCompleted = false;
     let wire: SmtpWire | null = null;
@@ -246,7 +251,8 @@ export class ExchangeOnlineSmtpClient {
       let mimeChunks: Iterable<string>;
       let recipients: string[];
       try {
-        mimeChunks = buildMimeMessageChunks(message, { senderAddress: sender });
+        const identity = options.sendKey ? await smtpMimeIdentityForSendKey(options.sendKey) : {};
+        mimeChunks = buildMimeMessageChunks(message, { senderAddress: sender, ...identity });
         recipients = smtpEnvelopeRecipients(message);
       } catch {
         throw new SmtpProviderError("invalid_message", "The message or an attachment is invalid");

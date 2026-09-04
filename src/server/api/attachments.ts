@@ -45,8 +45,11 @@ export async function loadCampaignAttachments(
 ): Promise<readonly MailAttachment[]> {
   const set = await repo.attachments.getSetByCampaignId(campaign.id);
   if (!set) return [];
-  if (set.ownerUserId !== campaign.ownerUserId || set.state === "deleted") {
+  if (set.ownerUserId !== campaign.ownerUserId) {
     throw new AttachmentError("integrity_error", "The campaign attachment set is no longer available");
+  }
+  if (set.state === "deleted") {
+    throw new AttachmentError("storage_missing", "This campaign attachment set is no longer available");
   }
   if (set.fileCount < 1) {
     throw new AttachmentError("integrity_error", "The campaign attachment set is empty");

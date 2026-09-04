@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MailMessage, MailProvider } from "../../domain/mail-provider";
 import type { CampaignRecord, RecipientJobRecord } from "../../domain/types";
 import type { MailboxLeaseDecision } from "../database/contracts";
+import { AttachmentError } from "../attachments";
 import type { CampaignTickDependencies } from "./contracts";
 import { handleCampaignQueueMessage, processCampaignTick } from "./campaign-tick";
 
@@ -258,6 +259,51 @@ describe("campaign tick", () => {
     await expect(processCampaignTick(TICK, deps)).resolves.toEqual({ kind: "failed", campaignId: "campaign-1", reason: "attachments_unavailable" });
     expect(deps.state.job.status).toBe("pending");
     expect(deps.state.campaign.state).toBe("failed");
+  });
+
+  it("retries a transient OneDrive failure before claiming or reserving delivery", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    let mailboxAcquisitions = 0;
+    deps.mailboxDelivery.acquire = async () => {
+      mailboxAcquisitions += 1;
+      return deps.mailboxDecision;
+    };
+    deps.attachmentLoader = async () => {
+      throw new AttachmentError(
+        "storage_temporary",
+        "OneDrive is temporarily unavailable",
+        { transient: true, retryAfterSeconds: 120 },
+      );
+    };
+
+    await expect(processCampaignTick(TICK, deps)).resolves.toMatchObject({
+      kind: "waiting",
+      reason: "attachments_temporarily_unavailable",
+      nextAttemptAt: "2026-08-31T00:03:00.000Z",
+      delaySeconds: 120,
+    });
+    expect(deps.state.job.status).toBe("pending");
+    expect(deps.state.job.attemptCount).toBe(0);
+    expect(deps.state.campaign.state).toBe("running");
+    expect(deps.state.sends).toBe(0);
+    expect(mailboxAcquisitions).toBe(0);
+    expect(deps.state.audits).toContain("campaign.attachment_waiting");
+  });
+
+  it("fails clearly when an immutable OneDrive attachment was changed", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.attachmentLoader = async () => {
+      throw new AttachmentError("integrity_error", "checksum mismatch");
+    };
+
+    await expect(processCampaignTick(TICK, deps)).resolves.toEqual({
+      kind: "failed",
+      campaignId: "campaign-1",
+      reason: "attachments_unavailable",
+    });
+    expect(deps.state.job.status).toBe("pending");
+    expect(deps.state.campaign.pauseReason).toContain("changed in OneDrive");
+    expect(deps.state.sends).toBe(0);
   });
 
   it("turns a provider exception into unknown with no automatic retry", async () => {

@@ -101,6 +101,10 @@ An attachment set belongs to one user and at most one campaign. D1 stores the sa
 
 The product limit is five files and 20 MiB combined raw bytes. Open sets may be edited. Test-send locks a set, and campaign creation atomically associates an open set with one owner-matching campaign. Abandoned unassociated sets expire after 24 hours. Terminal campaign cleanup removes active OneDrive items and retains metadata for audit. Ordinary Graph deletion uses the user's recycle bin unless the scoped `permanentDelete` path is separately proven in the tenant.
 
+Before reading bytes, the attachment service verifies that the active file rows agree with the set's bounded file count and total size. OneDrive downloads are then streamed only up to each reviewed file's stored byte count before SHA-256 verification. A missing object or an integrity mismatch is permanent for the immutable campaign set and fails clearly before another recipient is claimed. A Graph throttle, provider outage, interrupted download, or network failure remains a proven pre-submission condition: a running campaign retains its pending row and reserves one guarded delayed wake instead of failing or consuming mailbox budget.
+
+Cleanup is resumable and deliberately bounded. An immediate terminal cleanup pass deletes no more than five active or untracked objects for one set. The hourly fallback handles at most two eligible sets per invocation, keeps metadata active after a partial OneDrive or D1 failure, and repeats idempotent deletes on a later pass. A truncated App Folder listing can never mark a set deleted.
+
 ### recipient_jobs
 
 Campaign reference, source row, resolved recipient metadata, message importance, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
@@ -142,7 +146,7 @@ Only conditional SQL updates can claim a pending job. A queue duplicate that can
 The queue carries campaign tick messages, not an uncontrolled burst of all recipients. A tick:
 
 1. Verifies that the campaign is runnable.
-2. Loads and checksum-verifies the campaign-wide attachment set before claiming a row.
+2. Loads and checksum-verifies the campaign-wide attachment set before claiming a row. Transient OneDrive failures reserve a delayed attachment-check wake; deleted or changed immutable files fail the campaign without claiming the row.
 3. Conditionally claims the next pending job.
 4. Refreshes the user's access token for the selected Microsoft resource when needed.
 5. Calls the selected mail provider once.
@@ -208,6 +212,7 @@ The Wrangler `staging` environment is a separate Worker with independent D1, Que
 - Campaign ownership is checked on every read and write.
 - Attachment APIs require the same authenticated owner, CSRF protection, same-origin mutation checks, bounded multipart bodies, approved file types, and content-signature validation.
 - Queue messages and campaign JSON carry only opaque attachment-set identifiers. They never contain attachment bytes, user filenames as storage keys, or private OneDrive locators.
-- OneDrive bytes are rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed.
+- OneDrive bytes are loaded through the reviewed per-file and 20 MiB aggregate bounds and rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed, while transient storage failures retry only from that pre-claim boundary.
+- SMTP MIME permits the same maximum of five files and 20 MiB raw bytes, chunks HTML and base64 attachment output into writes no larger than 80 KiB, and derives a stable MIME boundary and Message-ID from the opaque send key for proven pre-submission retries. This identity is not treated as provider idempotency, and ambiguous submissions are still never retried.
 - User-facing errors do not reveal tokens, Graph response bodies, or internal stack traces.
 - Production configuration is reproducible from `wrangler` configuration, migration files, and documented secret names.
