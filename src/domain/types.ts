@@ -18,6 +18,13 @@ export const CAMPAIGN_STATES = [
 
 export type CampaignState = (typeof CAMPAIGN_STATES)[number];
 
+export type CampaignAttachmentIssueCode =
+  | "attachment_retrying"
+  | "attachment_authorization_required"
+  | "attachment_missing"
+  | "attachment_integrity"
+  | "attachment_storage_failure";
+
 export const RECIPIENT_STATUSES = [
   "pending",
   "claimed",
@@ -114,6 +121,10 @@ export interface CampaignRecord {
   /** Durable scheduler status. Coordination tokens are never exposed here. */
   schedulerNextAttemptAt?: string | null;
   schedulerMessage?: string | null;
+  /** Sanitized attachment recovery state. Never contains a OneDrive locator. */
+  attachmentIssueCode?: CampaignAttachmentIssueCode | null;
+  /** Durable ordinal used to bound exponential pre-claim attachment retries. */
+  attachmentRetryCount?: number;
   wakeToken?: string | null;
   wakeDueAt?: string | null;
   updatedAt: string;
@@ -159,6 +170,9 @@ export type AuditEventType =
   | "campaign.failed"
   | "campaign.mailbox_waiting"
   | "campaign.attachment_waiting"
+  | "campaign.attachment_retry_scheduled"
+  | "campaign.attachment_authorization_required"
+  | "campaign.attachment_failed"
   | "campaign.wake_recovered"
   | "test_send.requested"
   | "test_send.accepted"

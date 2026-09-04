@@ -101,18 +101,31 @@ export function CampaignPage() {
   }
 
   const paused = campaignState?.state === "paused";
+  const failedCampaign = campaignState?.state === "failed";
+  const completedCampaign = campaignState?.state === "completed";
+  const attachmentAuthorizationPaused = paused && campaignState?.attachmentIssueCode === "attachment_authorization_required";
   const activeCounts = counts || { pending: 0, claimed: 0, sending: 0, accepted: 0, skipped: 0, failed: 0, unknown: 0 };
   const total = campaignState?.totalRecipients || 0;
   const processed = activeCounts.accepted + activeCounts.failed + activeCounts.skipped + activeCounts.unknown;
+  const notSent = activeCounts.pending;
   const progress = campaignState ? Math.min(100, Math.round((processed / Math.max(1, total)) * 100)) : 0;
-  const routeCounts: readonly (readonly [string, number, Icon])[] = [
-    ["Total", total, Rows],
-    ["Pending", activeCounts.pending, Clock],
-    ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt],
-    ["Accepted", activeCounts.accepted, Check],
-    ["Skipped", activeCounts.skipped, MinusCircle],
-    ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
-  ];
+  const routeCounts: readonly (readonly [string, number, Icon])[] = failedCampaign
+    ? [
+        ["Total", total, Rows],
+        ["Not sent", notSent, Clock],
+        ["Accepted", activeCounts.accepted, Check],
+        ["Skipped", activeCounts.skipped, MinusCircle],
+        ["Recipient failed", activeCounts.failed, WarningCircle],
+        ["Unknown", activeCounts.unknown, WarningCircle],
+      ]
+    : [
+        ["Total", total, Rows],
+        ["Pending", activeCounts.pending, Clock],
+        ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt],
+        ["Accepted", activeCounts.accepted, Check],
+        ["Skipped", activeCounts.skipped, MinusCircle],
+        ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
+      ];
   const displayJobs = jobs || [];
   const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
   const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
@@ -130,7 +143,7 @@ export function CampaignPage() {
     : statusKind === "completed"
       ? "Completed"
       : statusKind === "failed"
-        ? "Failed"
+        ? "Campaign failed"
         : waiting
           ? "Waiting safely"
           : statusKind === "queued"
@@ -192,18 +205,18 @@ export function CampaignPage() {
         <header className="page-header campaign-header">
           <div>
             <span className="section-kicker">CAMPAIGN</span>
-            <h1>The campaign can leave without you.</h1>
-            <p>Mail Flow keeps pacing and recording each row even after this page closes.</p>
+            <h1>{failedCampaign ? "This campaign stopped safely." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
+            <p>{failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Accepted, failed, skipped, and unknown rows remain available for review." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
           </div>
           <div className="header-actions">
-            <button
-              className="button button--outline"
-              onClick={() => void updateAction(paused ? "resume" : "pause")}
-              disabled={actionState !== "idle" || !["queued", "running", "paused"].includes(campaignState?.state as string)}
-            >
-              {actionState !== "idle" ? <SpinnerGap className="spin" /> : paused ? <Play weight="fill" /> : <Pause weight="fill" />}
-              {paused ? "Resume campaign" : "Pause campaign"}
-            </button>
+            {!failedCampaign && !completedCampaign && <button
+                className="button button--outline"
+                onClick={() => void updateAction(paused ? "resume" : "pause")}
+                disabled={actionState !== "idle" || !["queued", "running", "paused"].includes(campaignState?.state as string)}
+              >
+                {actionState !== "idle" ? <SpinnerGap className="spin" /> : paused ? <Play weight="fill" /> : <Pause weight="fill" />}
+                {paused ? "Resume pending rows" : "Pause campaign"}
+              </button>}
             <button className="button button--outline" onClick={() => navigate("/campaigns")}>
               Campaign history <X />
             </button>
@@ -211,6 +224,8 @@ export function CampaignPage() {
         </header>
 
         {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
+        {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
+        {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
         {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
 
         <div className="campaign-identity">
@@ -225,7 +240,7 @@ export function CampaignPage() {
         <section className="panel route-summary" aria-live="polite">
           <div className="route-counts">
             {routeCounts.map(([label, count, IconComponent]) => (
-              <div className={`count count--${label.toLowerCase()}`} key={label}>
+              <div className={`count count--${label.toLowerCase().replace(/\s+/gu, "-")}`} key={label}>
                 <span><IconComponent weight="bold" /></span>
                 <strong>{count}</strong>
                 <small>{label}</small>
@@ -234,9 +249,13 @@ export function CampaignPage() {
           </div>
           <div className="progress-meta">
             <span>
-              {paused
-                ? "Paused, accepted rows remain protected"
-                : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}
+              {failedCampaign
+                ? `${notSent} ${notSent === 1 ? "row was" : "rows were"} not sent after the campaign stopped`
+                : completedCampaign
+                  ? "Campaign complete, all recipient outcomes are recorded"
+                  : paused
+                    ? "Paused, accepted and unknown rows remain protected"
+                    : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}
             </span>
             <strong>{progress}%</strong>
           </div>
@@ -271,15 +290,25 @@ export function CampaignPage() {
                     <tbody>
                       {visibleJobs.map((job) => {
                         const status = job.status;
-                        const note = job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
+                        const stoppedBeforeSend = failedCampaign && status === "pending";
+                        const pausedBeforeSend = paused && status === "pending";
+                        const visibleStatus = stoppedBeforeSend ? "not-sent" : status;
+                        const statusText = stoppedBeforeSend
+                          ? "Not sent"
+                          : status === "accepted"
+                            ? "Accepted by Microsoft"
+                            : status[0].toUpperCase() + status.slice(1);
+                        const note = stoppedBeforeSend
+                          ? "Campaign stopped before this row"
+                          : pausedBeforeSend
+                            ? "Paused before send"
+                            : job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
                         return (
                           <tr key={`${job.recipient}-${job.sourceRow}`}>
                             <td><strong>{job.recipient}</strong></td>
                             <td>{job.sourceRow}</td>
                             <td>
-                              <StatusChip status={status}>
-                                {status === "accepted" ? "Accepted by Microsoft" : status[0].toUpperCase() + status.slice(1)}
-                              </StatusChip>
+                              <StatusChip status={visibleStatus}>{statusText}</StatusChip>
                             </td>
                             <td>{job.attemptCount}</td>
                             <td>{formatDate(job.updatedAt)}</td>
@@ -323,11 +352,12 @@ export function CampaignPage() {
           </section>
 
           <aside className="campaign-aside">
-            <section className="panel recovery-card">
+            <section className={`panel recovery-card${failedCampaign ? " recovery-card--failed" : ""}`}>
               <span className="route-dot"><FlowArrow /></span>
-              <h2>If something interrupts</h2>
-              <p>Mail Flow recovers unsent work safely.</p>
-              <strong>Unknown outcomes are never sent again automatically.</strong>
+              <h2>{failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
+              <p>{failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
+              <strong>{failedCampaign ? `${activeCounts.failed} recipient-level ${activeCounts.failed === 1 ? "failure" : "failures"}, ${activeCounts.unknown} unknown, and ${notSent} not sent.` : "Accepted and unknown outcomes are never sent again automatically."}</strong>
+              {attachmentAuthorizationPaused && <a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a>}
             </section>
             <section className="panel campaign-details">
               <div className="section-heading">

@@ -29,6 +29,8 @@ interface CampaignRow {
   completed_at: string | null;
   scheduler_next_attempt_at: string | null;
   scheduler_message: string | null;
+  attachment_issue_code: CampaignRecord["attachmentIssueCode"] | null;
+  attachment_retry_count: number;
   wake_token: string | null;
   wake_due_at: string | null;
   updated_at: string;
@@ -56,6 +58,8 @@ function toCampaign(row: CampaignRow): CampaignRecord {
     completedAt: row.completed_at ?? null,
     schedulerNextAttemptAt: row.scheduler_next_attempt_at ?? null,
     schedulerMessage: row.scheduler_message ?? null,
+    attachmentIssueCode: row.attachment_issue_code ?? null,
+    attachmentRetryCount: Number(row.attachment_retry_count ?? 0),
     wakeToken: row.wake_token ?? null,
     wakeDueAt: row.wake_due_at ?? null,
     updatedAt: row.updated_at,
@@ -216,7 +220,8 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'paused', pause_reason = ?1, wake_token = NULL,
+          `UPDATE campaigns SET state = 'paused', pause_reason = ?1, attachment_issue_code = NULL,
+             attachment_retry_count = 0, wake_token = NULL,
              wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?2
            WHERE id = ?3 AND owner_user_id = ?4 AND state IN ('queued', 'running')`,
         ),
@@ -230,6 +235,7 @@ export class D1CampaignRepository implements CampaignRepository {
       await bind(
         this.db.prepare(
           `UPDATE campaigns SET state = 'running', pause_reason = NULL,
+             attachment_issue_code = NULL, attachment_retry_count = 0,
              started_at = COALESCE(started_at, ?1), updated_at = ?1
            WHERE id = ?2 AND owner_user_id = ?3 AND state = 'paused'`,
         ),
@@ -238,15 +244,57 @@ export class D1CampaignRepository implements CampaignRepository {
     ) === 1;
   }
 
-  async fail(id: string, now: string, reason: string): Promise<boolean> {
+  async fail(id: string, now: string, reason: string, attachmentIssueCode: CampaignRecord["attachmentIssueCode"] | null = null): Promise<boolean> {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'failed', pause_reason = ?1, wake_token = NULL,
-             wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?2
-           WHERE id = ?3 AND state IN ('validated', 'queued', 'running', 'paused')`,
+          `UPDATE campaigns SET state = 'failed', pause_reason = ?1, attachment_issue_code = ?2, wake_token = NULL,
+             wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?3
+           WHERE id = ?4 AND state IN ('validated', 'queued', 'running', 'paused')`,
         ),
-        [reason.trim() || "Campaign failed", now, id],
+        [reason.trim() || "Campaign failed", attachmentIssueCode, now, id],
+      ).run(),
+    ) === 1;
+  }
+
+  async pauseForAttachmentAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE campaigns SET state = 'paused', pause_reason = ?1,
+             attachment_issue_code = 'attachment_authorization_required', wake_token = NULL,
+             wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?2
+           WHERE id = ?3 AND owner_user_id = ?4 AND state IN ('queued', 'running')`,
+        ),
+        [reason.trim() || "Reconnect OneDrive, then resume from the pending rows.", now, id, ownerUserId],
+      ).run(),
+    ) === 1;
+  }
+
+  async markAttachmentRetry(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE campaigns SET attachment_issue_code = 'attachment_retrying',
+             attachment_retry_count = MIN(attachment_retry_count + 1, 2147483647),
+             scheduler_next_attempt_at = ?1, scheduler_message = ?2, updated_at = ?3
+           WHERE id = ?4 AND state = 'running'`,
+        ),
+        [nextAttemptAt, message, now, id],
+      ).run(),
+    ) === 1;
+  }
+
+  async clearAttachmentIssue(id: string, now: string): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE campaigns SET attachment_issue_code = NULL, attachment_retry_count = 0,
+             scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?1
+           WHERE id = ?2 AND state = 'running'
+             AND (attachment_issue_code IS NOT NULL OR attachment_retry_count != 0)`,
+        ),
+        [now, id],
       ).run(),
     ) === 1;
   }

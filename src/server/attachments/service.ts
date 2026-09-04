@@ -249,7 +249,7 @@ export class AttachmentService {
     } catch (error) {
       if (error instanceof AttachmentError) throw error;
       throw new AttachmentError(
-        "storage_temporary",
+        "network_error",
         "OneDrive could not finish reading the campaign attachment",
         { transient: true },
       );

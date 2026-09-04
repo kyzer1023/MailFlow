@@ -45,7 +45,9 @@
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
 - Homepage SMTP-to-OneDrive chaining, separate resource-token persistence, SSO prompt omission, existing-grant and Graph-mode skips, cancellation and provider-failure recovery, identity mismatch rejection, missing-storage skip, safe return targets, and loop prevention.
 - Attachment-set ownership, idempotent creation, immutable association, aggregate metadata bounds before download, OneDrive deletion and byte-integrity distinction, bounded terminal cleanup, and resumable 24-hour orphan cleanup.
-- OneDrive throttles, service outages, network failures, and interrupted bounded reads retain the pending row and schedule a pre-claim retry. Deleted or changed immutable files fail before claiming a row, creating a delivery attempt, or consuming mailbox budget.
+- Attachment preclaim failures: network, HTTP 429 with `Retry-After`, and Microsoft 5xx schedule bounded retries without changing recipient state; authorization pauses while retaining the attachment set; missing or integrity-invalid objects fail before claim and request terminal cleanup.
+- Attachment retry ordinal and issue state persist through D1, successful loading clears them, and authorization recovery resumes only pending jobs while accepted and unknown jobs remain terminal.
+- Attachment audit evidence contains only the allowlisted category, disposition, retry ordinal, and next-attempt timestamp. It excludes raw exceptions, URLs, identifiers, provider payloads, filenames, and message content.
 - Campaign creation and test-send reject attachment sets unless SMTP mode plus stored `SMTP.Send` and `Files.ReadWrite.AppFolder` grants are present.
 - Test-send idempotent replay, changed-fingerprint rejection, safe pre-provider retry, ambiguous-outcome suppression, per-user limits, audit events without recipient jobs, and anonymous OAuth per-client/global limits.
 - Scheduled expiry cleanup drains full OAuth-state, session, rate-counter, and stale test-claim batches while retaining a hard per-run bound.
@@ -60,6 +62,7 @@
 - Review keeps the original campaign headers visible and explains that test delivery replaces `To` with the signed-in mailbox while suppressing CC, BCC, and Reply-To.
 - Multi-file selection, upload progress, retry/remove states, 5-file and 20-MiB limits, Review summary, and attachment locking after test-send.
 - Campaign polling or live refresh, pause, resume, and CSV export.
+- Campaign-level failure is visually and semantically distinct from recipient-level failure, pending rows become `Not sent`, accepted and unknown outcomes remain separate, terminal campaigns show no remaining-time promise, and OneDrive authorization pauses expose a reconnect plus pending-only resume path.
 - Loading, empty, failure, and narrow-screen states.
 - Authenticated OneDrive connected, cancelled, unavailable, failed, and identity-mismatch notices with a recovery link.
 
@@ -99,7 +102,7 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 
 - Production D1 migrations applied.
 - Queue producer and consumer bound.
-- Attachment, resource-token, public endpoint control, and mailbox scheduler migrations applied and hourly cleanup and recovery trigger registered.
+- Attachment, resource-token, public endpoint control, mailbox scheduler, and attachment failure recovery migrations applied and hourly cleanup and recovery trigger registered.
 - Production and local OneDrive callback URIs registered on the existing Entra application.
 - Static assets served by the Worker.
 - Production origin and both local and production Entra redirect URIs configured.
@@ -118,5 +121,6 @@ For staging, verify separately:
 - Hosted landing, hashed assets, unauthenticated API behavior, OAuth redirect origin and SMTP scope, schedule, D1, Queue, and DLQ checks pass without initiating mail.
 - Migration `0007_mailbox_scheduler_recovery.sql` is applied before deploying code that reads scheduler or delivery-attempt tables.
 - Migration `0008_campaign_create_safeguards.sql` is applied before deploying code that writes campaign request fingerprints or bulk recipient chunks.
+- Migration `0009_attachment_failure_recovery.sql` is applied before deploying code that reads attachment issue or retry columns.
 - The deployed Worker version corresponds to the recorded exact candidate commit.
 

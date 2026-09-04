@@ -62,7 +62,7 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 ## Cross-workstream gates
 
 - No real sending before test-send confirmation and a visible recipient summary.
-- No attachment deployment unless SMTP mode, migrations `0004` and `0005`, `SMTP.Send` reauthorization, the shared OAuth callback, and `Files.ReadWrite.AppFolder` consent are ready together.
+- No attachment deployment unless SMTP mode, migrations `0004`, `0005`, `0007`, and `0008`, `SMTP.Send` reauthorization, the shared OAuth callback, and `Files.ReadWrite.AppFolder` consent are ready together.
 - No deployment before `.env` and `.dev.vars` are ignored and Git history is checked for secrets.
 - No automatic retry for `unknown` outcomes.
 - No provider submission outside the shared mailbox lease and attempt ledger, including self-only test sends.

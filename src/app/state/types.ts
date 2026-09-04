@@ -66,6 +66,9 @@ export interface CampaignViewModel {
   readonly updated: string;
   readonly status: CampaignViewStatus;
   readonly accepted: number;
+  readonly recipientFailed: number;
+  readonly unknown: number;
+  readonly notSent: number;
   readonly failed: number;
   readonly sent: number;
   readonly total: number;

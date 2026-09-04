@@ -7,6 +7,7 @@ import { MAILBOX_BUDGET_WINDOW_MS, envelopeRecipientCount } from "../../domain/m
 import type { D1Database, D1PreparedStatement, D1RunResult, D1Value } from "./contracts";
 import { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 import { D1CampaignRepository } from "./d1-campaigns";
+import { D1RecipientJobRepository } from "./d1-recipient-jobs";
 import { processSchedulerWatchdog } from "../api/worker-runtime";
 
 type SqliteValue = string | number | bigint | null | Uint8Array;
@@ -86,6 +87,7 @@ function seedCampaign(
   db: SqliteD1,
   suffix = "1",
   existingOwner?: { userId: string; mailboxAddress: string },
+  recipientCount = 1,
 ): { userId: string; campaignId: string; jobId: string } {
   const userId = existingOwner?.userId ?? `user-${suffix}`;
   const mailboxAddress = existingOwner?.mailboxAddress ?? `member-${suffix}@example.test`;
@@ -105,12 +107,15 @@ function seedCampaign(
   run(db, `INSERT INTO campaigns(id, flow_id, template_version_id, owner_user_id, sender_address,
     total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state, idempotency_key,
     request_fingerprint, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, 1, 0, 12, 'draft', ?, ?, ?, ?)`,
-    campaignId, flowId, templateId, userId, mailboxAddress, `key-${suffix}`, suffix.padEnd(43, "a").slice(0, 43), now, now);
-  run(db, `INSERT INTO recipient_jobs(id, campaign_id, source_row, recipient, cc_json, bcc_json,
-    rendered_subject, rendered_body_html, send_key, status, attempt_count, created_at, updated_at)
-    VALUES (?, ?, 1, 'to@example.test', '[]', '[]', 'Subject', '<p>Body</p>', ?, 'pending', 0, ?, ?)`,
-    jobId, campaignId, `send-${suffix}`, now, now);
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 12, 'draft', ?, ?, ?, ?)`,
+    campaignId, flowId, templateId, userId, mailboxAddress, recipientCount, recipientCount, `key-${suffix}`, suffix.padEnd(43, "a").slice(0, 43), now, now);
+  for (let row = 1; row <= recipientCount; row += 1) {
+    const rowJobId = row === 1 ? jobId : `${jobId}-${row}`;
+    run(db, `INSERT INTO recipient_jobs(id, campaign_id, source_row, recipient, cc_json, bcc_json,
+      rendered_subject, rendered_body_html, send_key, status, attempt_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, '[]', '[]', 'Subject', '<p>Body</p>', ?, 'pending', 0, ?, ?)`,
+      rowJobId, campaignId, row, `to-${row}@example.test`, `send-${suffix}-${row}`, now, now);
+  }
   run(db, "UPDATE campaigns SET state = 'validated' WHERE id = ?", campaignId);
   run(db, "UPDATE campaigns SET state = 'running', queued_at = ?, started_at = ? WHERE id = ?", now, now, campaignId);
   run(db, "UPDATE recipient_jobs SET status = 'claimed', attempt_count = 1, claim_token = ?, claimed_at = ? WHERE id = ?", `claim-${suffix}`, now, jobId);
@@ -174,6 +179,71 @@ describe("D1 mailbox delivery coordination", () => {
       const token = stored?.wakeToken ?? "";
       expect(await campaigns.consumeWake(ids.campaignId, token, "2026-09-05T00:01:00.000Z")).not.toBeNull();
       expect(await campaigns.consumeWake(ids.campaignId, token, "2026-09-05T00:01:00.000Z")).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("persists bounded attachment retry state and clears it after recovery", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = seedCampaign(db, "attachment-retry");
+      const campaigns = new D1CampaignRepository(db);
+      expect(await campaigns.markAttachmentRetry(
+        ids.campaignId,
+        "2026-09-05T00:00:30.000Z",
+        "Campaign attachments are temporarily unavailable.",
+        "2026-09-05T00:00:00.000Z",
+      )).toBe(true);
+      expect(await campaigns.markAttachmentRetry(
+        ids.campaignId,
+        "2026-09-05T00:01:30.000Z",
+        "Campaign attachments are temporarily unavailable.",
+        "2026-09-05T00:00:30.000Z",
+      )).toBe(true);
+      expect(await campaigns.getById(ids.campaignId)).toMatchObject({
+        attachmentIssueCode: "attachment_retrying",
+        attachmentRetryCount: 2,
+        schedulerNextAttemptAt: "2026-09-05T00:01:30.000Z",
+      });
+      expect(await campaigns.clearAttachmentIssue(ids.campaignId, "2026-09-05T00:01:30.000Z")).toBe(true);
+      expect(await campaigns.getById(ids.campaignId)).toMatchObject({
+        attachmentIssueCode: null,
+        attachmentRetryCount: 0,
+        schedulerNextAttemptAt: null,
+        schedulerMessage: null,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("resumes an authorization pause by claiming only a pending row", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = seedCampaign(db, "attachment-resume", undefined, 3);
+      const campaigns = new D1CampaignRepository(db);
+      const jobs = new D1RecipientJobRepository(db);
+      run(db, "UPDATE recipient_jobs SET status = 'accepted', claim_token = NULL, claimed_at = NULL WHERE id = ?", ids.jobId);
+      run(db, "UPDATE recipient_jobs SET status = 'unknown', attempt_count = 1 WHERE id = ?", `${ids.jobId}-2`);
+
+      expect(await campaigns.pauseForAttachmentAuthorization(
+        ids.campaignId,
+        ids.userId,
+        "2026-09-05T00:00:01.000Z",
+        "Reconnect OneDrive, then resume from the pending rows.",
+      )).toBe(true);
+      expect(await campaigns.resume(ids.campaignId, ids.userId, "2026-09-05T00:00:02.000Z")).toBe(true);
+      const claimed = await jobs.claimNextPending(ids.campaignId, "2026-09-05T00:00:03.000Z", "claim-resumed");
+
+      expect(claimed?.id).toBe(`${ids.jobId}-3`);
+      expect((await jobs.getById(ids.jobId))?.status).toBe("accepted");
+      expect((await jobs.getById(`${ids.jobId}-2`))?.status).toBe("unknown");
+      expect(await campaigns.getById(ids.campaignId)).toMatchObject({
+        state: "running",
+        attachmentIssueCode: null,
+        attachmentRetryCount: 0,
+      });
     } finally {
       db.close();
     }

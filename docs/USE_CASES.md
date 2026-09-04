@@ -134,6 +134,9 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - Campaigns can be paused and resumed.
 - A resume starts from the first eligible unsent row.
 - A durable wake token makes duplicate Queue messages harmless. The hourly watchdog recreates a missing wake after a publish failure.
+- Attachment bytes are loaded and revalidated before a recipient job is claimed. Network failures, Microsoft throttling, and service failures leave every recipient state unchanged and schedule a bounded retry that honors a longer provider `Retry-After` value.
+- An expired or revoked OneDrive grant pauses the campaign without deleting its attachment set. After the same member reconnects, resume revalidates that same immutable set and claims only pending rows. Accepted and unknown rows remain terminal.
+- A missing, deleted, oversized, or checksum-mismatched attachment fails the campaign before another recipient is claimed.
 
 ## UC-12 Prevent blind duplicate sends
 
@@ -156,8 +159,11 @@ Supported states:
 - `skipped`
 - `unknown`
 - campaign-level `paused`
+- campaign-level `failed`
 
 The user-facing label for `accepted` is `Accepted by Microsoft`. The UI explains that final delivery can still fail later.
+
+Campaign history and detail views keep campaign-level failure separate from recipient-level outcomes. On a failed campaign, a pending row is labeled `Not sent`; accepted, recipient-failed, skipped, and unknown totals remain independently visible.
 
 Members can export a result CSV containing row number, recipient, status, attempt count, timestamps, and diagnostic message.
 
@@ -170,6 +176,9 @@ Examples include:
 - Microsoft requested a temporary pause. Sending will continue at the displayed time.
 - The daily mailbox allowance is temporarily full. Sending will continue automatically at the displayed rolling-window release time.
 - The campaign is safe in storage and will continue when the background queue recovers.
+- Campaign attachments are temporarily unavailable. MailFlow will retry without claiming another recipient.
+- OneDrive needs to be reconnected. Reconnect the same Microsoft account, then resume from pending rows.
+- A reviewed attachment is missing or changed. The campaign stopped before another recipient was claimed.
 - This recipient address is invalid. The row was skipped.
 - The template uses a field that is missing from the spreadsheet.
 

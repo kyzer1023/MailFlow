@@ -8,8 +8,14 @@ import {
   sendTestToSelf,
   TestSendError,
 } from "../../microsoft";
-import { AttachmentError } from "../../attachments";
+import {
+  AttachmentError,
+  classifyAttachmentLoadFailure,
+  type AttachmentLoadFailure,
+  type AttachmentService,
+} from "../../attachments";
 import type { MailAttachment } from "../../../domain/mail-provider";
+import type { CampaignRecord } from "../../../domain/types";
 import { OAuthProviderError } from "../../microsoft/oauth";
 import { createD1PublicControlStore } from "../../database/d1-public-controls";
 import type { MailFlowAppEnv, MailFlowContext } from "../context";
@@ -23,7 +29,6 @@ import {
 } from "../dependencies";
 import {
   audit,
-  attachmentErrorResponse,
   enqueueTick,
   nowIso,
   parseOrError,
@@ -46,11 +51,11 @@ import { ControlledTestSendError, executeControlledTestSend, type ClassifiedTest
 
 function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
   if (errorValue instanceof AttachmentError) {
-    const status = errorValue.code === "not_found" ? 404
+    const status = errorValue.code === "not_found" || errorValue.code === "missing_object" ? 404
       : errorValue.code === "immutable" || errorValue.code === "already_associated" ? 409
         : errorValue.code === "size_limit_exceeded" ? 413
           : errorValue.code === "storage_missing" || errorValue.code === "integrity_error" ? 409
-            : errorValue.code === "storage_error" || errorValue.code === "storage_temporary" ? 503
+            : ["authorization_error", "network_error", "throttled", "service_unavailable", "storage_error", "storage_temporary"].includes(errorValue.code) ? 503
             : 422;
     return {
       // Attachment loading is completed before the provider boundary, so a
@@ -61,7 +66,9 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
       failure: {
         status,
         code: `attachment_${errorValue.code}`,
-        message: errorValue.message,
+        message: ["authorization_error", "network_error", "throttled", "service_unavailable", "storage_error", "storage_temporary"].includes(errorValue.code)
+          ? "Campaign attachments are temporarily unavailable. Try again shortly."
+          : errorValue.message,
       },
     };
   }
@@ -95,20 +102,47 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
   return { safeToRetry, retryAfter, category, failure: { status, code: "test_send_failed", message } };
 }
 
-function campaignAttachmentFailureMessage(error: unknown): string {
-  if (!(error instanceof AttachmentError)) {
-    return "The campaign attachments could not be verified. No message was sent.";
+function attachmentIssueCode(failure: Extract<AttachmentLoadFailure, { disposition: "fail" }>) {
+  return failure.category === "missing_object"
+    ? "attachment_missing" as const
+    : failure.category === "integrity"
+      ? "attachment_integrity" as const
+      : "attachment_storage_failure" as const;
+}
+
+async function failCampaignForAttachment(
+  repo: ReturnType<typeof repositories>,
+  campaign: CampaignRecord,
+  failure: Extract<AttachmentLoadFailure, { disposition: "fail" }>,
+  service: AttachmentService | null,
+): Promise<void> {
+  const failedAt = nowIso();
+  const failed = await repo.campaigns.fail(campaign.id, failedAt, failure.userMessage, attachmentIssueCode(failure));
+  if (!failed) return;
+  try {
+    await audit(repo, "campaign.attachment_failed", {
+      actorUserId: campaign.ownerUserId,
+      campaignId: campaign.id,
+      metadata: { category: failure.category, disposition: failure.disposition },
+    });
+  } catch {
+    // The conditional terminal transition remains authoritative if evidence storage is unavailable.
   }
-  if (error.code === "storage_missing") {
-    return "A campaign attachment was deleted from OneDrive. No message was sent.";
+  try {
+    await cleanupCampaignAttachments(repo, service, campaign.id);
+  } catch {
+    // Scheduled cleanup retries terminal attachment deletion.
   }
-  if (error.code === "integrity_error") {
-    return "A campaign attachment changed in OneDrive and no longer matches the reviewed file. No message was sent.";
+}
+
+function attachmentActionError(context: MailFlowContext, failure: AttachmentLoadFailure): Response {
+  if (failure.disposition === "pause") {
+    return responseError(context, 409, "onedrive_reconnect_required", failure.userMessage);
   }
-  if (error.code === "storage_error") {
-    return "OneDrive access for these campaign attachments is no longer available. No message was sent.";
+  if (failure.disposition === "retry") {
+    return responseError(context, 503, "attachment_temporarily_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
   }
-  return "The campaign attachments could not be verified. No message was sent.";
+  return responseError(context, 409, `attachment_${failure.category}`, failure.userMessage);
 }
 
 /** Register campaign test-send and state mutation routes. */
@@ -161,7 +195,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
             const service = attachmentServiceFor(context, repo);
             if (!service) {
               throw new AttachmentError(
-                "storage_temporary",
+                "service_unavailable",
                 "Campaign attachments are temporarily unavailable. Try again shortly",
                 { transient: true },
               );
@@ -220,6 +254,25 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     const repo = repositories(context);
     const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
     if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+    if (campaign.state !== "paused") return responseError(context, 409, "campaign_changed", "Only a paused campaign can be resumed.");
+    const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
+    if (attachmentSet) {
+      if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp" || !(await smtpAuthorizedFor(context, authenticated.user.id))) {
+        return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before resuming this attachment campaign.");
+      }
+      if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
+        return responseError(context, 409, "onedrive_reconnect_required", "Reconnect OneDrive, then resume from the pending rows.");
+      }
+      const service = attachmentServiceFor(context, repo);
+      if (!service) return responseError(context, 503, "attachment_temporarily_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
+      try {
+        await loadCampaignAttachments(repo, service, campaign);
+      } catch (errorValue) {
+        const failure = classifyAttachmentLoadFailure(errorValue);
+        if (failure.disposition === "fail") await failCampaignForAttachment(repo, campaign, failure, service);
+        return attachmentActionError(context, failure);
+      }
+    }
     if (!(await repo.campaigns.resume(campaign.id, authenticated.user.id, nowIso()))) return responseError(context, 409, "campaign_changed", "Only a paused campaign can be resumed.");
     const wakeAt = nowIso();
     let published = false;
@@ -264,32 +317,21 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   }
   const attachmentService = attachmentServiceFor(context, repo);
   if (attachmentSet && !attachmentService) {
-    return attachmentErrorResponse(
-      context,
+    return attachmentActionError(context, classifyAttachmentLoadFailure(
       new AttachmentError(
-        "storage_temporary",
-        "Campaign attachments are temporarily unavailable. Try again shortly",
+        "service_unavailable",
+        "Campaign attachments are temporarily unavailable",
         { transient: true },
       ),
-    );
+    ));
   }
   if (attachmentSet && attachmentService) {
     try {
       await loadCampaignAttachments(repo, attachmentService, campaign);
-    } catch (error) {
-      if (error instanceof AttachmentError && error.transient) {
-        return attachmentErrorResponse(context, error);
-      }
-      const failed = await repo.campaigns.fail(campaign.id, nowIso(), campaignAttachmentFailureMessage(error));
-      const latest = failed ? null : await repo.campaigns.getById(campaign.id);
-      if (failed || latest?.state === "completed" || latest?.state === "failed") {
-        try {
-          await cleanupCampaignAttachments(repo, attachmentService, campaign.id);
-        } catch {
-          // Scheduled cleanup will retry when storage is available again.
-        }
-      }
-      return attachmentErrorResponse(context, error);
+    } catch (errorValue) {
+      const failure = classifyAttachmentLoadFailure(errorValue);
+      if (failure.disposition === "fail") await failCampaignForAttachment(repo, campaign, failure, attachmentService);
+      return attachmentActionError(context, failure);
     }
   }
   if (!(await repo.campaigns.queue(campaign.id, authenticated.user.id, nowIso()))) return responseError(context, 409, "campaign_changed", "The campaign changed in another session. Refresh and try again.");

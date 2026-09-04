@@ -43,15 +43,22 @@ async function errorFrom(response: Response): Promise<AttachmentError> {
     requestId: response.headers.get("request-id") ?? response.headers.get("x-ms-request-id") ?? undefined,
   });
   if (response.status === 401 || response.status === 403) {
-    return new AttachmentError("storage_error", "Reconnect OneDrive before using campaign attachments");
+    return new AttachmentError("authorization_error", "Reconnect OneDrive before using campaign attachments");
   }
   if (response.status === 404) {
-    return new AttachmentError("storage_missing", "A campaign attachment was deleted from OneDrive");
+    return new AttachmentError("missing_object", "A campaign attachment was deleted from OneDrive");
   }
   if (response.status === 507) return new AttachmentError("storage_error", "This OneDrive does not have enough available storage");
-  if (response.status === 408 || response.status === 429 || response.status >= 500) {
+  if (response.status === 429) {
     return new AttachmentError(
-      "storage_temporary",
+      "throttled",
+      "OneDrive is temporarily unavailable. Try again shortly",
+      { transient: true, retryAfterSeconds: retryAfterSeconds(response) },
+    );
+  }
+  if (response.status === 408 || response.status >= 500) {
+    return new AttachmentError(
+      "service_unavailable",
       "OneDrive is temporarily unavailable. Try again shortly",
       { transient: true, retryAfterSeconds: retryAfterSeconds(response) },
     );
@@ -90,7 +97,7 @@ async function boundedArrayBuffer(response: Response, maxBytes?: number): Promis
   } catch (error) {
     if (error instanceof AttachmentError) throw error;
     throw new AttachmentError(
-      "storage_temporary",
+      "network_error",
       "OneDrive could not finish reading the campaign attachment",
       { transient: true },
     );
@@ -124,7 +131,7 @@ export class OneDriveAppFolderAttachmentStore implements AttachmentObjectStore {
 
   private async token(ownerUserId: string): Promise<string> {
     const token = await this.accessTokenFor(ownerUserId);
-    if (!token) throw new AttachmentError("storage_error", "Reconnect OneDrive before using campaign attachments");
+    if (!token) throw new AttachmentError("authorization_error", "Reconnect OneDrive before using campaign attachments");
     return token;
   }
 
@@ -133,7 +140,7 @@ export class OneDriveAppFolderAttachmentStore implements AttachmentObjectStore {
       return await this.fetchImpl(input, init);
     } catch {
       throw new AttachmentError(
-        "storage_temporary",
+        "network_error",
         "OneDrive could not be reached. Try again shortly",
         { transient: true },
       );

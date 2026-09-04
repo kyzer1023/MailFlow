@@ -65,10 +65,10 @@ function makeJob(): RecipientJobRecord {
 }
 
 function dependencies(provider: MailProvider): CampaignTickDependencies & {
-  state: { campaign: CampaignRecord; job: RecipientJobRecord; sends: number; audits: string[] };
+  state: { campaign: CampaignRecord; job: RecipientJobRecord; sends: number; cleanups: number; audits: { eventType: string; metadata: Readonly<Record<string, unknown>> }[] };
   mailboxDecision: MailboxLeaseDecision;
 } {
-  const state = { campaign: makeCampaign(), job: makeJob(), sends: 0, audits: [] as string[] };
+  const state = { campaign: makeCampaign(), job: makeJob(), sends: 0, cleanups: 0, audits: [] as { eventType: string; metadata: Readonly<Record<string, unknown>> }[] };
   const deps: CampaignTickDependencies & {
     state: typeof state;
     mailboxDecision: MailboxLeaseDecision;
@@ -107,8 +107,39 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       },
       pause: async () => false,
       resume: async () => false,
-      fail: async (_id: string, now: string, reason: string) => {
-        state.campaign = { ...state.campaign, state: "failed", pauseReason: reason, updatedAt: now, wakeToken: null, wakeDueAt: null };
+      pauseForAttachmentAuthorization: async (_id: string, _owner: string, now: string, reason: string) => {
+        if (state.campaign.state !== "running" && state.campaign.state !== "queued") return false;
+        state.campaign = {
+          ...state.campaign,
+          state: "paused",
+          pauseReason: reason,
+          attachmentIssueCode: "attachment_authorization_required",
+          updatedAt: now,
+          wakeToken: null,
+          wakeDueAt: null,
+          schedulerNextAttemptAt: null,
+          schedulerMessage: null,
+        };
+        return true;
+      },
+      markAttachmentRetry: async (_id: string, nextAttemptAt: string, message: string, now: string) => {
+        if (state.campaign.state !== "running") return false;
+        state.campaign = {
+          ...state.campaign,
+          attachmentIssueCode: "attachment_retrying",
+          attachmentRetryCount: (state.campaign.attachmentRetryCount ?? 0) + 1,
+          schedulerNextAttemptAt: nextAttemptAt,
+          schedulerMessage: message,
+          updatedAt: now,
+        };
+        return true;
+      },
+      clearAttachmentIssue: async (_id: string, now: string) => {
+        state.campaign = { ...state.campaign, attachmentIssueCode: null, attachmentRetryCount: 0, updatedAt: now };
+        return true;
+      },
+      fail: async (_id: string, now: string, reason: string, attachmentIssueCode = null) => {
+        state.campaign = { ...state.campaign, state: "failed", pauseReason: reason, attachmentIssueCode, updatedAt: now, wakeToken: null, wakeDueAt: null };
         return true;
       },
       completeIfExhausted: async () => false,
@@ -172,12 +203,12 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       recoverStale: async () => [],
     },
     audit: {
-      append: async (event: { eventType: string }) => { state.audits.push(event.eventType); },
+      append: async (event: { eventType: string; metadata: Readonly<Record<string, unknown>> }) => { state.audits.push({ eventType: event.eventType, metadata: event.metadata }); },
       listByCampaign: async () => [],
     },
     queue: { enqueue: async () => undefined },
     attachmentLoader: async () => [],
-    attachmentCleanup: async () => undefined,
+    attachmentCleanup: async () => { state.cleanups += 1; },
     mailProvider: { send: async (message, options) => { state.sends += 1; return provider.send(message, options); } },
     now: () => new Date("2026-08-31T00:01:00.000Z"),
     claimToken: () => "claim-1",
@@ -226,7 +257,7 @@ describe("campaign tick", () => {
     expect(deps.state.job.status).toBe("pending");
     expect(deps.state.job.lastErrorCategory).toBe("mailbox_daily_budget");
     expect(deps.state.campaign.schedulerMessage).toContain("daily mailbox allowance");
-    expect(deps.state.audits).toContain("campaign.mailbox_waiting");
+    expect(deps.state.audits.map((event) => event.eventType)).toContain("campaign.mailbox_waiting");
   });
 
   it("honors Retry-After later than campaign pacing and preserves a safe retry", async () => {
@@ -253,12 +284,93 @@ describe("campaign tick", () => {
     await expect(processCampaignTick(TICK, deps)).resolves.toMatchObject({ kind: "scheduled", outcome: "accepted" });
   });
 
-  it("fails before claiming when attachment integrity cannot be verified", async () => {
+  it("retains attachments and pending jobs while a network failure retries with bounded backoff", async () => {
     const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
-    deps.attachmentLoader = async () => { throw new Error("missing private object"); };
+    deps.attachmentLoader = async () => { throw new AttachmentError("network_error", "private detail"); };
+    await expect(processCampaignTick(TICK, deps)).resolves.toEqual({
+      kind: "waiting",
+      campaignId: "campaign-1",
+      jobId: null,
+      reason: "attachment_retry",
+      nextAttemptAt: "2026-08-31T00:01:30.000Z",
+      delaySeconds: 30,
+    });
+    expect(deps.state.job).toMatchObject({ status: "pending", attemptCount: 0 });
+    expect(deps.state.campaign).toMatchObject({
+      state: "running",
+      attachmentIssueCode: "attachment_retrying",
+      attachmentRetryCount: 1,
+      schedulerNextAttemptAt: "2026-08-31T00:01:30.000Z",
+    });
+    expect(deps.state.cleanups).toBe(0);
+    expect(deps.state.audits.at(-1)).toEqual({
+      eventType: "campaign.attachment_retry_scheduled",
+      metadata: {
+        category: "network",
+        disposition: "retry",
+        retryOrdinal: 1,
+        nextAttemptAt: "2026-08-31T00:01:30.000Z",
+      },
+    });
+  });
+
+  it("honors OneDrive throttling without exposing provider details in audit metadata", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.attachmentLoader = async () => { throw new AttachmentError("throttled", "private response", { retryAfterSeconds: 120 }); };
+    await expect(processCampaignTick(TICK, deps)).resolves.toMatchObject({
+      kind: "waiting",
+      reason: "attachment_retry",
+      delaySeconds: 120,
+      nextAttemptAt: "2026-08-31T00:03:00.000Z",
+    });
+    expect(Object.keys(deps.state.audits.at(-1)?.metadata ?? {}).sort()).toEqual([
+      "category",
+      "disposition",
+      "nextAttemptAt",
+      "retryOrdinal",
+    ]);
+  });
+
+  it("pauses before claiming when OneDrive authorization must be renewed", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.attachmentLoader = async () => { throw new AttachmentError("authorization_error", "private token detail"); };
+    await expect(processCampaignTick(TICK, deps)).resolves.toEqual({
+      kind: "paused",
+      campaignId: "campaign-1",
+      reason: "attachment_authorization",
+    });
+    expect(deps.state.campaign).toMatchObject({
+      state: "paused",
+      attachmentIssueCode: "attachment_authorization_required",
+      pauseReason: "Reconnect OneDrive, then resume from the pending rows.",
+    });
+    expect(deps.state.job).toMatchObject({ status: "pending", attemptCount: 0 });
+    expect(deps.state.cleanups).toBe(0);
+  });
+
+  it("fails terminally before claiming when an attachment object is missing", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.attachmentLoader = async () => { throw new AttachmentError("missing_object", "private object locator"); };
     await expect(processCampaignTick(TICK, deps)).resolves.toEqual({ kind: "failed", campaignId: "campaign-1", reason: "attachments_unavailable" });
-    expect(deps.state.job.status).toBe("pending");
-    expect(deps.state.campaign.state).toBe("failed");
+    expect(deps.state.job).toMatchObject({ status: "pending", attemptCount: 0 });
+    expect(deps.state.campaign).toMatchObject({
+      state: "failed",
+      attachmentIssueCode: "attachment_missing",
+      pauseReason: "A campaign attachment is no longer available in OneDrive. No additional message was sent.",
+    });
+    expect(deps.state.cleanups).toBe(1);
+    expect(deps.state.audits.at(-1)).toEqual({
+      eventType: "campaign.attachment_failed",
+      metadata: { category: "missing_object", disposition: "fail" },
+    });
+  });
+
+  it.each(["accepted", "unknown"] as const)("never reclaims a terminal %s row after recovery", async (status) => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.state.job = { ...deps.state.job, status };
+    await expect(processCampaignTick(TICK, deps)).resolves.toEqual({ kind: "ignored", reason: "claim_lost" });
+    expect(deps.state.sends).toBe(0);
+    expect(deps.state.job.status).toBe(status);
   });
 
   it("retries a transient OneDrive failure before claiming or reserving delivery", async () => {
@@ -278,7 +390,7 @@ describe("campaign tick", () => {
 
     await expect(processCampaignTick(TICK, deps)).resolves.toMatchObject({
       kind: "waiting",
-      reason: "attachments_temporarily_unavailable",
+      reason: "attachment_retry",
       nextAttemptAt: "2026-08-31T00:03:00.000Z",
       delaySeconds: 120,
     });
@@ -287,7 +399,7 @@ describe("campaign tick", () => {
     expect(deps.state.campaign.state).toBe("running");
     expect(deps.state.sends).toBe(0);
     expect(mailboxAcquisitions).toBe(0);
-    expect(deps.state.audits).toContain("campaign.attachment_waiting");
+    expect(deps.state.audits.map((event) => event.eventType)).toContain("campaign.attachment_retry_scheduled");
   });
 
   it("fails clearly when an immutable OneDrive attachment was changed", async () => {
@@ -302,7 +414,7 @@ describe("campaign tick", () => {
       reason: "attachments_unavailable",
     });
     expect(deps.state.job.status).toBe("pending");
-    expect(deps.state.campaign.pauseReason).toContain("changed in OneDrive");
+    expect(deps.state.campaign.pauseReason).toContain("no longer matches the reviewed file");
     expect(deps.state.sends).toBe(0);
   });
 

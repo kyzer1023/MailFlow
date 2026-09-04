@@ -2,7 +2,8 @@
 .campaign-header { align-items: flex-start; margin-bottom: 18px; }
 .campaign-header h1 { margin-top: .5rem; font-size: clamp(2.15rem, 2.9vw, 3.15rem); }
 .campaign-header > div:first-child { max-width: 1120px; }
-.campaign-identity { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: .8rem; align-items: center; margin-bottom: 18px; }
+.campaign-identity { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; gap: var(--space-campaign-identity-gap); align-items: center; margin-bottom: var(--space-campaign-identity-bottom); }
+.campaign-page > .notice + .campaign-identity { margin-top: var(--space-campaign-notice-gap); }
 .campaign-identity h2 { margin: 0 0 .2rem; font-size: 1.08rem; }
 .campaign-identity code { color: var(--muted); font: .74rem var(--font-mono); }
 .route-summary { padding: 0; border: 0; background: transparent; }
@@ -13,6 +14,7 @@
 .count--sending > span { background: var(--coral); color: white; box-shadow: 0 0 0 5px #f8ddd6; }
 .count--accepted > span { background: var(--moss); color: white; }
 .count--failed > span { background: #f3d9d4; color: var(--danger); }
+.count--recipient-failed > span, .count--unknown > span, .count--not-sent > span { background: var(--danger-soft); color: var(--danger); }
 .count strong, .count small { display: block; }
 .count strong { font-size: 1.18rem; }
 .count small { margin-top: .15rem; color: var(--muted); font-size: .68rem; }
@@ -35,6 +37,10 @@
 .recovery-card h2 { margin: .65rem 0 .35rem; font-size: 1.04rem; }
 .recovery-card p { margin: 0; color: var(--muted); font-size: .82rem; }
 .recovery-card > strong { display: block; margin: .35rem 0 .8rem; color: var(--moss-dark); font-size: .8rem; line-height: 1.35; }
+.recovery-card--failed > strong { color: var(--danger-ink); }
+.campaign-reconnect { align-items: center; }
+.campaign-reconnect > span { flex: 1 1 320px; }
+.campaign-reconnect .button { flex: 0 0 auto; }
 .campaign-details { padding: 20px; }
 .campaign-details h2 { margin: .35rem 0 0; font-size: 1.05rem; }
 .campaign-details dl { margin: 1rem 0 0; display: grid; gap: .75rem; }

@@ -49,6 +49,11 @@ export function displayCampaign(
     updated: formatDate(campaign.updatedAt),
     status: resolvedStatus,
     accepted: counts?.accepted ?? 0,
+    recipientFailed: counts?.failed ?? 0,
+    unknown: counts?.unknown ?? 0,
+    notSent: resolvedStatus === "failed"
+      ? counts?.pending ?? 0
+      : 0,
     failed: (counts?.failed ?? 0) + (counts?.unknown ?? 0),
     sent: (counts?.accepted ?? 0) + (counts?.failed ?? 0) + (counts?.unknown ?? 0),
     total: campaign.totalRecipients,

@@ -571,6 +571,121 @@ describe("authenticated information architecture", () => {
     expect(document.body.textContent).not.toMatch(/wake_|attempt_|lease_/u);
   });
 
+  it("separates a campaign-level failure from recipient outcomes in history", async () => {
+    window.history.replaceState({}, "", "/campaigns");
+    const campaign = {
+      id: "campaign-failed-history",
+      flowId: "flow-failed-history",
+      templateVersionId: "template-failed-history",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Recipients.xlsx",
+      totalRecipients: 5,
+      validRecipients: 5,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "failed" as const,
+      pauseReason: "A campaign attachment is no longer available in OneDrive. No additional message was sent.",
+      attachmentIssueCode: "attachment_missing" as const,
+      attachmentRetryCount: 0,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      queuedAt: "2026-09-05T08:00:01.000Z",
+      startedAt: "2026-09-05T08:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-05T08:00:03.000Z",
+    };
+    const counts = { pending: 2, claimed: 0, sending: 0, accepted: 1, failed: 1, skipped: 0, unknown: 1 };
+    mockedGetFlows.mockResolvedValue({ flows: [] });
+    mockedGetCampaigns.mockResolvedValue({ campaigns: [campaign] });
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+
+    render(<App />);
+
+    expect(await screen.findByText("Campaign failed")).toBeInTheDocument();
+    expect(screen.getByText("1 recipient failed")).toBeInTheDocument();
+    expect(screen.getByText("1 outcome unknown")).toBeInTheDocument();
+    expect(screen.getByText("2 not sent")).toBeInTheDocument();
+  });
+
+  it("shows pending rows as not sent and removes time remaining after a campaign failure", async () => {
+    window.history.replaceState({}, "", "/campaigns/campaign-failed-detail");
+    const campaign = {
+      id: "campaign-failed-detail",
+      flowId: "flow-failed-detail",
+      templateVersionId: "template-failed-detail",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Recipients.xlsx",
+      totalRecipients: 3,
+      validRecipients: 3,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "failed" as const,
+      pauseReason: "A campaign attachment no longer matches the reviewed file. No additional message was sent.",
+      attachmentIssueCode: "attachment_integrity" as const,
+      attachmentRetryCount: 0,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      queuedAt: "2026-09-05T08:00:01.000Z",
+      startedAt: "2026-09-05T08:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-05T08:00:03.000Z",
+    };
+    const counts = { pending: 1, claimed: 0, sending: 0, accepted: 1, failed: 1, skipped: 0, unknown: 0 };
+    const jobs = [
+      { id: "job-accepted", campaignId: campaign.id, sourceRow: 1, recipient: "accepted@example.test", cc: [], bcc: [], replyTo: [], importance: "normal" as const, mergeData: {}, renderedSubject: "Invitation", renderedBodyHtml: "<p>Invitation</p>", sendKey: "send-accepted", status: "accepted" as const, attemptCount: 1, claimToken: null, claimedAt: null, sendingAt: null, acceptedAt: "2026-09-05T08:00:02.000Z", nextAttemptAt: null, lastErrorCategory: null, lastErrorMessage: null, providerMessageId: null, providerRequestId: null, createdAt: "2026-09-05T08:00:00.000Z", updatedAt: "2026-09-05T08:00:02.000Z" },
+      { id: "job-pending", campaignId: campaign.id, sourceRow: 2, recipient: "pending@example.test", cc: [], bcc: [], replyTo: [], importance: "normal" as const, mergeData: {}, renderedSubject: "Invitation", renderedBodyHtml: "<p>Invitation</p>", sendKey: "send-pending", status: "pending" as const, attemptCount: 0, claimToken: null, claimedAt: null, sendingAt: null, acceptedAt: null, nextAttemptAt: null, lastErrorCategory: null, lastErrorMessage: null, providerMessageId: null, providerRequestId: null, createdAt: "2026-09-05T08:00:00.000Z", updatedAt: "2026-09-05T08:00:00.000Z" },
+      { id: "job-failed", campaignId: campaign.id, sourceRow: 3, recipient: "failed@example.test", cc: [], bcc: [], replyTo: [], importance: "normal" as const, mergeData: {}, renderedSubject: "Invitation", renderedBodyHtml: "<p>Invitation</p>", sendKey: "send-failed", status: "failed" as const, attemptCount: 1, claimToken: null, claimedAt: null, sendingAt: null, acceptedAt: null, nextAttemptAt: null, lastErrorCategory: "rejected", lastErrorMessage: "Microsoft rejected this recipient.", providerMessageId: null, providerRequestId: null, createdAt: "2026-09-05T08:00:00.000Z", updatedAt: "2026-09-05T08:00:02.000Z" },
+    ];
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaignJobs.mockResolvedValue({ jobs, counts, limit: 500, offset: 0 });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "This campaign stopped safely." })).toBeInTheDocument();
+    expect(screen.getByText("Campaign-level failure")).toBeInTheDocument();
+    expect(screen.getByText("Not sent", { selector: ".status" })).toBeInTheDocument();
+    expect(screen.getByText("Campaign stopped before this row")).toBeInTheDocument();
+    expect(screen.queryByText(/minutes remaining/iu)).not.toBeInTheDocument();
+    expect(screen.queryByText("Queued")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause campaign" })).not.toBeInTheDocument();
+    expect(screen.getByText("1 recipient-level failure, 0 unknown, and 1 not sent.")).toBeInTheDocument();
+  });
+
+  it("guides an authorization-paused campaign through OneDrive reconnect and pending-only resume", async () => {
+    window.history.replaceState({}, "", "/campaigns/campaign-reconnect");
+    const campaign = {
+      id: "campaign-reconnect",
+      flowId: "flow-reconnect",
+      templateVersionId: "template-reconnect",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Recipients.xlsx",
+      totalRecipients: 2,
+      validRecipients: 2,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "paused" as const,
+      pauseReason: "Reconnect OneDrive, then resume from the pending rows.",
+      attachmentIssueCode: "attachment_authorization_required" as const,
+      attachmentRetryCount: 1,
+      createdAt: "2026-09-05T08:00:00.000Z",
+      queuedAt: "2026-09-05T08:00:01.000Z",
+      startedAt: "2026-09-05T08:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-05T08:00:03.000Z",
+    };
+    const counts = { pending: 1, claimed: 0, sending: 0, accepted: 1, failed: 0, skipped: 0, unknown: 0 };
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaignJobs.mockResolvedValue({ jobs: [], counts, limit: 500, offset: 0 });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Reconnect OneDrive to continue." })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Reconnect OneDrive" })[0]).toHaveAttribute("href", "/auth/microsoft/onedrive/start?returnTo=%2Fcampaigns%2Fcampaign-reconnect");
+    expect(screen.getByRole("button", { name: "Resume pending rows" })).toBeEnabled();
+    expect(screen.queryByText(/minutes remaining/iu)).not.toBeInTheDocument();
+  });
+
   it("pages every recipient job within the campaign monitor", async () => {
     window.history.replaceState({}, "", "/campaigns/campaign-full-list");
     const campaign = {

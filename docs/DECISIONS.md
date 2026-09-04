@@ -105,3 +105,34 @@ MailFlow enforces an application budget of 8,000 envelope-recipient entries per 
 Each runnable campaign has at most one effective durable wake reservation. A cryptographically unguessable wake token is stored in D1 and carried by the Queue message. The consumer must atomically consume the matching due token before doing work, so duplicate physical messages become harmless no-ops. Start, resume, ordinary pacing, provider backoff, and daily-budget waiting all reuse this reservation. The next due time is the later of the campaign pace, mailbox pace, explicit Microsoft backoff, recipient retry eligibility, and rolling-budget release. Queue delay values are clamped to Cloudflare's documented [`delaySeconds` range of 0 through 86,400 seconds](https://developers.cloudflare.com/queues/configuration/javascript-apis/#queuesendoptions). A longer wait is represented by another bounded wake after rechecking D1.
 
 The existing hourly scheduled trigger performs a bounded watchdog pass. It safely returns stale claimed work that never crossed the provider boundary to pending, but changes stale sending or provider-bound work to terminal unknown. It reconciles and releases expired leases only after the linked attempt and job or test-send state are classified conservatively. It also recreates missing campaign wake messages, completes exhausted campaigns, and never changes an unknown job back to pending. Repeated watchdog runs are idempotent. Audit metadata and user-facing status may contain category, counts, and timestamps, but never recipient addresses, message bodies, attachment data or locators, lease tokens, or attempt tokens.
+
+## ADR-014 - Classify attachment loading before claiming a recipient
+
+Status: accepted for implementation.
+
+Campaign attachment bytes are loaded and verified before any recipient job is
+claimed. MailFlow classifies failures by whether the pre-submission operation is
+safe to repeat rather than treating every storage error as a terminal campaign
+failure.
+
+Network failures, Microsoft Graph throttling, and Graph service failures are
+retryable. The campaign retains its immutable attachment set and pending jobs,
+increments a durable attachment retry count, and reserves one effective wake
+with bounded exponential backoff. A longer provider `Retry-After` is honored up
+to Cloudflare Queues' maximum delay. Authorization failures are not retried in
+the background: the campaign pauses with a reconnect-required issue code, the
+member reconnects the same OneDrive resource, and resume verifies the attachment
+set before conditionally returning the campaign to running.
+
+A missing object or an attachment size or checksum mismatch is permanent for
+that immutable campaign snapshot. The campaign becomes failed with a sanitized
+terminal reason before another row is claimed. Recipient jobs are not rewritten:
+accepted and unknown outcomes remain terminal, while rows still stored as
+pending are presented as not sent when the campaign itself is terminal.
+
+The campaign history and detail screens distinguish a campaign-level stop from
+recipient-level failed or unknown outcomes. A failed campaign shows no future
+queue promise or time-remaining estimate. Attachment audit evidence contains
+only a bounded category, disposition, retry ordinal, and optional next-attempt
+time, never private OneDrive locators, filenames, addresses, message content, or
+credentials.

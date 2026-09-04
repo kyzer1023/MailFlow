@@ -67,31 +67,39 @@ describe("OneDrive App Folder attachment store", () => {
     expect(result).toEqual({ objects: [{ key: matching }], truncated: false });
   });
 
-  it("turns a denied Graph request into a reconnectable storage error", async () => {
+  it("turns a denied Graph request into a reconnectable authorization error", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 403 })) as unknown as typeof fetch;
     const store = new OneDriveAppFolderAttachmentStore(async () => "expired-token", { fetchImpl });
 
     await expect(store.put("user-1", key, new ArrayBuffer(1))).rejects.toMatchObject({
-      code: "storage_error",
+      code: "authorization_error",
       message: "Reconnect OneDrive before using campaign attachments",
     });
   });
 
-  it("classifies Graph throttles and network failures as transient pre-send storage errors", async () => {
+  it("classifies Graph throttles and network failures as transient pre-send errors", async () => {
     const throttled = new OneDriveAppFolderAttachmentStore(async () => "token", {
       fetchImpl: vi.fn(async () => new Response(null, { status: 429, headers: { "Retry-After": "120" } })) as unknown as typeof fetch,
     });
     await expect(throttled.get("user-1", key)).rejects.toMatchObject({
-      code: "storage_temporary",
+      code: "throttled",
       transient: true,
       retryAfterSeconds: 120,
+    });
+
+    const unavailable = new OneDriveAppFolderAttachmentStore(async () => "token", {
+      fetchImpl: vi.fn(async () => new Response(null, { status: 503 })) as unknown as typeof fetch,
+    });
+    await expect(unavailable.get("user-1", key)).rejects.toMatchObject({
+      code: "service_unavailable",
+      transient: true,
     });
 
     const offline = new OneDriveAppFolderAttachmentStore(async () => "token", {
       fetchImpl: vi.fn(async () => { throw new TypeError("network unavailable"); }) as unknown as typeof fetch,
     });
     await expect(offline.get("user-1", key)).rejects.toMatchObject({
-      code: "storage_temporary",
+      code: "network_error",
       transient: true,
     });
   });

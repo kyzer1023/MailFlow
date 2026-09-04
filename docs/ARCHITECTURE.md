@@ -115,6 +115,12 @@ Campaign creation inserts the campaign, optional owner-matching attachment assoc
 
 Actor, campaign, recipient job when relevant, event type, structured metadata, and timestamp. Secrets and message bodies are excluded from audit metadata.
 
+Attachment-load audit events record only the failure category, disposition,
+retry ordinal, and next-attempt timestamp when applicable. They never record
+addresses, filenames, message content, bearer tokens, refresh tokens, Graph
+response bodies, private download URLs, drive item identifiers, or generated
+storage locators.
+
 ### test_sends and rate_limit_counters
 
 Test sends use a dedicated owner-scoped record rather than recipient jobs. A stable client idempotency key and a server-calculated fingerprint cover the campaign, sanitized subject and HTML body, importance, and selected attachment set. The first request claims the key before Microsoft is called; exact replays return the stored terminal result, while a key reused for different effective content is rejected. A failure proven to occur before submission releases the claim so the same key may retry; an ambiguous provider outcome remains terminal and is never automatically resubmitted. Test-send audit events reference the campaign but never a recipient job and never store addresses, message bodies, or attachment bytes.
@@ -154,6 +160,37 @@ The queue carries campaign tick messages, not an uncontrolled burst of all recip
 7. Enqueues the next tick with a delay derived from the configured pace.
 
 At 12 messages per minute, the next tick is delayed by approximately 5 seconds. Graph `429` and explicit transient SMTP replies use their provider retry delay when present. Paused campaigns do not enqueue progress until resumed.
+
+### Attachment-load recovery
+
+Attachment loading is a pre-submission operation and always finishes before a
+recipient row is claimed. Failures are classified at the OneDrive boundary and
+have one of three durable outcomes:
+
+- Network failures, Microsoft Graph `429` responses, and Graph `5xx` responses
+  keep the campaign runnable and every recipient job unchanged. The campaign
+  records an attachment retry count and schedules one guarded wake using
+  exponential delay from 30 seconds through 15 minutes. A provider
+  `Retry-After` value takes precedence when it is longer, and the final Queue
+  delay remains clamped to Cloudflare's 86,400-second limit.
+- OneDrive authorization failures pause the campaign before a recipient is
+  claimed, retain the attachment set, and record an explicit reconnect-required
+  issue code. Resume validates the same owner-scoped attachment set before the
+  conditional `paused -> running` transition and then reserves one new wake.
+- A permanently missing OneDrive object, deleted attachment metadata, byte-size
+  mismatch, or SHA-256 mismatch fails the campaign before a recipient is
+  claimed. The campaign keeps a sanitized terminal issue code and explanation;
+  terminal cleanup may remove any remaining active attachment bytes.
+
+`campaigns.attachment_issue_code` is the machine-readable recovery contract and
+`campaigns.attachment_retry_count` supplies durable backoff state. Successful
+attachment loading clears both before the next recipient claim. Neither field
+contains a filename, object locator, token, address, or message content.
+
+Resuming never rewrites recipient outcomes. The next tick continues through the
+existing conditional `claimNextPending` path, so `accepted`, `failed`, `skipped`,
+and `unknown` jobs remain terminal and cannot be sent again through recovery or
+duplicate Queue delivery.
 
 ## Mailbox scheduler, budget, and recovery
 

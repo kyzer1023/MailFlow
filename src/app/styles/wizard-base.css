@@ -82,6 +82,7 @@ details input { margin-top: 10px; }
 .notice svg { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; }
 .notice strong { display: block; }
 .notice--warn { background: #fff0d9; color: #7f511a; }
+.notice--danger { background: var(--danger-soft); color: var(--danger-ink); }
 .template-save-error { margin-top: 0; }
 .envelope-preview { margin-top: 1.1rem; border-top: 1px solid var(--line); padding-top: 1rem; display: grid; justify-items: start; gap: .45rem; }
 .envelope-preview > img { width: 136px; height: 48px; object-fit: contain; object-position: left center; }

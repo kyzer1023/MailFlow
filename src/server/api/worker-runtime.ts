@@ -58,7 +58,7 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
           if (!set) return [];
           if (!attachmentService) {
             throw new AttachmentError(
-              "storage_temporary",
+              "service_unavailable",
               "Campaign attachments are temporarily unavailable",
               { transient: true },
             );

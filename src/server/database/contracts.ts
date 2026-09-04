@@ -1,5 +1,6 @@
 import type {
   AuditEventRecord,
+  CampaignAttachmentIssueCode,
   CampaignCounts,
   CampaignRecord,
   DeliveryAttemptRecord,
@@ -90,7 +91,10 @@ export interface CampaignRepository {
   markRunningIfQueued(id: string, now: string): Promise<boolean>;
   pause(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean>;
   resume(id: string, ownerUserId: string, now: string): Promise<boolean>;
-  fail(id: string, now: string, reason: string): Promise<boolean>;
+  fail(id: string, now: string, reason: string, attachmentIssueCode?: CampaignAttachmentIssueCode | null): Promise<boolean>;
+  pauseForAttachmentAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean>;
+  markAttachmentRetry(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean>;
+  clearAttachmentIssue(id: string, now: string): Promise<boolean>;
   completeIfExhausted(id: string, now: string): Promise<boolean>;
   /** Reserve at most one effective Queue wake for a runnable campaign. */
   reserveWake(id: string, wakeToken: string, dueAt: string, message: string | null, now: string, replaceDueBefore?: string | null): Promise<boolean>;

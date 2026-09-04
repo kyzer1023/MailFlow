@@ -15,6 +15,8 @@
   --step-line: #c6cbc6;
   --step-muted: #626c66;
   --danger: #b84a3c;
+  --danger-soft: #f9e0dc;
+  --danger-ink: #8b342b;
   --warn: #c98229;
   --token-bg: #e7efe9;
   --token-border: #b9cbbf;
@@ -24,6 +26,9 @@
   --sidebar: 264px;
   --space-shell-notice-top: 18px;
   --space-shell-notice-inline: 24px;
+  --space-campaign-notice-gap: 16px;
+  --space-campaign-identity-gap: 14px;
+  --space-campaign-identity-bottom: 20px;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-display);

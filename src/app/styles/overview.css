@@ -27,7 +27,8 @@
 .status--draft, .status--pending, .status--queued, .status--skipped { background: #ebe9e3; color: #656b67; }
 .status--paused { background: #fff0d9; color: #925d19; }
 .status--sending { background: #ffe6df; color: #a54534; }
-.status--failed, .status--unknown { background: #f9e0dc; color: #9d3e32; }
+.status--failed, .status--unknown, .status--not-sent { background: var(--danger-soft); color: var(--danger-ink); }
+.campaign-results small { display: inline-block; color: var(--muted); }
 .dashboard-lower { margin-top: 27px; display: grid; grid-template-columns: minmax(0, 2.05fr) minmax(280px, .95fr); gap: 20px; align-items: stretch; }
 .campaign-list { padding: 20px 22px 8px; }
 .campaign-list .table-wrap { margin: 10px -22px 0; }
