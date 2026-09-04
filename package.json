@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:staging": "node scripts/build-staging.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test:unit": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply mailflow-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply mailflow-db --remote",
+    "db:migrate:staging": "wrangler d1 migrations apply mailflow-staging-db --remote --env staging",
     "deploy": "vite build && wrangler deploy",
+    "check:staging": "npm test && wrangler deploy --dry-run && npm run build:staging && wrangler deploy --env staging --dry-run",
+    "deploy:staging": "npm run check:staging && npm run db:migrate:staging && wrangler deploy --env staging",
     "test": "npm run typecheck && npm run build && npm run test:unit"
   },
   "dependencies": {

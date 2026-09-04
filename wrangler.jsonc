@@ -44,5 +44,47 @@
     "MAIL_TRANSPORT": "smtp",
     "DEFAULT_CAMPAIGN_PACE": "12",
     "MAX_CAMPAIGN_RECIPIENTS": "300"
+  },
+  "env": {
+    "staging": {
+      "name": "mailflow-staging",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mailflow-staging-db",
+          "database_id": "b6087fb0-ff4a-4cb7-975e-5431a6329431",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "triggers": {
+        "crons": ["15 * * * *"]
+      },
+      "queues": {
+        "producers": [
+          {
+            "binding": "CAMPAIGN_QUEUE",
+            "queue": "mailflow-staging-campaign-ticks"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "mailflow-staging-campaign-ticks",
+            "dead_letter_queue": "mailflow-staging-campaign-ticks-dlq",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_retries": 3
+          }
+        ]
+      },
+      "vars": {
+        "PUBLIC_ORIGIN": "https://mailflow-staging.kyzer-hono-test.workers.dev",
+        "ENTRA_TENANT_ID": "0ad0fbf8-69ca-4e5e-afad-cd70424ac626",
+        "ENTRA_CLIENT_ID": "20936b15-0b73-47f5-912f-737eab3de293",
+        "MAIL_TRANSPORT": "smtp",
+        "DEFAULT_CAMPAIGN_PACE": "12",
+        "MAX_CAMPAIGN_RECIPIENTS": "300",
+        "ATTACHMENT_OBJECT_NAMESPACE": "staging"
+      }
+    }
   }
 }

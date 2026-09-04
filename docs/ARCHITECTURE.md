@@ -166,7 +166,10 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 - Secrets for Entra client secret, token-encryption key, and session integrity.
 - Plain variables for tenant ID, client ID, public origin, campaign limit, and default pace.
 - `MAIL_TRANSPORT` selects `graph` or `smtp`. Attachments are exposed and accepted only in `smtp` mode when the user's stored grants include both `SMTP.Send` and `Files.ReadWrite.AppFolder`.
+- `ATTACHMENT_OBJECT_NAMESPACE`, when set, is a short deployment discriminator embedded in every new private OneDrive filename. Staging sets it to `staging`; production omits it to preserve the deployed filename format.
 - An hourly scheduled handler removes attachment sets that remain unassociated past their 24-hour expiry. Campaign terminal paths also request immediate cleanup.
+
+The Wrangler `staging` environment is a separate Worker with independent D1, Queue, dead-letter Queue, vars, and secrets. It shares no Cloudflare stateful binding with the top-level production deployment. Both environments use the same Entra application and per-user OneDrive App Folder, so the staging attachment namespace is the storage-level isolation boundary in addition to separate D1 ownership metadata.
 
 ## Security boundaries
 

@@ -27,6 +27,20 @@ export function integerEnv(value: string | undefined, fallback: number, minimum:
   return Number.isInteger(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
+export function attachmentObjectNamespace(value: string | undefined): string {
+  const namespace = textEnv(value);
+  if (!namespace) return "";
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/u.test(namespace)) {
+    throw new Error("ATTACHMENT_OBJECT_NAMESPACE must be a lowercase alphanumeric label");
+  }
+  return namespace;
+}
+
+export function attachmentObjectKey(namespace: string, attachmentSetId: string, fileId: string): string {
+  const segment = namespace ? `-${namespace}` : "";
+  return `mailflow-${attachmentSetId}${segment}-${fileId}.bin`;
+}
+
 export function repositories(context: MailFlowContext): Repositories {
   return createD1Repositories(context.env.DB);
 }
@@ -110,6 +124,7 @@ export function configFor(context: MailFlowContext, redirectOrigin?: string): Ma
 export function attachmentServiceFor(context: MailFlowContext, repo = repositories(context)): AttachmentService | null {
   if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return null;
   const { storageAuth } = configFor(context);
+  const objectNamespace = attachmentObjectNamespace(context.env.ATTACHMENT_OBJECT_NAMESPACE);
   return createAttachmentService(
     repo.attachments,
     new OneDriveAppFolderAttachmentStore(async (ownerUserId) => {
@@ -123,6 +138,9 @@ export function attachmentServiceFor(context: MailFlowContext, repo = repositori
         throw error;
       }
     }),
+    {
+      objectKey: (attachmentSetId, fileId) => attachmentObjectKey(objectNamespace, attachmentSetId, fileId),
+    },
   );
 }
 

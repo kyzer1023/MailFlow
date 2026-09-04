@@ -21,6 +21,7 @@ export interface MailFlowBindings {
   DEFAULT_CAMPAIGN_PACE?: string;
   MAX_CAMPAIGN_RECIPIENTS?: string;
   MAIL_TRANSPORT?: string;
+  ATTACHMENT_OBJECT_NAMESPACE?: string;
 }
 
 export interface MailFlowVariables {

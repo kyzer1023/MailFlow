@@ -15,9 +15,27 @@ This runbook is for a future agent or maintainer deploying Mail Flow to the exis
 | Entra application | Existing single-tenant application named `MailFlow` |
 | Microsoft permissions | SMTP target: delegated `SMTP.Send`; attachment storage: delegated `Files.ReadWrite.AppFolder`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
 
-The source configuration is `../wrangler.jsonc`. The application package and all build commands live at the repository root. Configure Cloudflare Git builds to use the repository root as their build directory. Production secret names are `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`.
+The source configuration is `../wrangler.jsonc`. The application package and all build commands live at the repository root. Configure Cloudflare Git builds to use the repository root as their build directory. Worker secret names are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`; tenant and client IDs remain non-secret vars in versioned configuration.
 
 As of 2026-08-31, the D1 database and Queue are provisioned, the initial migration is applied, the Entra production callback is registered, all Worker secrets are present, and the public deployment is active. Do not create duplicate resources during routine maintenance; inspect the existing bindings first.
+
+## Staging inventory and isolation
+
+The top-level Wrangler configuration remains production. The named `staging` environment is a separate deployment:
+
+| Concern | Staging resource |
+| --- | --- |
+| Worker and static site | `mailflow-staging` |
+| Public origin | `https://mailflow-staging.kyzer-hono-test.workers.dev` |
+| D1 database | `mailflow-staging-db`, binding `DB` |
+| Campaign Queue | `mailflow-staging-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
+| Dead-letter Queue | `mailflow-staging-campaign-ticks-dlq` |
+| Attachment storage | Each member's OneDrive `Apps/MailFlow` folder, with `staging` embedded in every new private object filename |
+| OAuth callback | `https://mailflow-staging.kyzer-hono-test.workers.dev/auth/microsoft/callback` |
+
+Staging has independent `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET` Worker secrets. Tenant and client IDs are non-secret vars shared with the existing single-tenant Entra application. Never reuse the production token-encryption key, session secret, or client credential in staging. R2 is absent.
+
+The stable staging environment hosts one pull-request candidate at a time. `.github/workflows/deploy-staging.yml` is manual-only and serialized. Its operator supplies the exact candidate commit SHA; the workflow checks out that commit, runs the repository test suite, dry-runs the production package, builds and dry-runs the staging package, then applies staging migrations and deploys only after all checks pass. The GitHub `staging` environment must contain `CLOUDFLARE_ACCOUNT_ID` and a staging-deployment-scoped `CLOUDFLARE_API_TOKEN`. Configure required reviewers on that environment when the repository plan supports them.
 
 ## Preflight gate
 
@@ -27,6 +45,8 @@ From the repository root:
 npm ci
 npm test
 npx wrangler deploy --dry-run
+npm run build:staging
+npx wrangler deploy --env staging --dry-run
 ```
 
 Then confirm:
@@ -37,6 +57,7 @@ Then confirm:
 - The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
 - `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
+- A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
 
 ## Local full-stack development
 
@@ -69,6 +90,8 @@ These actions create persistent external resources and require action-time user 
 
 Generate `TOKEN_ENCRYPTION_KEY_B64` from 32 cryptographically random bytes and make `SESSION_SECRET` an independent high-entropy value. Record neither value here. Rotating the token key requires the rotation procedure described in the auth implementation; rotating blindly makes stored refresh tokens unreadable.
 
+For staging, create or inspect the exact resources in the staging inventory and add their non-secret identifiers to `wrangler.jsonc`. Apply migrations with `npm run db:migrate:staging`. Set staging secrets by piping each value directly to `wrangler secret put <NAME> --env staging`; never pass a secret as a command-line argument. A staging Entra credential must be appended to the existing application, given the shortest practical lifetime, and piped directly into the staging Worker secret. Do not reset or delete the production credential.
+
 ## Configure Entra
 
 These actions change tenant state and require action-time user confirmation.
@@ -82,11 +105,15 @@ These actions change tenant state and require action-time user confirmation.
 7. OneDrive consent reuses the existing `/auth/microsoft/callback` registration. A purpose-prefixed OAuth state dispatches the shared callback without another Entra redirect URI.
 8. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; for attachment storage, request delegated `Files.ReadWrite.AppFolder`. Never use SMTP Basic authentication or application-level mail or file access.
 
+Keep the staging callback alongside localhost and production. OneDrive consent continues to reuse the same callback path on the active origin.
+
 The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
 
 The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
+
+For a staging deployment, complete the non-sending checks first: landing page, hashed static asset, unauthenticated `/api/me`, an unknown `/api/*` route that must not fall through to the app shell, Microsoft authorization redirect origin and SMTP scope, D1 migration status, Queue producer/consumer binding, dead-letter Queue configuration, hourly schedule, and absence of R2. Do not sign in, test-send, or start a campaign without a separately approved account and recipient.
 
 1. Public landing page and static assets.
 2. Primary account sign-in, tenant identity, dashboard, and logout.
@@ -127,3 +154,10 @@ Notes without addresses, tokens, or message content:
 - Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
 - If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.
 - If a session or token-encryption secret is exposed, rotate it and invalidate affected sessions. Follow the token-key rotation path before changing the encryption key.
+
+### Staging promotion and rollback
+
+- Promotion is a Git decision, not a data copy: merge the reviewed candidate, repeat the production release gate, apply only pending production migrations, and deploy through the production procedure. Never promote by rebinding production to staging D1 or Queues.
+- To roll back staging code, manually dispatch the staging workflow with an earlier known-good commit SHA. Preserve staging D1 and Queue resources and inspect migration compatibility first. Do not reverse or delete applied D1 migrations blindly.
+- Record the currently hosted candidate commit and Worker version in `PROGRESS.md`. A new staging deployment replaces the previous candidate on the stable URL.
+- A dead-lettered campaign tick requires human investigation. Do not replay it until campaign and recipient state prove that another send is safe; never auto-retry an `unknown` recipient outcome.
