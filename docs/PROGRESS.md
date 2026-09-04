@@ -783,3 +783,12 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Remote resource checks confirmed the staging Queue retains `mailflow-staging` as its only producer and consumer, and the deployed Worker retains its hourly schedule, staging D1, staging attachment namespace, and no R2 binding.
 - Read-only D1 checks found four completed campaigns, 20 accepted recipient jobs, ten accepted delivery-attempt records, zero active wake tokens, three deleted attachment sets, and one unbound open attachment set with one active file that remains inside its expiry window for scheduled cleanup. No staging record was changed.
 - No Microsoft authorization, test-send, campaign start, OneDrive write or deletion, mail submission, recipient contact, production deployment, or production data operation was performed.
+
+### 2026-09-05 - Campaign and attachment hardening production release
+
+- Merged campaign payload and D1 safeguards as `dd3eb83`, rebased attachment resilience onto that contract, and merged the combined result as `605511a`. Post-merge GitHub Verify and Cloudflare Workers Builds both passed.
+- Ran `npm run check:staging` from exact production commit `605511a`; TypeScript, both production builds, all 23 test files and 179 tests, the production Wrangler dry run, the isolated staging build, target validation, and the staging Wrangler dry run passed.
+- Confirmed `0008_campaign_create_safeguards.sql` was the only pending production migration, applied it successfully, and verified no migrations remained. Read-only schema checks confirmed the request fingerprint column and all five campaign and recipient snapshot triggers.
+- Deployed production Worker version `acf425e2-7da0-495d-a120-b30e471800ad` with release message `Production main 605511ab9f3cf6bbc19577152e3a7e1c04161473`; deployment status reports 100 percent production traffic with the production D1, Queue producer and consumer, SMTP configuration, static assets, and hourly schedule.
+- Non-sending hosted smoke checks passed: landing `200 text/html`, the current hashed JavaScript asset `200 text/javascript`, unauthenticated `/api/me` `401 application/json`, and unknown API reads and writes `404 application/json` without app-shell fallback.
+- No Microsoft authorization, campaign creation, attachment operation, mail submission, recipient contact, or production campaign-data mutation was performed during promotion.
