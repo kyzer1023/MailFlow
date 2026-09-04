@@ -174,11 +174,19 @@ describe("Exchange Online SMTP client", () => {
     await expect(sendProviderTestToSelf(provider, "sender@example.test", {
       subject: "Attachment preview",
       bodyHtml: "<p>Review</p>",
+      cc: ["copy@example.test"],
+      bcc: ["hidden@example.test"],
+      replyTo: ["replies@example.test"],
       attachments: [{ filename: "proof.txt", contentType: "text/plain", content: new TextEncoder().encode("proof") }],
-    })).resolves.toMatchObject({ status: "accepted", smtpStatus: 250 });
+    }, "test:stable-key")).resolves.toMatchObject({ status: "accepted", smtpStatus: 250 });
     expect(test.script.commands).toContain("RCPT TO:<sender@example.test>");
+    expect(test.script.commands).not.toContain("RCPT TO:<copy@example.test>");
+    expect(test.script.commands).not.toContain("RCPT TO:<hidden@example.test>");
     expect(test.script.mime).toContain('filename="proof.txt"');
     expect(test.script.mime).toContain("cHJvb2Y=");
+    expect(test.script.mime).not.toContain("Cc:");
+    expect(test.script.mime).not.toContain("Bcc:");
+    expect(test.script.mime).not.toContain("Reply-To:");
   });
 
   it("marks a lost final submission response unknown", async () => {

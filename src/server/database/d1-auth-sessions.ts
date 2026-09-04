@@ -1,6 +1,6 @@
 import type { SessionRecord, SessionStore } from "../auth/session";
 import type { D1Database } from "./contracts";
-import { prepareAndBind as bind } from "./d1-helpers";
+import { changes, prepareAndBind as bind } from "./d1-helpers";
 
 interface SessionRow {
   id_hash: string;
@@ -47,5 +47,20 @@ export class D1AuthSessionStore implements SessionStore {
 
   async revokeByTokenHash(tokenHash: string, revokedAt: number): Promise<void> {
     await bind(this.db, "UPDATE sessions SET revoked_at = ?1 WHERE id_hash = ?2", [revokedAt, tokenHash]).run();
+  }
+
+  async cleanupExpired(now = Date.now(), limit = 500): Promise<number> {
+    const safeLimit = Math.max(1, Math.min(2_000, Math.floor(limit)));
+    const result = await bind(
+      this.db,
+      `DELETE FROM sessions
+       WHERE id_hash IN (
+         SELECT id_hash FROM sessions
+         WHERE expires_at <= ?1 OR revoked_at IS NOT NULL
+         LIMIT ?2
+       )`,
+      [now, safeLimit],
+    ).run();
+    return changes(result);
   }
 }

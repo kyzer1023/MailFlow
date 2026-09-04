@@ -73,3 +73,21 @@ Mail Flow uses Wrangler's named `staging` environment to deploy a separate `mail
 The stable staging URL hosts one pull-request candidate at a time. Deployment is manual and serialized, runs the full repository checks and both Wrangler dry runs first, applies migrations only to the staging D1 database, and deploys an explicitly selected commit. Promotion means merging the reviewed commit and using the separate production release procedure. Rollback selects an earlier known-good commit for the same manual staging workflow; it never copies or rewinds D1 data.
 
 Staging and production share the existing single-tenant Entra application and each member's Microsoft-managed MailFlow App Folder. Staging therefore sets an attachment object namespace that becomes part of every newly generated private OneDrive filename. Production keeps the existing filename format when no namespace is configured. This prevents a staging attachment locator from colliding with production metadata even if generated identifiers repeat.
+
+## ADR-011 - Make test sends self-only, idempotent, and independently controlled
+
+Status: accepted.
+
+The Worker, not the browser, defines the recipient envelope for every test send. The authenticated mailbox is the only `To` address, and CC, BCC, and Reply-To are suppressed at the final provider helper for both SMTP and Graph. The reviewed subject, server-sanitized HTML body, importance, and selected immutable attachment set are preserved exactly. The Review screen continues to show the campaign's original resolved headers and explicitly describes the test-only substitutions.
+
+Test sends use a dedicated D1 record with a stable client idempotency key and an effective-content fingerprint. They do not reuse or create recipient campaign jobs. Exact completed replays return the stored result without calling Microsoft again, concurrent duplicates stop at the claimed record, and reuse of a key for changed effective content is rejected. Failures proven to occur before provider submission release the claim for a deliberate retry with the same key, while ambiguous outcomes remain terminal. Per-user test-send rate limiting is enforced only for newly claimed attempts, and audit events record requested, accepted, or failed outcomes without addresses or message content.
+
+Anonymous Microsoft OAuth-start requests use separate per-client and global bounded D1 counters. The client key is secret-derived and raw client addresses are not persisted. The hourly scheduled handler drains expired OAuth states, expired or revoked sessions, expired counters, and abandoned test-send claims in bounded batches alongside the existing OneDrive orphan retention sweep.
+
+## ADR-012 - Chain resource-specific OneDrive consent after homepage SMTP sign-in
+
+Status: accepted.
+
+SMTP and OneDrive remain separate OAuth authorization-code flows because their access tokens target different resource audiences. A successful homepage SMTP callback establishes the MailFlow session first. When attachment support is active and the same user lacks `Files.ReadWrite.AppFolder`, the Worker immediately creates a second one-time state, PKCE verifier, and nonce and redirects to the OneDrive authorization request. That request omits `prompt`, allowing the active Microsoft session to continue without forced credential entry while still permitting Microsoft to show first-time consent.
+
+The OneDrive callback stores its refresh token only after the verified tenant and object identifiers match the primary signed-in user. Existing grants, Graph mode, unavailable attachment or storage authorization, and manual recovery sessions do not create a loop. Cancellation, provider failure, invalid state, or identity mismatch leaves the primary session intact, returns to a validated non-authentication app route with a visible status, and leaves the authenticated Connect OneDrive action available as recovery.

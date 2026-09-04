@@ -23,6 +23,7 @@
 - Graph and SMTP error classification, MIME structure, envelope privacy, and STARTTLS/XOAUTH2 state transitions.
 - Attachment filename/type policy, executable signature rejection, duplicate detection, file-count and combined-size limits.
 - Bounded MIME attachment encoding, exact base64 content, pre-terminator retry safety, and post-terminator ambiguity.
+- Test-send provider helpers force the authenticated mailbox as the sole envelope recipient and suppress CC, BCC, and Reply-To for Graph and SMTP.
 
 ### Integration
 
@@ -34,8 +35,11 @@
 - Safe retry for explicit throttles.
 - `unknown` behavior for ambiguous transport failures.
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
+- Homepage SMTP-to-OneDrive chaining, separate resource-token persistence, SSO prompt omission, existing-grant and Graph-mode skips, cancellation and provider-failure recovery, identity mismatch rejection, missing-storage skip, safe return targets, and loop prevention.
 - Attachment-set ownership, idempotent creation, immutable association, OneDrive byte integrity, terminal cleanup, and 24-hour orphan cleanup.
 - Campaign creation and test-send reject attachment sets unless SMTP mode plus stored `SMTP.Send` and `Files.ReadWrite.AppFolder` grants are present.
+- Test-send idempotent replay, changed-fingerprint rejection, safe pre-provider retry, ambiguous-outcome suppression, per-user limits, audit events without recipient jobs, and anonymous OAuth per-client/global limits.
+- Scheduled expiry cleanup drains full OAuth-state, session, rate-counter, and stale test-claim batches while retaining a hard per-run bound.
 
 ### Frontend
 
@@ -44,9 +48,11 @@
 - Worksheet and header selection.
 - Mapping, validation, flagged rows, and representative previews.
 - Test-send and final acknowledgement.
+- Review keeps the original campaign headers visible and explains that test delivery replaces `To` with the signed-in mailbox while suppressing CC, BCC, and Reply-To.
 - Multi-file selection, upload progress, retry/remove states, 5-file and 20-MiB limits, Review summary, and attachment locking after test-send.
 - Campaign polling or live refresh, pause, resume, and CSV export.
 - Loading, empty, failure, and narrow-screen states.
+- Authenticated OneDrive connected, cancelled, unavailable, failed, and identity-mismatch notices with a recovery link.
 
 ## Visual QA
 
@@ -84,7 +90,7 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 
 - Production D1 migrations applied.
 - Queue producer and consumer bound.
-- Attachment and resource-token migrations applied and hourly cleanup trigger registered.
+- Attachment, resource-token, and public endpoint control migrations applied and hourly cleanup trigger registered.
 - Production and local OneDrive callback URIs registered on the existing Entra application.
 - Static assets served by the Worker.
 - Production origin and both local and production Entra redirect URIs configured.

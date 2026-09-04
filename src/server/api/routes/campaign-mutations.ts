@@ -11,6 +11,7 @@ import {
 import { AttachmentError } from "../../attachments";
 import type { MailAttachment } from "../../../domain/mail-provider";
 import { OAuthProviderError } from "../../microsoft/oauth";
+import { createD1PublicControlStore } from "../../database/d1-public-controls";
 import type { MailFlowAppEnv, MailFlowContext } from "../context";
 import {
   attachmentServiceFor,
@@ -40,6 +41,45 @@ import {
   loadCampaignAttachments,
 } from "../attachments";
 import { validateTemplateHtml, validateTemplateSubject } from "../security";
+import { ControlledTestSendError, executeControlledTestSend, type ClassifiedTestSendFailure } from "../test-send-control";
+
+function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
+  if (errorValue instanceof AttachmentError) {
+    const status = errorValue.code === "not_found" ? 404
+      : errorValue.code === "immutable" || errorValue.code === "already_associated" ? 409
+        : errorValue.code === "size_limit_exceeded" ? 413
+          : errorValue.code === "storage_error" || errorValue.code === "integrity_error" ? 503
+            : 422;
+    return {
+      safeToRetry: true,
+      failure: {
+        status,
+        code: `attachment_${errorValue.code}`,
+        message: errorValue.code === "storage_error" || errorValue.code === "integrity_error"
+          ? "Campaign attachments are temporarily unavailable. Try again shortly."
+          : errorValue.message,
+      },
+    };
+  }
+  const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError || errorValue instanceof TestSendError
+    ? errorValue.message
+    : "The test message could not be accepted by Microsoft.";
+  const status = errorValue instanceof GraphApiError && errorValue.category === "unauthorized"
+    ? 401
+    : errorValue instanceof GraphApiError && errorValue.category === "forbidden"
+      ? 403
+      : errorValue instanceof AuthFlowError && errorValue.category === "token"
+        ? 401
+        : 502;
+  const safeToRetry = errorValue instanceof TestSendError
+    ? errorValue.safeToRetry
+    : errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError
+      ? true
+      : errorValue instanceof GraphApiError
+        ? errorValue.retryable && !errorValue.ambiguous
+        : false;
+  return { safeToRetry, failure: { status, code: "test_send_failed", message } };
+}
 
 /** Register campaign test-send and state mutation routes. */
 export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void {
@@ -55,42 +95,67 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     const repo = repositories(context);
     const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
     if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+    const recipientJob = await repo.recipientJobs.getByCampaignAndSourceRow(campaign.id, input.sourceRow);
+    if (!recipientJob) return responseError(context, 404, "test_sample_not_found", "That reviewed sample is not part of this campaign.");
+    if (
+      recipientJob.renderedSubject !== subject.subject
+      || recipientJob.renderedBodyHtml !== body.html
+      || (recipientJob.importance ?? "normal") !== input.importance
+    ) {
+      return responseError(context, 409, "campaign_snapshot_changed", "The reviewed message no longer matches this campaign. Return to Data and prepare a new campaign.");
+    }
+    const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
     try {
-      const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
-      let attachments: readonly MailAttachment[] = [];
-      if (attachmentSet) {
-        const service = attachmentServiceFor(context, repo);
-        if (!service) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
-        attachments = await loadCampaignAttachments(repo, service, campaign);
-      }
-      const { auth, graph, smtp, mailTransport } = configFor(context);
-      const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
-      const inputValue = {
-        subject: subject.subject,
-        bodyHtml: body.html,
-        cc: input.cc,
-        bcc: input.bcc,
-        replyTo: input.replyTo,
-        importance: input.importance,
-        attachments,
-      };
-      const result = mailTransport === "smtp"
-        ? await sendProviderTestToSelf(delegatedSmtpMailProvider(smtp, tokens.accessToken, authenticated.user.mailboxAddress), authenticated.user.mailboxAddress, inputValue)
-        : await sendTestToSelf(graph, tokens.accessToken, inputValue);
-      return context.json({ result });
+      const controlled = await executeControlledTestSend({
+        store: createD1PublicControlStore(context.env.DB),
+        input: {
+          ownerUserId: authenticated.user.id,
+          campaignId: campaign.id,
+          idempotencyKey: input.idempotencyKey,
+          subject: recipientJob.renderedSubject,
+          bodyHtml: recipientJob.renderedBodyHtml,
+          importance: recipientJob.importance ?? "normal",
+          attachmentSetId: attachmentSet?.id ?? null,
+        },
+        audit: ({ eventType, campaignId, actorUserId, metadata }) => audit(repo, eventType, {
+          actorUserId,
+          campaignId,
+          metadata: { ...metadata },
+        }),
+        classifyFailure: testSendFailure,
+        send: async (sendKey) => {
+          let attachments: readonly MailAttachment[] = [];
+          if (attachmentSet) {
+            const service = attachmentServiceFor(context, repo);
+            if (!service) throw new AttachmentError("storage_error", "Campaign attachments are temporarily unavailable");
+            attachments = await loadCampaignAttachments(repo, service, campaign);
+          }
+          const { auth, graph, smtp, mailTransport } = configFor(context);
+          const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
+          const inputValue = {
+            subject: recipientJob.renderedSubject,
+            bodyHtml: recipientJob.renderedBodyHtml,
+            importance: recipientJob.importance ?? "normal",
+            attachments,
+          };
+          return mailTransport === "smtp"
+            ? sendProviderTestToSelf(
+                delegatedSmtpMailProvider(smtp, tokens.accessToken, authenticated.user.mailboxAddress),
+                authenticated.user.mailboxAddress,
+                inputValue,
+                sendKey,
+              )
+            : sendTestToSelf(graph, tokens.accessToken, inputValue);
+        },
+      });
+      return context.json(controlled);
     } catch (errorValue) {
-      if (errorValue instanceof AttachmentError) return attachmentErrorResponse(context, errorValue);
-      const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError || errorValue instanceof TestSendError
-        ? errorValue.message
-        : "The test message could not be accepted by Microsoft.";
-      const status = errorValue instanceof GraphApiError && errorValue.category === "unauthorized"
-        ? 401
-        : errorValue instanceof GraphApiError && errorValue.category === "forbidden"
-          ? 403
-          : errorValue instanceof AuthFlowError && errorValue.category === "token"
-            ? 401
-            : 502;
-      return responseError(context, status, "test_send_failed", message);
+      if (errorValue instanceof ControlledTestSendError) {
+        if (errorValue.failure.status === 429) context.header("Retry-After", "600");
+        return responseError(context, errorValue.failure.status, errorValue.failure.code, errorValue.failure.message);
+      }
+      const failure = testSendFailure(errorValue);
+      return responseError(context, failure.failure.status, failure.failure.code, failure.failure.message);
     }
   });
 

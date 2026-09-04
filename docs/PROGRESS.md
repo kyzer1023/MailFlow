@@ -662,3 +662,32 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added a credential-free GitHub verification workflow for pull requests and main. It runs the same tests, production dry run, staging build, and staging dry run without deploying either environment.
 - The legacy account-side `Workers Builds: mailflow` pull-request check remains pointed at the deleted `apps/mailflow` root and fails before executing a build command. This staging workstream did not change that production-owned build trigger because doing so could restore automatic production deployments, which are explicitly out of scope. The repository-native verification workflow is the authoritative PR check until the production trigger is separately reviewed or retired.
 - No user sign-in, OneDrive consent, test-send, campaign, real recipient, message body, or production deployment was used for this checkpoint.
+
+### 2026-09-04 - Self-only test sends and public endpoint controls
+
+- Made the Worker authoritative for test-send content and routing: it loads the reviewed persisted recipient snapshot, preserves its sanitized subject, HTML, importance, and attachment set, replaces `To` with the authenticated mailbox, and suppresses CC, BCC, and Reply-To again at both Graph and SMTP provider boundaries.
+- Added dedicated D1 test-send idempotency and rate-counter records. Exact accepted and ambiguous-terminal replays cannot call Microsoft twice; failures proven to occur before submission can retry with the stable key. Test-send audit events never create or reference recipient jobs.
+- Added five-per-user test-send limiting, privacy-preserving anonymous OAuth-start limits of 20 per client and 200 globally per 10 minutes, plus bounded multi-batch hourly cleanup for OAuth state, sessions, counters, and abandoned claims.
+- Updated Review to keep original resolved campaign headers visible while clearly explaining the test-only recipient substitutions. Visual checks passed at 1440 x 900, 390 x 844, and the available medium-width browser workspace; the narrow view had no horizontal overflow or console errors.
+- Verification passed: fresh local D1 migration state with all six migrations applied and none pending, `npm test` with TypeScript, both production builds, 17 test files and all 131 tests, `wrangler deploy --dry-run`, and `git diff --check`. The required independent security review confirmed the self-only envelope invariant and its two identified edge cases were corrected before this checkpoint.
+
+### 2026-09-04 - Chained homepage OneDrive authorization
+
+- Extended SMTP homepage sign-in into two resource-specific OAuth legs: primary `SMTP.Send` authorization establishes the MailFlow session, then a missing `Files.ReadWrite.AppFolder` grant starts immediately with its own state, PKCE verifier, nonce, and encrypted token record. The second request omits `prompt` so Microsoft can reuse the active session without forcing credential entry.
+- Preserved tenant and object identity binding for the OneDrive callback. Existing OneDrive grants, Graph mode, unavailable attachment or storage authorization, and unsafe `/auth` return targets skip or fall back without loops.
+- OneDrive success, cancellation, provider failure, invalid state, and identity mismatch return to a validated local app destination with a visible status. Cancellation and failure retain the primary application session, and the Recipients action remains available for recovery and legacy sessions.
+- Verification passed: `npm test` with TypeScript, both production builds, 18 test files and all 135 tests; `wrangler deploy --dry-run`; local D1 migrations with none pending; and `git diff --check`. No production deployment or PR #3 infrastructure changes were made.
+
+### 2026-09-04 - PR #2 staging-foundation rebase verification
+
+- Rebased the self-only test-send controls and chained OneDrive onboarding commits onto staging-foundation merge `ca3cf98d9475fa424e286f602c7d83957b98adaf`. Conflict resolution preserved the isolated staging Worker, D1, Queue, dead-letter Queue, attachment namespace, workflows, and documentation while retaining every PR #2 behavior.
+- Verification passed on the rebased tree: clean `npm ci`; `npm test` with TypeScript, both production builds, 19 test files and all 138 tests; production Wrangler dry run; staging-specific build and Wrangler dry run; local D1 migration status with none pending; and `git diff --check`.
+- No production deployment, mail submission, campaign creation, or PR merge occurred during this checkpoint. Staging migration and deployment evidence is recorded separately after the exact rebased head is hosted.
+
+### 2026-09-04 - Review action feedback hardening
+
+- Added explicit pending, accepted, replayed, and failure feedback for Review test sends, plus a pending and recoverable failure cycle for campaign start. Both actions now use a synchronous shared lock so rapid activation cannot duplicate a request and either pending action disables the other.
+- Made accepted test sends visibly complete, report replay responses without implying a new message was sent, and expose pending and failure copy through one atomic live status region. Safe test failures remain manually retryable, while the existing durable idempotency control keeps ambiguous outcomes terminal under the same request key.
+- Preserved the approved Review layout, warm paper, moss, and coral palette, Phosphor icons, and existing control shapes. Added stable action widths, clean wrapping at narrow breakpoints, reduced-motion compatibility, and Review-specific AA text contrast without adding a dependency.
+- Verification passed: `npm run check:staging` with TypeScript, both production builds, 20 test files and all 142 tests, production and staging Wrangler dry runs; local and remote staging D1 migration listings with none pending; and `git diff --check`.
+- Local browser QA passed at 1440 x 900, 1024 x 900, and 390 x 844 with no horizontal overflow. Idle, test pending, test accepted, test replayed, start pending, and failed-start retry states were inspected using intercepted local responses. Keyboard focus, reduced motion, cross-action locking, stable labels, and measured AA contrast passed. No external mail, campaign, Microsoft OAuth, or production operation was performed.

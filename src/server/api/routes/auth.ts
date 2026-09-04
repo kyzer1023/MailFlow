@@ -6,7 +6,10 @@ import {
   clearCookie,
   revokeSession,
 } from "../../auth/session";
+import { clearOAuthStateCookie } from "../../auth/oauth-state";
+import { AuthFlowError } from "../../auth/service";
 import { createD1AuthStores } from "../../database/d1-auth";
+import { createD1PublicControlStore } from "../../database/d1-public-controls";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_FILES,
@@ -27,11 +30,24 @@ import {
   requireSession,
   responseError,
 } from "../helpers";
+import { consumeOAuthStartLimit } from "../public-rate-limits";
+import { beginOneDriveOnboarding, oneDriveOutcomeReturnTo } from "../onboarding-auth";
 
 /** Register Microsoft authentication, session, and current-user routes. */
 export function registerAuthRoutes(app: Hono<MailFlowAppEnv>): void {
   app.get("/auth/microsoft/start", async (context) => {
     try {
+      const rateLimitSecret = context.env.SESSION_SECRET?.trim();
+      if (!rateLimitSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
+      const decision = await consumeOAuthStartLimit(
+        createD1PublicControlStore(context.env.DB),
+        rateLimitSecret,
+        context.req.header("CF-Connecting-IP") ?? "unknown",
+      );
+      if (!decision.allowed) {
+        context.header("Retry-After", String(decision.retryAfterSeconds));
+        return responseError(context, 429, "oauth_start_rate_limited", "Too many sign-in attempts were started. Wait a few minutes, then try again.");
+      }
       const returnTo = new URL(context.req.url).searchParams.get("returnTo") ?? "/dashboard";
       const { auth } = configFor(context);
       const started = await auth.beginSignIn(returnTo);
@@ -51,25 +67,54 @@ export function registerAuthRoutes(app: Hono<MailFlowAppEnv>): void {
     if (isOneDriveConsent) {
       const authenticated = await requireSession(context);
       if (authenticated instanceof Response) return context.redirect("/?auth=session_expired", 302);
-      if (error) return context.redirect("/flows/new/recipients?onedrive=cancelled", 302);
-      if (!code || !state) return context.redirect("/flows/new/recipients?onedrive=invalid", 302);
+      if (error || !code || !state) {
+        try {
+          const { storageAuth } = configFor(context);
+          const cancelled = await storageAuth.cancelResourceConsent({ state: state ?? "", cookieHeader: context.req.header("Cookie") });
+          context.header("Set-Cookie", cancelled.stateCookie, { append: true });
+          return context.redirect(oneDriveOutcomeReturnTo(cancelled.returnTo, error === "access_denied" ? "cancelled" : "failed"), 302);
+        } catch {
+          context.header("Set-Cookie", clearOAuthStateCookie(new URL(context.req.url).protocol === "https:"), { append: true });
+          return context.redirect(oneDriveOutcomeReturnTo(undefined, "invalid"), 302);
+        }
+      }
       try {
         const { storageAuth } = configFor(context);
         const completed = await storageAuth.completeResourceConsent({ code, state, cookieHeader: context.req.header("Cookie") }, authenticated.user);
         context.header("Set-Cookie", completed.stateCookie, { append: true });
-        return context.redirect(completed.returnTo, 302);
-      } catch {
-        return context.redirect("/flows/new/recipients?onedrive=failed", 302);
+        return context.redirect(oneDriveOutcomeReturnTo(completed.returnTo, "connected"), 302);
+      } catch (errorValue) {
+        context.header("Set-Cookie", clearOAuthStateCookie(new URL(context.req.url).protocol === "https:"), { append: true });
+        const returnTo = errorValue instanceof AuthFlowError ? errorValue.returnTo : undefined;
+        const status = errorValue instanceof AuthFlowError && errorValue.category === "identity" ? "identity_mismatch" : "failed";
+        return context.redirect(oneDriveOutcomeReturnTo(returnTo, status), 302);
       }
     }
     if (error) return context.redirect("/?auth=cancelled", 302);
     if (!code || !state) return context.redirect("/?auth=invalid", 302);
     try {
-      const { auth } = configFor(context);
+      const services = configFor(context);
+      const { auth } = services;
       const completed = await auth.completeSignIn({ code, state, cookieHeader: context.req.header("Cookie") });
       context.header("Set-Cookie", completed.sessionCookie, { append: true });
-      context.header("Set-Cookie", completed.stateCookie, { append: true });
       await csrfTokenFor(context, completed.sessionToken);
+      try {
+        const next = await beginOneDriveOnboarding({
+          returnTo: completed.returnTo,
+          mailTransport: services.mailTransport,
+          attachmentsAvailable: attachmentInfrastructureAvailable(context),
+          storageAuth: services.storageAuth,
+          alreadyAuthorized: () => oneDriveAuthorizedFor(context, completed.user.id),
+        });
+        if (next) {
+          context.header("Set-Cookie", next.stateCookie, { append: true });
+          return context.redirect(next.authorizationUrl, 302);
+        }
+      } catch {
+        context.header("Set-Cookie", completed.stateCookie, { append: true });
+        return context.redirect(oneDriveOutcomeReturnTo(completed.returnTo, "unavailable"), 302);
+      }
+      context.header("Set-Cookie", completed.stateCookie, { append: true });
       return context.redirect(completed.returnTo, 302);
     } catch (errorValue) {
       void errorValue;

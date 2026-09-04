@@ -6,6 +6,8 @@ export interface AuthorizationUrlInput {
   state: string;
   codeChallenge: string;
   nonce?: string;
+  /** Null omits prompt so an active Microsoft session can continue with SSO. */
+  prompt?: "select_account" | "consent" | "none" | null;
 }
 
 export interface OAuthTokenSet {
@@ -71,12 +73,9 @@ export function buildAuthorizationUrl(
     throw new OAuthProviderError("configuration", "Microsoft sign-in state is invalid");
   }
   const url = new URL(resolved.authorizationEndpoint);
-  url.search = new URLSearchParams({
+  const query = new URLSearchParams({
     client_id: resolved.clientId,
     response_type: "code",
-    // MailFlow logout revokes the application session while leaving the
-    // Microsoft browser session available for convenient account selection.
-    prompt: "select_account",
     redirect_uri: resolved.redirectUri,
     response_mode: "query",
     scope: resolved.scopes.join(" "),
@@ -84,7 +83,9 @@ export function buildAuthorizationUrl(
     code_challenge: input.codeChallenge,
     code_challenge_method: "S256",
     ...(input.nonce ? { nonce: input.nonce } : {}),
-  }).toString();
+  });
+  if (input.prompt !== null) query.set("prompt", input.prompt ?? "select_account");
+  url.search = query.toString();
   return url.toString();
 }
 

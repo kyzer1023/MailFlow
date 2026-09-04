@@ -1,4 +1,4 @@
-import { fetchMailFlow, processAttachmentCleanup, processQueueBatch } from "../src/server/api/app";
+import { fetchMailFlow, processQueueBatch, processScheduledCleanup } from "../src/server/api/app";
 import type { MailFlowBindings, MailFlowExecutionContext, QueueBatch } from "../src/server/api/contracts";
 import type { CampaignTickMessage } from "../src/server/queue/contracts";
 
@@ -30,7 +30,7 @@ const worker = {
   },
 
   async scheduled(_controller: unknown, env: MailFlowBindings): Promise<void> {
-    await processAttachmentCleanup(env);
+    await processScheduledCleanup(env);
   },
 };
 

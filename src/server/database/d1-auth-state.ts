@@ -4,7 +4,7 @@ import type {
   OAuthStateStore,
 } from "../auth/contracts";
 import type { D1Database } from "./contracts";
-import { prepareAndBind as bind } from "./d1-helpers";
+import { changes, prepareAndBind as bind } from "./d1-helpers";
 
 interface OAuthStateRow {
   code_verifier: string;
@@ -51,5 +51,16 @@ export class D1OAuthStateStore implements OAuthStateStore {
       issuedAt: Number(row.issued_at),
       expiresAt: Number(row.expires_at),
     };
+  }
+
+  async cleanupExpired(now = this.now(), limit = 500): Promise<number> {
+    const safeLimit = Math.max(1, Math.min(2_000, Math.floor(limit)));
+    const result = await bind(
+      this.db,
+      `DELETE FROM oauth_states
+       WHERE state_hash IN (SELECT state_hash FROM oauth_states WHERE expires_at <= ?1 LIMIT ?2)`,
+      [now, safeLimit],
+    ).run();
+    return changes(result);
   }
 }

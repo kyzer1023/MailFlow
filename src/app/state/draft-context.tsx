@@ -77,6 +77,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
   const attachmentGenerationRef = useRef(0);
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
   const [campaignRequestKey, setCampaignRequestKey] = useState(requestKey);
+  const [testSendRequestKey, setTestSendRequestKey] = useState(() => `test-${requestKey()}`);
   const bodyHtml = useMemo(() => bodyHtmlFromDraft(draft.body), [draft.body]);
   const mapping = useMemo<ClientMapping>(() => {
     const source = (key: "cc" | "bcc" | "replyTo") => {
@@ -203,6 +204,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     resetAttachmentState();
     setSkipInvalidRows(false);
     setCampaignRequestKey(requestKey());
+    setTestSendRequestKey(`test-${requestKey()}`);
   }, [resetAttachmentState]);
   const hydrateSavedFlow = useCallback((flow: FlowRecord, templateVersion: TemplateVersionRecord | null) => {
     const savedMapping = templateVersion
@@ -248,8 +250,9 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     resetAttachmentState();
     setSkipInvalidRows(false);
     setCampaignRequestKey(requestKey());
+    setTestSendRequestKey(`test-${requestKey()}`);
   }, [resetAttachmentState]);
-  const value = useMemo<DraftContextValue>(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
+  const value = useMemo<DraftContextValue>(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
 }
 

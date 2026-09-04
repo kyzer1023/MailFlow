@@ -55,7 +55,7 @@ Then confirm:
 - No password, token, client secret, or account address is staged in Git.
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
 - The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
-- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`, and both delegated resource grants move together. Do not enable only part of this set.
+- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, and `0006_public_endpoint_controls.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
 - A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
 
@@ -70,7 +70,8 @@ Before testing sign-in locally:
 3. Confirm that `http://localhost:5173/auth/microsoft/callback` remains registered as a Web redirect URI in the existing Entra application.
 4. Run `npm run db:migrate:local` once for a fresh local D1 state.
 5. Run `npm run dev`, then verify `/api/me` returns `401` before sign-in and that Microsoft sign-in returns to the local callback.
-6. In SMTP mode, verify `/api/me` reports attachments enabled after consent and that a synthetic multi-file upload appears in Review. Do not start a campaign unless its test recipients are explicitly authorized.
+6. In SMTP mode, verify the primary SMTP callback immediately continues to the separate OneDrive authorization for a user without an App Folder grant. The second request should reuse Microsoft SSO, although first-time consent may appear, and should return to the original app page.
+7. Verify `/api/me` reports attachments enabled after both grants and that a synthetic multi-file upload appears in Review. Decline the OneDrive step once in a disposable local session to confirm the primary login survives and the Recipients recovery action remains available. Do not start a campaign unless its test recipients are explicitly authorized.
 
 If `/auth/microsoft/start` returns `503`, the Worker is running but one or more required values are missing from the app-local `.env` or `.dev.vars`. A successful landing-page response does not by itself prove local OAuth is configured.
 
@@ -84,7 +85,7 @@ These actions create persistent external resources and require action-time user 
 4. Create Queue `mailflow-campaign-ticks`.
 5. Deploy once to obtain the `workers.dev` origin, or confirm the intended custom domain.
 6. Set `PUBLIC_ORIGIN` to that exact HTTPS origin.
-7. Apply production D1 migrations, including `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`.
+7. Apply production D1 migrations, including `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, and `0006_public_endpoint_controls.sql`.
 8. Store every secret using Wrangler secret storage, never `vars` or a committed file.
 9. Deploy the verified build.
 
@@ -107,9 +108,9 @@ These actions change tenant state and require action-time user confirmation.
 
 Keep the staging callback alongside localhost and production. OneDrive consent continues to reuse the same callback path on the active origin.
 
-The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
+The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify chained OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, never combine SMTP and Graph scopes into one authorization request or token record. New homepage sign-ins chain the two grants; members whose stored grant lacks `SMTP.Send` use Reconnect Microsoft, while declined, failed, or legacy OneDrive grants use the separate Connect OneDrive recovery action.
 
-The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
+The scheduled handler runs hourly at minute 15. It drains expired OAuth states, expired or revoked sessions, endpoint counters, and abandoned test-send claims in bounded batches before removing unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
 
@@ -117,15 +118,16 @@ For a staging deployment, complete the non-sending checks first: landing page, h
 
 1. Public landing page and static assets.
 2. Primary account sign-in, tenant identity, dashboard, and logout.
-3. Secondary account sign-in through the same application.
-4. One test-send to the authenticated mailbox.
-5. One attachment test-send to the authenticated mailbox with two small synthetic files; verify exact filenames and downloaded hashes in Sent Items.
-6. One five-recipient campaign from the primary account.
-7. Queue progress after closing the browser.
-8. Pause and resume.
-9. Result CSV export.
-10. Gmail receipt observation and Outlook Sent Items observation.
-11. A small campaign from the secondary account, proving the sender is locked to that mailbox.
+3. Primary account chained OneDrive consent, return to dashboard, and `/api/me` attachment readiness. Repeat with an existing grant and confirm the second leg is skipped.
+4. Secondary account sign-in through the same application.
+5. One test-send to the authenticated mailbox.
+6. One attachment test-send to the authenticated mailbox with two small synthetic files; verify exact filenames and downloaded hashes in Sent Items.
+7. One five-recipient campaign from the primary account.
+8. Queue progress after closing the browser.
+9. Pause and resume.
+10. Result CSV export.
+11. Gmail receipt observation and Outlook Sent Items observation.
+12. A small campaign from the secondary account, proving the sender is locked to that mailbox.
 
 Graph `202 Accepted` or SMTP's final post-DATA `250` is recorded as `Accepted by Microsoft`. Neither is proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
 

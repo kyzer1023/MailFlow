@@ -131,9 +131,9 @@ describe("test-send service", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       to: ["member@example.test"],
-      cc: ["copy@example.test"],
-      bcc: ["audit@example.test"],
-      replyTo: ["replies@example.test"],
+      cc: [],
+      bcc: [],
+      replyTo: [],
       importance: "low",
       saveToSentItems: true,
     });

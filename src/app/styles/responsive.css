@@ -49,6 +49,7 @@
   .page-header p { font-size: .96rem; }
   .header-actions { justify-content: flex-start; }
   .header-actions .button { flex: 1 1 auto; }
+  .wizard-header .header-actions .review-action { flex-basis: 10rem; min-inline-size: 0; }
   .marketing-header { height: 74px; padding-inline: 18px; }
   .marketing-header .brand { width: 128px; }
   .landing-hero { min-height: calc(100dvh - 74px); padding: clamp(64px, 10vh, 84px) 18px 36px; }

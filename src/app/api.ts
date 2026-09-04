@@ -51,6 +51,7 @@ export interface JobsResponse {
 }
 
 export interface TestSendResponse {
+  readonly replayed?: boolean;
   readonly result: {
     readonly status: "accepted";
     readonly userMessage: "Accepted by Microsoft";
@@ -254,6 +255,8 @@ export function getCampaignJobs(campaignId: string, limit = 100, offset = 0): Pr
 export function sendCampaignTest(
   campaignId: string,
   payload: {
+    readonly idempotencyKey: string;
+    readonly sourceRow: number;
     readonly subject: string;
     readonly bodyHtml: string;
     readonly cc: readonly string[];

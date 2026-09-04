@@ -22,6 +22,8 @@
   --font-display: "Avenir Next", "Segoe UI", Arial, sans-serif;
   --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --sidebar: 264px;
+  --space-shell-notice-top: 18px;
+  --space-shell-notice-inline: 24px;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-display);

@@ -85,6 +85,7 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & { stat
     },
     recipientJobs: {
       getById: async () => state.job,
+      getByCampaignAndSourceRow: async () => state.job,
       listByCampaign: async () => [state.job],
       claimNextPending: async (_campaignId, now, claimToken) => {
         if (state.job.status !== "pending") return null;

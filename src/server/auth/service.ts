@@ -45,7 +45,7 @@ export class AuthFlowError extends Error {
   readonly code = "authentication_failed";
   readonly category: "state" | "identity" | "configuration" | "token";
 
-  constructor(category: AuthFlowError["category"], message: string) {
+  constructor(category: AuthFlowError["category"], message: string, readonly returnTo?: string) {
     super(message);
     this.name = "AuthFlowError";
     this.category = category;
@@ -98,7 +98,11 @@ export class MicrosoftAuthService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  async beginSignIn(returnTo = "/dashboard", statePrefix?: string): Promise<AuthorizationStart> {
+  async beginSignIn(
+    returnTo = "/dashboard",
+    statePrefix?: string,
+    options: { readonly prompt?: "select_account" | "consent" | "none" | null } = {},
+  ): Promise<AuthorizationStart> {
     const state = await createOAuthState({
       secret: this.deps.stateSecret,
       stateStore: this.deps.stateStore,
@@ -117,6 +121,7 @@ export class MicrosoftAuthService {
         state: state.payload.state,
         codeChallenge: challenge,
         nonce: state.payload.nonce,
+        prompt: options.prompt,
       }),
       state: state.payload.state,
       codeVerifier: state.payload.codeVerifier,
@@ -235,34 +240,60 @@ export class MicrosoftAuthService {
     } catch {
       throw new AuthFlowError("state", "Microsoft authorization could not be verified in this browser");
     }
-    const tokens = await exchangeAuthorizationCode(this.config, {
-      code: input.code,
-      codeVerifier: state.codeVerifier,
-      fetchImpl: this.deps.fetchImpl,
-      now: this.now(),
-    });
-    if (!tokens.idToken) throw new AuthFlowError("identity", "Microsoft did not return a verifiable identity");
-    const claims = await verifyIdToken(tokens.idToken, {
-      tenantId: this.config.tenantId,
-      clientId: this.config.clientId,
-      nonce: state.nonce,
-      fetchImpl: this.deps.fetchImpl,
-      verifySignature: this.deps.verifyIdTokenSignature ?? true,
-      now: Math.floor(this.now() / 1000),
-    });
-    if (claims.tid !== expectedUser.tenantId || claims.oid !== expectedUser.objectId) {
-      throw new AuthFlowError("identity", "Authorize OneDrive with the same Microsoft account currently signed in to MailFlow");
+    try {
+      const tokens = await exchangeAuthorizationCode(this.config, {
+        code: input.code,
+        codeVerifier: state.codeVerifier,
+        fetchImpl: this.deps.fetchImpl,
+        now: this.now(),
+      });
+      if (!tokens.idToken) throw new AuthFlowError("identity", "Microsoft did not return a verifiable identity");
+      const claims = await verifyIdToken(tokens.idToken, {
+        tenantId: this.config.tenantId,
+        clientId: this.config.clientId,
+        nonce: state.nonce,
+        fetchImpl: this.deps.fetchImpl,
+        verifySignature: this.deps.verifyIdTokenSignature ?? true,
+        now: Math.floor(this.now() / 1000),
+      });
+      if (claims.tid !== expectedUser.tenantId || claims.oid !== expectedUser.objectId) {
+        throw new AuthFlowError("identity", "Authorize OneDrive with the same Microsoft account currently signed in to MailFlow");
+      }
+      const refreshToken = requireRefreshToken(tokens);
+      await this.deps.tokenStore.save({
+        userId: expectedUser.id,
+        resource: this.tokenResource,
+        encryptedRefreshToken: await encryptRefreshToken(refreshToken, this.deps.tokenEncryptionSecret),
+        accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+        grantedScopes: tokens.scope,
+        encryptionVersion: REFRESH_TOKEN_ENCRYPTION_VERSION,
+        updatedAt: this.now(),
+      });
+      return {
+        returnTo: state.returnTo,
+        stateCookie: clearOAuthStateCookie(this.deps.secureCookies ?? true),
+      };
+    } catch (error) {
+      if (error instanceof AuthFlowError) throw new AuthFlowError(error.category, error.message, state.returnTo);
+      throw new AuthFlowError("token", "OneDrive authorization could not be completed", state.returnTo);
     }
-    const refreshToken = requireRefreshToken(tokens);
-    await this.deps.tokenStore.save({
-      userId: expectedUser.id,
-      resource: this.tokenResource,
-      encryptedRefreshToken: await encryptRefreshToken(refreshToken, this.deps.tokenEncryptionSecret),
-      accessTokenExpiresAt: tokens.accessTokenExpiresAt,
-      grantedScopes: tokens.scope,
-      encryptionVersion: REFRESH_TOKEN_ENCRYPTION_VERSION,
-      updatedAt: this.now(),
-    });
+  }
+
+  /** Consume a declined resource-consent state while recovering its safe app destination. */
+  async cancelResourceConsent(input: Omit<AuthCallbackInput, "code">): Promise<{ returnTo: string; stateCookie: string }> {
+    let state;
+    try {
+      state = await consumeOAuthState({
+        secret: this.deps.stateSecret,
+        expectedState: input.state,
+        cookieHeader: input.cookieHeader,
+        cookieValue: input.stateCookieValue,
+        now: this.now(),
+        stateStore: this.deps.stateStore,
+      });
+    } catch {
+      throw new AuthFlowError("state", "Microsoft authorization could not be verified in this browser");
+    }
     return {
       returnTo: state.returnTo,
       stateCookie: clearOAuthStateCookie(this.deps.secureCookies ?? true),

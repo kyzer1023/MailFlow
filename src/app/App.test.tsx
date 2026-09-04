@@ -186,6 +186,14 @@ describe("authenticated information architecture", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps primary sign-in successful and explains a declined OneDrive onboarding step", async () => {
+    window.history.replaceState({}, "", "/dashboard?onedrive=cancelled");
+    render(<App />);
+
+    expect(await screen.findByText(/You are signed in\. OneDrive connection was cancelled/u)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect from Recipients" })).toHaveAttribute("href", "/flows/new/recipients");
+  });
+
   it("keeps recipients inside the flow and shows a clean flow library", async () => {
     window.history.replaceState({}, "", "/flows");
 
@@ -705,6 +713,8 @@ describe("campaign attachments", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue to review/ }));
     expect(await screen.findByRole("heading", { name: "Review summary" })).toBeInTheDocument();
     expect(screen.getAllByText(/agenda\.pdf \(/)).not.toHaveLength(0);
+    expect(screen.getByRole("note")).toHaveTextContent("The preview keeps the campaign's original resolved To, CC, BCC, and Reply-to headers.");
+    expect(screen.getByRole("note")).toHaveTextContent("To is replaced with amina@student.example");
     fireEvent.click(screen.getByLabelText(/I have checked the sender/));
     fireEvent.click(screen.getByRole("button", { name: "Send test to me" }));
     await waitFor(() => expect(mockedCreateCampaign).toHaveBeenCalled());
@@ -712,7 +722,12 @@ describe("campaign attachments", () => {
     expect(payload?.attachmentSetId).toBe("set-1");
     expect(payload).not.toHaveProperty("attachments");
     expect(Object.values(payload || {}).some((value) => value instanceof File)).toBe(false);
-    expect(await screen.findByText("Test accepted by Microsoft")).toBeInTheDocument();
+    expect(await screen.findByText("Microsoft accepted the test request for your mailbox.")).toBeInTheDocument();
+    expect(mockedSendCampaignTest).toHaveBeenCalledWith(
+      "campaign-1",
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^test-campaign-/u), sourceRow: 2 }),
+      "test-csrf-token",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("Attachments are locked for this campaign.")).toBeInTheDocument();
