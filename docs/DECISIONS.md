@@ -63,3 +63,13 @@ The App Folder uses delegated `Files.ReadWrite.AppFolder`, is isolated to `Apps/
 Abandoned unassociated sets expire after 24 hours. Terminal campaign paths remove the active OneDrive items immediately when possible, and the hourly scheduled cleanup retries expired orphan removal. Microsoft Graph's ordinary delete moves items to the user's recycle bin; the USM E2E must determine whether scoped `permanentDelete` is available before claiming immediate quota reclamation. D1 metadata remains as an audit record after the active items are removed.
 
 OneDrive storage and SMTP delivery use separate Microsoft resource tokens. A student first authorizes delegated `SMTP.Send` for mail, then authorizes delegated `Files.ReadWrite.AppFolder` once before adding attachments. Both grants use the existing Entra application and encrypted per-resource refresh tokens in D1. This avoids delegated `Mail.ReadWrite`, Power Automate, payment-bound object storage, and a central connector mailbox while preserving the signed-in student as sender. Microsoft Graph `Mail.Send` remains a rollback transport for campaigns without attachments and must reject attachment sends in this release.
+
+## ADR-010 - Use a stable, isolated staging environment
+
+Status: accepted.
+
+Mail Flow uses Wrangler's named `staging` environment to deploy a separate `mailflow-staging` Worker with its own D1 database, campaign Queue, dead-letter Queue, vars, and Worker secrets. The top-level Wrangler configuration remains the production deployment. No R2 binding is used in either environment.
+
+The stable staging URL hosts one pull-request candidate at a time. Deployment is manual and serialized, runs the full repository checks and both Wrangler dry runs first, applies migrations only to the staging D1 database, and deploys an explicitly selected commit. Promotion means merging the reviewed commit and using the separate production release procedure. Rollback selects an earlier known-good commit for the same manual staging workflow; it never copies or rewinds D1 data.
+
+Staging and production share the existing single-tenant Entra application and each member's Microsoft-managed MailFlow App Folder. Staging therefore sets an attachment object namespace that becomes part of every newly generated private OneDrive filename. Production keeps the existing filename format when no namespace is configured. This prevents a staging attachment locator from colliding with production metadata even if generated identifiers repeat.

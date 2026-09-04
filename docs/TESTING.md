@@ -92,3 +92,14 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 - Public sign-in, callback, dashboard, campaign queue, pause, resume, export, and logout tested.
 - Logs contain correlation identifiers but no tokens or message bodies.
 
+For staging, verify separately:
+
+- The named environment resolves `mailflow-staging`, `mailflow-staging-db`, `mailflow-staging-campaign-ticks`, and `mailflow-staging-campaign-ticks-dlq`; no staging binding names a production stateful resource.
+- `PUBLIC_ORIGIN` is the exact stable staging URL, SMTP is selected, pace is 12, maximum recipients is 300, and the attachment object namespace is `staging`.
+- All migrations are applied to staging with no pending entries, and no production migration command ran during the staging release.
+- Independent staging Worker secrets exist without values appearing in configuration, command output, screenshots, or Git.
+- Localhost, production, and staging Web callbacks coexist on the existing Entra application.
+- A staging build runs with `CLOUDFLARE_ENV=staging` before the staging Wrangler dry run or deploy.
+- Hosted landing, hashed assets, unauthenticated API behavior, OAuth redirect origin and SMTP scope, schedule, D1, Queue, and DLQ checks pass without initiating mail.
+- The deployed Worker version corresponds to the recorded exact candidate commit.
+
