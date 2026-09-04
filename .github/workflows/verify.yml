@@ -36,5 +36,7 @@ jobs:
         run: npx wrangler deploy --dry-run
       - name: Build staging static assets
         run: npm run build:staging
+      - name: Freeze and validate staging configuration
+        run: npm run prepare:staging-config
       - name: Dry-run staging packaging
-        run: npx wrangler deploy --env staging --dry-run
+        run: npx wrangler deploy --config dist/client/mailflow/wrangler.staging-validated.json --dry-run

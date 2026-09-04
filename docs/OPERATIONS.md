@@ -46,7 +46,8 @@ npm ci
 npm test
 npx wrangler deploy --dry-run
 npm run build:staging
-npx wrangler deploy --env staging --dry-run
+npm run prepare:staging-config
+npx wrangler deploy --config dist/client/mailflow/wrangler.staging-validated.json --dry-run
 ```
 
 Then confirm:
@@ -58,6 +59,7 @@ Then confirm:
 - `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, and `0006_public_endpoint_controls.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
 - A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
+- Run `prepare:staging-config` after the staging build and deploy only through its validated, staging-only config snapshot. Do not add `--env staging` to that generated snapshot or deploy from a mutable redirected config in a shared worktree.
 
 ## Local full-stack development
 
