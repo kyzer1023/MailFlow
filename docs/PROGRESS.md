@@ -737,3 +737,11 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Expanded the 108-recipient component regression to verify the first, second, and final pages, including row 108 and both pagination boundaries. `npm test` passed TypeScript, both production builds, 21 test files, and all 158 tests; `git diff --check` also passed.
 - Local in-app browser QA passed at the 1909 by 911 reference viewport using synthetic local campaign data. The Recipient Jobs panel and audit column measured the same 633.58 px height, keyboard pagination advanced from rows 1-9 to 10-18, and the narrower layout stacked without clipping. No Microsoft authorization, mail submission, campaign creation, deployment, or production data access occurred.
 - Refined the pagination controls to compact arrow-only buttons while retaining descriptive accessible names, native hover titles, disabled boundary states, and 40 px targets.
+
+### 2026-09-05 - Recipient pagination production release
+
+- Removed the temporary project-root design QA report and confirmed no `qa-*` fixture files remained before release.
+- Pushed application commit `0aa0fa4` to `origin/main` after a clean `npm ci` and `npm run check:staging` passed all 158 tests, the production build and dry run, and the isolated staging build and dry run.
+- Confirmed production D1 had no pending migrations, then deployed production Worker version `777de2ab-8eed-480b-8b61-d58e17a49ff9` to `https://mailflow.kyzer-hono-test.workers.dev` with the existing production D1, Queue producer and consumer, static assets, SMTP configuration, and hourly schedule.
+- Non-sending hosted smoke checks passed: landing `200 text/html`, the new JavaScript asset `200 text/javascript`, the new stylesheet `200 text/css`, unauthenticated `/api/me` `401 application/json`, and an unknown API route `404 application/json`. Deployment status confirmed the new version receives 100 percent of production traffic.
+- No Microsoft authorization, test-send, campaign creation, real mail, recipient contact, or production campaign-data mutation was performed.
