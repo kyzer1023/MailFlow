@@ -22,6 +22,8 @@
 .avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--coral); color: white; font-size: .72rem; font-weight: 800; }
 .workspace { min-width: 0; min-height: 100dvh; background: var(--paper); display: flex; flex-direction: column; padding-bottom: 46px; }
 .workspace-content { min-width: 0; flex: 1; }
+.auth-journey-notice { margin: var(--space-shell-notice-top) var(--space-shell-notice-inline) 0; }
+.auth-journey-notice a { color: inherit; font-weight: 800; text-decoration: underline; }
 .support-footer { position: fixed; z-index: 8; left: var(--sidebar); right: 0; bottom: 0; min-height: 46px; padding: 12px 24px; display: flex; align-items: center; justify-content: center; background: rgba(244,240,232,.97); border-top: 1px solid rgba(81,106,89,.14); color: var(--muted); font-size: .74rem; backdrop-filter: blur(8px); }
 .support-footer a { margin-left: .25rem; color: var(--moss-dark); font-weight: 750; }
 .page { width: min(100%, 1480px); margin-inline: auto; padding: 38px clamp(28px, 4.2vw, 68px) 82px; }

@@ -186,6 +186,14 @@ describe("authenticated information architecture", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps primary sign-in successful and explains a declined OneDrive onboarding step", async () => {
+    window.history.replaceState({}, "", "/dashboard?onedrive=cancelled");
+    render(<App />);
+
+    expect(await screen.findByText(/You are signed in\. OneDrive connection was cancelled/u)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect from Recipients" })).toHaveAttribute("href", "/flows/new/recipients");
+  });
+
   it("keeps recipients inside the flow and shows a clean flow library", async () => {
     window.history.replaceState({}, "", "/flows");
 

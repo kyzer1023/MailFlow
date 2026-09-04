@@ -39,6 +39,8 @@ export function safeReturnTo(value: string | undefined | null): string {
   if (!candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("\\") || /[\u0000-\u001f\u007f]/.test(candidate)) {
     return "/dashboard";
   }
+  const pathname = candidate.split(/[?#]/u, 1)[0].toLowerCase();
+  if (pathname === "/auth" || pathname.startsWith("/auth/")) return "/dashboard";
   return candidate;
 }
 

@@ -56,6 +56,8 @@ Domain modules must have no Cloudflare imports. Adapters depend on domain contra
 - SMTP target scopes: `openid`, `profile`, `email`, `offline_access`, and delegated `https://outlook.office.com/SMTP.Send`.
 - Attachment storage scopes: `openid`, `profile`, `email`, `offline_access`, and delegated Graph `Files.ReadWrite.AppFolder`.
 - OAuth access tokens are resource-specific. SMTP delivery and OneDrive storage use separate encrypted refresh-token records for the same user.
+- After a successful homepage SMTP callback creates the application session, the API checks the stored OneDrive resource record. If the grant is absent, it creates a second state, PKCE verifier, and nonce for `Files.ReadWrite.AppFolder`, omits the OAuth `prompt` parameter so Microsoft may reuse the active session, and redirects immediately. The second callback binds tenant and object identifiers to the primary user before storing the OneDrive token.
+- Graph deployments, deployments without attachment support, already-authorized users, and unavailable storage authorization skip the second leg. Cancellation or failure preserves the primary session and returns to the state-validated local destination with a visible status. `/auth` destinations are rejected to prevent callback loops.
 - In SMTP mode, the validated ID token supplies the tenant object identity, display name, principal name, and mailbox address. Graph mode retains the `/me` cross-check during the rollback period.
 - Redirect route: `/auth/microsoft/callback` on local and deployed origins.
 - Session cookie: `HttpOnly`, `Secure` in production, `SameSite=Lax`, rotated after login, and renewed on authenticated use with a 365-day rolling lifetime. Microsoft revocation and browser cookie clearing still end access.
@@ -166,6 +168,8 @@ All mutating routes require an authenticated session, CSRF protection, same-orig
 The test-send route is additionally server-authoritative at the final mail-provider boundary: `To` is always the authenticated mailbox, and campaign CC, BCC, and Reply-To are always empty even if those fields are present in the request. The validated subject, sanitized HTML body, message importance, and immutable campaign attachment set remain unchanged. A bounded per-user limit and stable idempotency key apply before provider submission.
 
 `/auth/microsoft/start` is intentionally public, but each anonymous client hash is rate-limited before a new OAuth state record is created. The existing scheduled handler removes expired OAuth-state rows, expired or revoked session rows, expired rate-limit counters, and stale test-send claim records in addition to OneDrive orphan cleanup.
+
+The internally chained OneDrive authorization does not create another anonymous start request. It begins only after the rate-limited primary sign-in succeeds and the application session exists. Manual `/auth/microsoft/onedrive/start` remains an authenticated recovery route and keeps account selection available when a member must correct a declined or mismatched grant.
 
 ## Cloudflare bindings
 

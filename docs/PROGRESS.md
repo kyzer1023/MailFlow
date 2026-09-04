@@ -670,3 +670,16 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added five-per-user test-send limiting, privacy-preserving anonymous OAuth-start limits of 20 per client and 200 globally per 10 minutes, plus bounded multi-batch hourly cleanup for OAuth state, sessions, counters, and abandoned claims.
 - Updated Review to keep original resolved campaign headers visible while clearly explaining the test-only recipient substitutions. Visual checks passed at 1440 x 900, 390 x 844, and the available medium-width browser workspace; the narrow view had no horizontal overflow or console errors.
 - Verification passed: fresh local D1 migration state with all six migrations applied and none pending, `npm test` with TypeScript, both production builds, 17 test files and all 131 tests, `wrangler deploy --dry-run`, and `git diff --check`. The required independent security review confirmed the self-only envelope invariant and its two identified edge cases were corrected before this checkpoint.
+
+### 2026-09-04 - Chained homepage OneDrive authorization
+
+- Extended SMTP homepage sign-in into two resource-specific OAuth legs: primary `SMTP.Send` authorization establishes the MailFlow session, then a missing `Files.ReadWrite.AppFolder` grant starts immediately with its own state, PKCE verifier, nonce, and encrypted token record. The second request omits `prompt` so Microsoft can reuse the active session without forcing credential entry.
+- Preserved tenant and object identity binding for the OneDrive callback. Existing OneDrive grants, Graph mode, unavailable attachment or storage authorization, and unsafe `/auth` return targets skip or fall back without loops.
+- OneDrive success, cancellation, provider failure, invalid state, and identity mismatch return to a validated local app destination with a visible status. Cancellation and failure retain the primary application session, and the Recipients action remains available for recovery and legacy sessions.
+- Verification passed: `npm test` with TypeScript, both production builds, 18 test files and all 135 tests; `wrangler deploy --dry-run`; local D1 migrations with none pending; and `git diff --check`. No production deployment or PR #3 infrastructure changes were made.
+
+### 2026-09-04 - PR #2 staging-foundation rebase verification
+
+- Rebased the self-only test-send controls and chained OneDrive onboarding commits onto staging-foundation merge `ca3cf98d9475fa424e286f602c7d83957b98adaf`. Conflict resolution preserved the isolated staging Worker, D1, Queue, dead-letter Queue, attachment namespace, workflows, and documentation while retaining every PR #2 behavior.
+- Verification passed on the rebased tree: clean `npm ci`; `npm test` with TypeScript, both production builds, 19 test files and all 138 tests; production Wrangler dry run; staging-specific build and Wrangler dry run; local D1 migration status with none pending; and `git diff --check`.
+- No production deployment, mail submission, campaign creation, or PR merge occurred during this checkpoint. Staging migration and deployment evidence is recorded separately after the exact rebased head is hosted.

@@ -35,6 +35,7 @@
 - Safe retry for explicit throttles.
 - `unknown` behavior for ambiguous transport failures.
 - Authentication state, callback, session creation, expiry, logout, tenant rejection, and CSRF.
+- Homepage SMTP-to-OneDrive chaining, separate resource-token persistence, SSO prompt omission, existing-grant and Graph-mode skips, cancellation and provider-failure recovery, identity mismatch rejection, missing-storage skip, safe return targets, and loop prevention.
 - Attachment-set ownership, idempotent creation, immutable association, OneDrive byte integrity, terminal cleanup, and 24-hour orphan cleanup.
 - Campaign creation and test-send reject attachment sets unless SMTP mode plus stored `SMTP.Send` and `Files.ReadWrite.AppFolder` grants are present.
 - Test-send idempotent replay, changed-fingerprint rejection, safe pre-provider retry, ambiguous-outcome suppression, per-user limits, audit events without recipient jobs, and anonymous OAuth per-client/global limits.
@@ -51,6 +52,7 @@
 - Multi-file selection, upload progress, retry/remove states, 5-file and 20-MiB limits, Review summary, and attachment locking after test-send.
 - Campaign polling or live refresh, pause, resume, and CSV export.
 - Loading, empty, failure, and narrow-screen states.
+- Authenticated OneDrive connected, cancelled, unavailable, failed, and identity-mismatch notices with a recovery link.
 
 ## Visual QA
 

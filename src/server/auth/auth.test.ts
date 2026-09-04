@@ -125,6 +125,7 @@ describe("OAuth state", () => {
   it("rejects a state mismatch and unsafe return target", async () => {
     const started = await createOAuthState({ secret: "state secret", returnTo: "https://evil.example", secure: false });
     expect(started.payload.returnTo).toBe("/dashboard");
+    expect((await createOAuthState({ secret: "state secret", returnTo: "/auth/microsoft/callback", secure: false })).payload.returnTo).toBe("/dashboard");
     await expect(consumeOAuthState({
       secret: "state secret",
       expectedState: "x".repeat(32),
@@ -338,6 +339,7 @@ describe("MicrosoftAuthService", () => {
     });
     const started = await service.beginSignIn("/flows/new/recipients", "onedrive");
     expect(started.state).toMatch(/^onedrive\./u);
+    expect(new URL(started.authorizationUrl).searchParams.get("prompt")).toBe("select_account");
     claims.nonce = started.nonce;
 
     const completed = await service.completeResourceConsent({
@@ -351,5 +353,26 @@ describe("MicrosoftAuthService", () => {
     expect(tokenStore.record?.grantedScopes).toContain("Files.ReadWrite.AppFolder");
     expect(userStore.users).toHaveLength(0);
     expect(sessionStore.records.size).toBe(0);
+
+    const chained = await service.beginSignIn("/dashboard?from=home", "onedrive", { prompt: null });
+    expect(new URL(chained.authorizationUrl).searchParams.has("prompt")).toBe(false);
+    claims.nonce = chained.nonce;
+    claims.oid = "different-object";
+    await expect(service.completeResourceConsent({
+      code: "mismatched-code",
+      state: chained.state,
+      stateCookieValue: parseCookie(chained.stateCookie, OAUTH_STATE_COOKIE_NAME),
+    }, expectedUser)).rejects.toMatchObject({ category: "identity", returnTo: "/dashboard?from=home" });
+
+    const cancelled = await service.beginSignIn("/campaigns?view=recent", "onedrive", { prompt: null });
+    const cancelledResult = await service.cancelResourceConsent({
+      state: cancelled.state,
+      stateCookieValue: parseCookie(cancelled.stateCookie, OAUTH_STATE_COOKIE_NAME),
+    });
+    expect(cancelledResult.returnTo).toBe("/campaigns?view=recent");
+    await expect(service.cancelResourceConsent({
+      state: cancelled.state,
+      stateCookieValue: parseCookie(cancelled.stateCookie, OAUTH_STATE_COOKIE_NAME),
+    })).rejects.toMatchObject({ category: "state" });
   });
 });

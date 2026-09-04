@@ -15,7 +15,9 @@ This document converts the approved discussion into testable product behavior. I
 2. The application runs a server-side authorization-code flow with PKCE.
 3. The application verifies the tenant identifier, not only the visible email suffix.
 4. The application stores an application session in a secure, HTTP-only cookie.
-5. The dashboard identifies the signed-in mailbox.
+5. In an SMTP deployment with attachment support, the application immediately starts a separate OneDrive App Folder authorization when that same user does not already have the required grant.
+6. Microsoft reuses the active browser session for the second authorization. First-time OneDrive consent may still be shown.
+7. The dashboard identifies the signed-in mailbox and reports whether the optional OneDrive step connected, was declined, or failed.
 
 Acceptance:
 
@@ -23,6 +25,8 @@ Acceptance:
 - A non-USM tenant is rejected.
 - The application never stores or requests the student's mailbox password.
 - The sender address cannot be changed to an arbitrary address.
+- SMTP and OneDrive refresh tokens remain separate resource records. OneDrive consent is accepted only when its verified tenant and object identity match the newly signed-in MailFlow user.
+- Declining or failing OneDrive does not undo the primary MailFlow login. The original validated local destination is restored and the Recipients page keeps a manual Connect OneDrive recovery action.
 
 ## UC-02 View the dashboard
 
@@ -91,7 +95,7 @@ Flagged rows are visible and excluded until corrected or explicitly skipped. No 
 - The member may add up to five PDF, Word, Excel, PowerPoint, CSV, text, PNG, or JPEG files.
 - The combined raw file size may not exceed 20 MiB.
 - Every valid recipient receives the same immutable attachment set.
-- Uploads require SMTP mode plus stored delegated `SMTP.Send` and `Files.ReadWrite.AppFolder` grants. The interface asks an older session to reconnect for SMTP, then offers a one-time Connect OneDrive action before it exposes uploads.
+- Uploads require SMTP mode plus stored delegated `SMTP.Send` and `Files.ReadWrite.AppFolder` grants. New homepage sign-ins acquire these in a chained, resource-specific journey. The interface asks older sessions to reconnect for SMTP and retains Connect OneDrive only as recovery for declined, failed, or legacy sessions.
 - The browser sends files only to the same-origin authenticated API. D1 stores ownership and integrity metadata; the signed-in student's OneDrive App Folder stores the bytes against that student's existing quota.
 - Executable signatures, empty files, duplicate content, mismatched extensions and media types, and unsupported formats are rejected.
 - Review displays filenames and sizes. Campaign creation sends only an opaque attachment-set identifier, never file bytes or private object keys.
