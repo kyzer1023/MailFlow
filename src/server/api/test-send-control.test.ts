@@ -303,7 +303,7 @@ describe("test-send public controls", () => {
       failure: {
         status: 429,
         code: "mailbox_daily_budget",
-        message: expect.stringContaining("2026-09-06T08:30:00.000Z"),
+        message: expect.stringContaining("6 Sep 2026, 4:30 PM (Malaysia time, GMT+8)"),
       },
     });
     expect(sends).toBe(0);

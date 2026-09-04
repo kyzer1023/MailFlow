@@ -5,6 +5,23 @@ export const MAILBOX_BUDGET_WINDOW_MS = 24 * 60 * 60 * 1_000;
 export const MAILBOX_LEASE_MS = 5 * 60 * 1_000;
 export const MAILBOX_RECOVERY_STALE_MS = 10 * 60 * 1_000;
 
+export function formatMalaysiaDateTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("day")} ${part("month")} ${part("year")}, ${part("hour")}:${part("minute")} ${part("dayPeriod").toUpperCase()} (Malaysia time, GMT+8)`;
+}
+
 /**
  * Count every provider envelope entry. Repeated addresses deliberately count
  * again so MailFlow never underestimates the mailbox-wide provider request.
@@ -39,15 +56,16 @@ export function queueDelayUntil(dueAt: string, now: Date): number {
 }
 
 export function mailboxWaitMessage(reason: "lease" | "pace" | "provider_backoff" | "budget", nextAt: string): string {
+  const availableAt = formatMalaysiaDateTime(nextAt);
   switch (reason) {
     case "budget":
-      return `The daily mailbox allowance is temporarily full. Sending will continue after ${nextAt}.`;
+      return `The daily mailbox allowance is temporarily full. Sending will continue after ${availableAt}.`;
     case "provider_backoff":
-      return `Microsoft requested a temporary pause. Sending will continue after ${nextAt}.`;
+      return `Microsoft requested a temporary pause. Sending will continue after ${availableAt}.`;
     case "lease":
-      return `Another message is using this mailbox. Sending will continue after ${nextAt}.`;
+      return `Another message is using this mailbox. Sending will continue after ${availableAt}.`;
     case "pace":
     default:
-      return `Mailbox pacing is active. Sending will continue after ${nextAt}.`;
+      return `Mailbox pacing is active. Sending will continue after ${availableAt}.`;
   }
 }
