@@ -207,6 +207,7 @@ describe("campaign tick", () => {
     expect(deps.state.sends).toBe(1);
     expect(deps.state.job.status).toBe("accepted");
     expect(deps.mailboxDecision.kind === "acquired" && deps.mailboxDecision.attempt.envelopeRecipientCount).toBe(3);
+    expect(deps.state.campaign.schedulerMessage).toContain("Mailbox pacing is active");
   });
 
   it("keeps a budget-blocked job pending and schedules the exact release time", async () => {
@@ -229,6 +230,7 @@ describe("campaign tick", () => {
     expect(result).toMatchObject({ kind: "scheduled", outcome: "retry_scheduled", delaySeconds: 120 });
     expect(deps.state.job.status).toBe("pending");
     expect(deps.state.job.nextAttemptAt).toBe("2026-08-31T00:03:00.000Z");
+    expect(deps.state.campaign.schedulerMessage).toContain("Microsoft requested a temporary pause");
   });
 
   it("loads immutable attachments before claiming and forwards them", async () => {

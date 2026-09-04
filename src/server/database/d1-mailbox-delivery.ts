@@ -1,4 +1,4 @@
-import { MAILBOX_BUDGET_WINDOW_MS, MAILBOX_RECIPIENT_BUDGET } from "../../domain/mailbox-scheduler";
+import { MAILBOX_BUDGET_WINDOW_MS, MAILBOX_RECIPIENT_BUDGET, mailboxWaitMessage } from "../../domain/mailbox-scheduler";
 import type { DeliveryAttemptRecord } from "../../domain/types";
 import type {
   CampaignAttemptCompletion,
@@ -347,7 +347,11 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
       attemptState = "not_submitted";
     }
     const nextCampaignAt = input.outcome === "retry" ? (input.retryAt ?? input.nextSendAt) : input.nextSendAt;
-    const schedulerMessage = input.outcome === "retry" ? message : null;
+    const schedulerMessage = input.outcome === "retry"
+      ? input.providerBackoffUntil
+        ? mailboxWaitMessage("provider_backoff", nextCampaignAt)
+        : `A safe retry is waiting. Sending will continue after ${nextCampaignAt}.`
+      : mailboxWaitMessage("pace", nextCampaignAt);
     try {
       await this.db.batch([
         job,

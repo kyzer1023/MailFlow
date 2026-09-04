@@ -343,12 +343,17 @@ export async function processCampaignTick(
   const latest = await dependencies.campaigns.getById(campaign.id);
   if (!latest || latest.state !== "running") return { kind: "scheduled", campaignId: campaign.id, jobId: job.id, delaySeconds: 0, outcome };
   const dueAt = laterIso(nextAttemptAt, latest.schedulerNextAttemptAt) ?? nextAttemptAt;
+  const wakeMessage = outcome === "retry_scheduled"
+    ? providerBackoffUntil
+      ? mailboxWaitMessage("provider_backoff", dueAt)
+      : `A safe retry is waiting. Sending will continue after ${dueAt}.`
+    : mailboxWaitMessage("pace", dueAt);
   const wake = await reserveCampaignWake({
     campaigns: dependencies.campaigns,
     queue: dependencies.queue,
     campaignId: campaign.id,
     dueAt,
-    message: outcome === "retry_scheduled" ? messageText : null,
+    message: wakeMessage,
     now: resultNowDate,
     token: dependencies.wakeToken?.(campaign.id, resultNowDate),
   });
