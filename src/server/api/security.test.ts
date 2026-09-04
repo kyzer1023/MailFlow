@@ -129,6 +129,8 @@ describe("Worker API security boundaries", () => {
 
   it("accepts bounded recipient metadata for test sends", () => {
     const result = testSendSchema.safeParse({
+      idempotencyKey: "test-request-1",
+      sourceRow: 2,
       subject: "Subject",
       bodyHtml: "<p>Hello</p>",
       cc: ["copy@example.test"],
@@ -141,6 +143,8 @@ describe("Worker API security boundaries", () => {
       expect(result.data.cc).toEqual(["copy@example.test"]);
       expect(result.data.bcc).toEqual(["audit@example.test"]);
       expect(result.data.replyTo).toEqual(["replies@example.test"]);
+      expect(result.data.idempotencyKey).toBe("test-request-1");
+      expect(result.data.sourceRow).toBe(2);
     }
   });
 });

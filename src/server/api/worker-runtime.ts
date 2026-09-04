@@ -1,4 +1,6 @@
 import { createD1Repositories } from "../database/d1";
+import { createD1AuthStores } from "../database/d1-auth";
+import { createD1PublicControlStore } from "../database/d1-public-controls";
 import {
   delegatedGraphMailProvider,
   delegatedSmtpMailProvider,
@@ -70,8 +72,35 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
   }
 }
 
-/** Run the hourly OneDrive App Folder retention sweep for orphan sets. */
-export async function processAttachmentCleanup(bindings: MailFlowBindings): Promise<void> {
+const RETENTION_CLEANUP_BATCH_SIZE = 500;
+const RETENTION_CLEANUP_MAX_BATCHES = 10;
+
+export async function drainCleanupBatches(
+  cleanup: () => Promise<number>,
+  batchSize = RETENTION_CLEANUP_BATCH_SIZE,
+  maxBatches = RETENTION_CLEANUP_MAX_BATCHES,
+): Promise<number> {
+  let removed = 0;
+  for (let batch = 0; batch < maxBatches; batch += 1) {
+    const count = await cleanup();
+    removed += count;
+    if (count < batchSize) break;
+  }
+  return removed;
+}
+
+/** Run bounded hourly cleanup for authentication, controls, and attachments. */
+export async function processScheduledCleanup(bindings: MailFlowBindings): Promise<void> {
+  const now = Date.now();
+  const authStores = createD1AuthStores(bindings.DB);
+  const publicControls = createD1PublicControlStore(bindings.DB);
+  await drainCleanupBatches(() => authStores.stateStore.cleanupExpired(now, RETENTION_CLEANUP_BATCH_SIZE));
+  await drainCleanupBatches(() => authStores.sessionStore.cleanupExpired(now, RETENTION_CLEANUP_BATCH_SIZE));
+  for (let batch = 0; batch < RETENTION_CLEANUP_MAX_BATCHES; batch += 1) {
+    const result = await publicControls.cleanupExpired(now, RETENTION_CLEANUP_BATCH_SIZE);
+    if (result.counters < RETENTION_CLEANUP_BATCH_SIZE && result.staleTestSends < RETENTION_CLEANUP_BATCH_SIZE) break;
+  }
+
   if (resolveMailTransport(bindings.MAIL_TRANSPORT) !== "smtp") return;
   const repo = createD1Repositories(bindings.DB);
   const queueContext = {
@@ -85,3 +114,6 @@ export async function processAttachmentCleanup(bindings: MailFlowBindings): Prom
   );
   await service.cleanupExpiredOrphans(100);
 }
+
+/** Compatibility name retained for existing imports and focused tests. */
+export const processAttachmentCleanup = processScheduledCleanup;

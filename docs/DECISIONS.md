@@ -73,3 +73,13 @@ Mail Flow uses Wrangler's named `staging` environment to deploy a separate `mail
 The stable staging URL hosts one pull-request candidate at a time. Deployment is manual and serialized, runs the full repository checks and both Wrangler dry runs first, applies migrations only to the staging D1 database, and deploys an explicitly selected commit. Promotion means merging the reviewed commit and using the separate production release procedure. Rollback selects an earlier known-good commit for the same manual staging workflow; it never copies or rewinds D1 data.
 
 Staging and production share the existing single-tenant Entra application and each member's Microsoft-managed MailFlow App Folder. Staging therefore sets an attachment object namespace that becomes part of every newly generated private OneDrive filename. Production keeps the existing filename format when no namespace is configured. This prevents a staging attachment locator from colliding with production metadata even if generated identifiers repeat.
+
+## ADR-011 - Make test sends self-only, idempotent, and independently controlled
+
+Status: accepted.
+
+The Worker, not the browser, defines the recipient envelope for every test send. The authenticated mailbox is the only `To` address, and CC, BCC, and Reply-To are suppressed at the final provider helper for both SMTP and Graph. The reviewed subject, server-sanitized HTML body, importance, and selected immutable attachment set are preserved exactly. The Review screen continues to show the campaign's original resolved headers and explicitly describes the test-only substitutions.
+
+Test sends use a dedicated D1 record with a stable client idempotency key and an effective-content fingerprint. They do not reuse or create recipient campaign jobs. Exact completed replays return the stored result without calling Microsoft again, concurrent duplicates stop at the claimed record, and reuse of a key for changed effective content is rejected. Failures proven to occur before provider submission release the claim for a deliberate retry with the same key, while ambiguous outcomes remain terminal. Per-user test-send rate limiting is enforced only for newly claimed attempts, and audit events record requested, accepted, or failed outcomes without addresses or message content.
+
+Anonymous Microsoft OAuth-start requests use separate per-client and global bounded D1 counters. The client key is secret-derived and raw client addresses are not persisted. The hourly scheduled handler drains expired OAuth states, expired or revoked sessions, expired counters, and abandoned test-send claims in bounded batches alongside the existing OneDrive orphan retention sweep.

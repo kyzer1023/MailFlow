@@ -90,6 +90,7 @@ export interface CampaignRepository {
 
 export interface RecipientJobRepository {
   getById(id: string): Promise<RecipientJobRecord | null>;
+  getByCampaignAndSourceRow(campaignId: string, sourceRow: number): Promise<RecipientJobRecord | null>;
   listByCampaign(campaignId: string, limit?: number, offset?: number): Promise<RecipientJobRecord[]>;
   /** Claims one pending row and increments its attempt count atomically. */
   claimNextPending(campaignId: string, now: string, claimToken: string): Promise<RecipientJobRecord | null>;

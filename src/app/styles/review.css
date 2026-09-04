@@ -1,5 +1,9 @@
 /* Review */
 .review-layout { display: grid; grid-template-columns: minmax(165px, .42fr) minmax(560px, 1.7fr) minmax(315px, .95fr); gap: 18px; align-items: start; }
+.test-envelope-note { margin-bottom: 18px; padding: .85rem 1rem; border: 1px solid var(--token-border); border-radius: 10px; background: var(--token-bg); color: var(--moss-dark); display: flex; gap: .65rem; align-items: flex-start; }
+.test-envelope-note > svg { flex: 0 0 auto; margin-top: .12rem; }
+.test-envelope-note strong { display: block; font-size: .82rem; }
+.test-envelope-note p { margin: .2rem 0 0; font-size: .74rem; line-height: 1.5; }
 .sample-card, .review-summary { padding: 20px; }
 .sample-card h2, .review-summary h2 { margin: .55rem 0 1rem; font-size: 1.12rem; }
 .sample-card > button { width: 100%; border: 1px solid transparent; border-radius: 9px; background: transparent; padding: .75rem; margin-bottom: .45rem; text-align: left; display: grid; grid-template-columns: 48px minmax(0,1fr); gap: .2rem .5rem; cursor: pointer; }

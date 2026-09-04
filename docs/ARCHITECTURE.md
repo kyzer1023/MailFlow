@@ -105,6 +105,12 @@ Campaign reference, source row, resolved recipient metadata, message importance,
 
 Actor, campaign, recipient job when relevant, event type, structured metadata, and timestamp. Secrets and message bodies are excluded from audit metadata.
 
+### test_sends and rate_limit_counters
+
+Test sends use a dedicated owner-scoped record rather than recipient jobs. A stable client idempotency key and a server-calculated fingerprint cover the campaign, sanitized subject and HTML body, importance, and selected attachment set. The first request claims the key before Microsoft is called; exact replays return the stored terminal result, while a key reused for different effective content is rejected. A failure proven to occur before submission releases the claim so the same key may retry; an ambiguous provider outcome remains terminal and is never automatically resubmitted. Test-send audit events reference the campaign but never a recipient job and never store addresses, message bodies, or attachment bytes.
+
+Bounded D1 counters allow five new test-send attempts per authenticated user per 10 minutes. Anonymous Microsoft OAuth starts allow 20 attempts per privacy-preserving client hash and 200 attempts globally per 10 minutes. Idempotent accepted or terminal test-send replays do not consume another rate-limit unit. The public OAuth limiter stores no raw IP address. The hourly scheduled handler drains expired authentication and control rows in bounded batches sized to outpace the globally accepted OAuth-state creation rate.
+
 ## State transitions
 
 ```text
@@ -156,6 +162,10 @@ Expected route groups:
 - `/api/campaigns/:id/export.csv`
 
 All mutating routes require an authenticated session, CSRF protection, same-origin checks, Zod validation, and ownership checks.
+
+The test-send route is additionally server-authoritative at the final mail-provider boundary: `To` is always the authenticated mailbox, and campaign CC, BCC, and Reply-To are always empty even if those fields are present in the request. The validated subject, sanitized HTML body, message importance, and immutable campaign attachment set remain unchanged. A bounded per-user limit and stable idempotency key apply before provider submission.
+
+`/auth/microsoft/start` is intentionally public, but each anonymous client hash is rate-limited before a new OAuth state record is created. The existing scheduled handler removes expired OAuth-state rows, expired or revoked session rows, expired rate-limit counters, and stale test-send claim records in addition to OneDrive orphan cleanup.
 
 ## Cloudflare bindings
 

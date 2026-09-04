@@ -109,6 +109,7 @@ export interface DraftContextValue {
   readonly campaignResponse: CampaignResponse | null;
   readonly setCampaignResponse: (next: CampaignResponse | null | ((current: CampaignResponse | null) => CampaignResponse | null)) => void;
   readonly campaignRequestKey: string;
+  readonly testSendRequestKey: string;
   readonly bodyHtml: string;
   readonly mapping: ClientMapping;
   readonly mappedRows: readonly MappedRecipientRow[];
@@ -150,6 +151,7 @@ export interface DraftSnapshot {
   readonly campaignValidation: ClientValidationSummary | null;
   readonly attachments: readonly CampaignAttachment[];
   readonly campaignRequestKey: string;
+  readonly testSendRequestKey: string;
   readonly skipInvalidRows: boolean;
 }
 

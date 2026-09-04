@@ -7,6 +7,7 @@ import {
   revokeSession,
 } from "../../auth/session";
 import { createD1AuthStores } from "../../database/d1-auth";
+import { createD1PublicControlStore } from "../../database/d1-public-controls";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_FILES,
@@ -27,11 +28,23 @@ import {
   requireSession,
   responseError,
 } from "../helpers";
+import { consumeOAuthStartLimit } from "../public-rate-limits";
 
 /** Register Microsoft authentication, session, and current-user routes. */
 export function registerAuthRoutes(app: Hono<MailFlowAppEnv>): void {
   app.get("/auth/microsoft/start", async (context) => {
     try {
+      const rateLimitSecret = context.env.SESSION_SECRET?.trim();
+      if (!rateLimitSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
+      const decision = await consumeOAuthStartLimit(
+        createD1PublicControlStore(context.env.DB),
+        rateLimitSecret,
+        context.req.header("CF-Connecting-IP") ?? "unknown",
+      );
+      if (!decision.allowed) {
+        context.header("Retry-After", String(decision.retryAfterSeconds));
+        return responseError(context, 429, "oauth_start_rate_limited", "Too many sign-in attempts were started. Wait a few minutes, then try again.");
+      }
       const returnTo = new URL(context.req.url).searchParams.get("returnTo") ?? "/dashboard";
       const { auth } = configFor(context);
       const started = await auth.beginSignIn(returnTo);

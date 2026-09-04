@@ -11,7 +11,7 @@ import { registerCampaignMutationRoutes } from "./routes/campaign-mutations";
 
 export type { MailFlowAppEnv, MailFlowContext } from "./context";
 export { cleanupCampaignAttachments, loadCampaignAttachments } from "./attachments";
-export { processAttachmentCleanup, processQueueBatch } from "./worker-runtime";
+export { processAttachmentCleanup, processQueueBatch, processScheduledCleanup } from "./worker-runtime";
 
 const app = new Hono<MailFlowAppEnv>();
 

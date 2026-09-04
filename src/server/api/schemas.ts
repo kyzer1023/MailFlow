@@ -75,6 +75,8 @@ export const templateVersionSchema = z.object({
 }).strict();
 
 export const testSendSchema = z.object({
+  idempotencyKey: z.string().trim().min(1).max(160),
+  sourceRow: z.number().int().min(1).max(1_000_000),
   subject: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
   cc: z.array(nonEmpty(320)).max(50).default([]),

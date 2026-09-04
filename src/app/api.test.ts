@@ -122,6 +122,8 @@ describe("same-origin API client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await sendCampaignTest("campaign_1", {
+      idempotencyKey: "test-request-1",
+      sourceRow: 2,
       subject: "Hello",
       bodyHtml: "<p>Hello</p>",
       cc: ["copy@example.test"],
@@ -131,6 +133,8 @@ describe("same-origin API client", () => {
     }, "csrf-3");
 
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      idempotencyKey: "test-request-1",
+      sourceRow: 2,
       subject: "Hello",
       bodyHtml: "<p>Hello</p>",
       cc: ["copy@example.test"],

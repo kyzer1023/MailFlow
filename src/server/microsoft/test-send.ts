@@ -26,7 +26,7 @@ export interface TestSendResult {
 export class TestSendError extends Error {
   readonly code = "test_send_failed";
 
-  constructor(message = "A test message could not be prepared") {
+  constructor(message = "A test message could not be prepared", readonly safeToRetry = false) {
     super(message);
     this.name = "TestSendError";
   }
@@ -40,20 +40,26 @@ function mailboxAddress(mail: string | null, userPrincipalName: string | null): 
 /**
  * Send one rendered message to the authenticated mailbox. The provider is
  * always addressed through `/me`; callers cannot select an arbitrary From
- * mailbox or override the recipient.
+ * mailbox or add any recipient or reply routing outside that mailbox.
  */
 export class TestSendService {
   constructor(private readonly provider: GraphMailProviderContract) {}
 
   async sendToSelf(accessToken: string, input: TestSendInput): Promise<TestSendResult> {
     if (!input || typeof input.subject !== "string" || typeof input.bodyHtml !== "string" || !input.subject.trim()) {
-      throw new TestSendError("Add a subject and message before sending a test");
+      throw new TestSendError("Add a subject and message before sending a test", true);
     }
-    const user = await this.provider.getCurrentUser(accessToken);
+    let user;
+    try {
+      user = await this.provider.getCurrentUser(accessToken);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The signed-in Microsoft mailbox could not be checked";
+      throw new TestSendError(message, true);
+    }
     const self = mailboxAddress(user.mail, user.userPrincipalName);
-    if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+    if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address", true);
     if (input.attachments?.length) {
-      throw new TestSendError("Attachments require the SMTP transport");
+      throw new TestSendError("Attachments require the SMTP transport", true);
     }
 
     try {
@@ -62,9 +68,9 @@ export class TestSendService {
         bodyHtml: input.bodyHtml,
         importance: input.importance ?? "normal",
         to: [self],
-        cc: input.cc ? [...input.cc] : undefined,
-        bcc: input.bcc ? [...input.bcc] : undefined,
-        replyTo: input.replyTo ? [...input.replyTo] : undefined,
+        cc: [],
+        bcc: [],
+        replyTo: [],
         saveToSentItems: true,
       });
       return {
@@ -94,23 +100,24 @@ export async function sendProviderTestToSelf(
   provider: MailProvider,
   senderAddress: string,
   input: TestSendInput,
+  sendKey = `test:${crypto.randomUUID()}`,
 ): Promise<TestSendResult> {
   const self = mailboxAddress(senderAddress, null);
-  if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address");
+  if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address", true);
   if (!input || typeof input.subject !== "string" || typeof input.bodyHtml !== "string" || !input.subject.trim()) {
-    throw new TestSendError("Add a subject and message before sending a test");
+    throw new TestSendError("Add a subject and message before sending a test", true);
   }
   const result = await provider.send({
     to: self,
-    cc: [...(input.cc ?? [])],
-    bcc: [...(input.bcc ?? [])],
-    replyTo: [...(input.replyTo ?? [])],
+    cc: [],
+    bcc: [],
+    replyTo: [],
     importance: input.importance ?? "normal",
     subject: input.subject,
     htmlBody: input.bodyHtml,
     attachments: input.attachments,
-  }, { sendKey: `test:${crypto.randomUUID()}` });
-  if (result.kind !== "accepted") throw new TestSendError(result.message);
+  }, { sendKey });
+  if (result.kind !== "accepted") throw new TestSendError(result.message, result.kind !== "unknown");
   return {
     status: "accepted",
     userMessage: "Accepted by Microsoft",

@@ -115,6 +115,14 @@ export class D1RecipientJobRepository implements RecipientJobRepository {
     return row ? toRecipientJob(row) : null;
   }
 
+  async getByCampaignAndSourceRow(campaignId: string, sourceRow: number): Promise<RecipientJobRecord | null> {
+    const row = await bind(
+      this.db.prepare("SELECT * FROM recipient_jobs WHERE campaign_id = ?1 AND source_row = ?2"),
+      [campaignId, sourceRow],
+    ).first<RecipientJobRow>();
+    return row ? toRecipientJob(row) : null;
+  }
+
   async listByCampaign(campaignId: string, limit = 100, offset = 0): Promise<RecipientJobRecord[]> {
     const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
     const safeOffset = Math.max(0, Math.floor(offset));

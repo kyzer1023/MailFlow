@@ -98,7 +98,7 @@ export function publicJob(job: RecipientJobRecord): Record<string, unknown> {
 
 export function responseError(
   context: MailFlowContext,
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503,
+  status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 502 | 503,
   code: string,
   message: string,
   issues?: readonly unknown[],

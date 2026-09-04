@@ -99,7 +99,9 @@ Flagged rows are visible and excluded until corrected or explicitly skipped. No 
 
 ## UC-09 Send a test to self
 
-The member can send one rendered message, including the selected attachment set, to the authenticated mailbox before starting the campaign. The interface reports `Accepted by Microsoft`, not `Delivered`.
+The member can send one rendered message, including the selected attachment set, to the authenticated mailbox before starting the campaign. The Worker replaces the resolved `To` address with the authenticated mailbox and suppresses CC, BCC, and Reply-To at the provider boundary. The original resolved headers remain visible in Review, together with an explanation of these test-only substitutions. Subject, sanitized HTML, importance, and attachments remain exactly as reviewed. The interface reports `Accepted by Microsoft`, not `Delivered`.
+
+Each browser test action carries a stable idempotency key. Exact completed replays do not submit another provider request. Failures proven to occur before submission may retry with that key; an ambiguous provider outcome is terminal for the key and is never resent blindly. Test sends have their own bounded per-user rate limit, audit events, and persistence records, and never create campaign recipient jobs.
 
 ## UC-10 Confirm and start
 

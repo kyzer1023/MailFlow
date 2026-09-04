@@ -55,7 +55,7 @@ Then confirm:
 - No password, token, client secret, or account address is staged in Git.
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
 - The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
-- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql` and `0005_oauth_resource_tokens.sql`, and both delegated resource grants move together. Do not enable only part of this set.
+- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, and `0006_public_endpoint_controls.sql`, and both delegated resource grants move together. Do not enable only part of this set.
 - Real-mail recipients and message content have been explicitly approved for the test.
 - A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
 
@@ -109,7 +109,7 @@ Keep the staging callback alongside localhost and production. OneDrive consent c
 
 The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, members whose stored grant lacks `SMTP.Send` must use Reconnect Microsoft, while members without `Files.ReadWrite.AppFolder` use the separate Connect OneDrive action.
 
-The scheduled handler runs hourly at minute 15 and removes unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
+The scheduled handler runs hourly at minute 15. It drains expired OAuth states, expired or revoked sessions, endpoint counters, and abandoned test-send claims in bounded batches before removing unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
 
