@@ -720,3 +720,11 @@ Keep this append-only except when updating the short current-state summary. Neve
 - Added a 108-recipient component regression that verifies the final row is rendered, all 108 body rows are present, and the full API page size is requested.
 - Verification passed: `npm test` completed TypeScript, both production builds, 21 test files and all 158 tests; `git diff --check` passed with only informational Windows line-ending notices.
 - Local Playwright QA passed with intercepted synthetic campaign data at 1440 x 900 and 390 x 844. Rows 1 through 108 and the final visibility confirmation were reachable, the mobile page had no document-level horizontal overflow, and the browser reported zero console errors or warnings. No Microsoft authorization, mail submission, campaign creation, production deployment, or production data access occurred.
+
+### 2026-09-05 - Complete recipient-job visibility production release
+
+- Pushed commit `b0121f5` to `origin/main` after `npm ci` and the full `npm run check:staging` release gate passed with 21 test files and all 158 tests, production and staging builds, the production dry run, and the validated staging-isolation dry run.
+- Applied committed production D1 migrations `0006_public_endpoint_controls.sql` and `0007_mailbox_scheduler_recovery.sql`. A second remote migration listing reported no pending migrations.
+- Deployed production Worker version `e0248ac1-dec0-4be8-bc50-3f172f448dab` to `https://mailflow.kyzer-hono-test.workers.dev` with the existing production D1, Queue producer and consumer, static assets, SMTP configuration, and hourly schedule.
+- Non-sending hosted smoke checks passed: landing `200 text/html`, the newly built JavaScript asset `200 text/javascript`, unauthenticated `/api/me` `401 application/json`, and an unknown API route `404 application/json`. Deployment status confirmed the new version receives 100 percent of production traffic.
+- No Microsoft authorization, test-send, campaign creation, real mail, recipient contact, or production campaign-data mutation was performed.
