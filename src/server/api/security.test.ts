@@ -29,7 +29,8 @@ describe("Worker API security boundaries", () => {
   });
 
   it("validates queue messages at runtime before campaignId is used", () => {
-    expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123" })).toBe(true);
+    expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123", wakeToken: "wake_123" })).toBe(true);
+    expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123" })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "" })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: 123 })).toBe(false);
     expect(isCampaignTickMessage(null)).toBe(false);

@@ -49,5 +49,11 @@ export interface QueueBatch<T> {
 export function isCampaignTickMessage(value: unknown): value is CampaignTickMessage {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<CampaignTickMessage>;
-  return candidate.type === "campaign.tick" && typeof candidate.campaignId === "string" && candidate.campaignId.trim().length > 0 && candidate.campaignId.length <= 128;
+  return candidate.type === "campaign.tick"
+    && typeof candidate.campaignId === "string"
+    && candidate.campaignId.trim().length > 0
+    && candidate.campaignId.length <= 128
+    && typeof candidate.wakeToken === "string"
+    && candidate.wakeToken.trim().length > 0
+    && candidate.wakeToken.length <= 128;
 }

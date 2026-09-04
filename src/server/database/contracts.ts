@@ -2,6 +2,7 @@ import type {
   AuditEventRecord,
   CampaignCounts,
   CampaignRecord,
+  DeliveryAttemptRecord,
   FlowRecord,
   RecipientJobRecord,
   TemplateVersionRecord,
@@ -86,6 +87,13 @@ export interface CampaignRepository {
   resume(id: string, ownerUserId: string, now: string): Promise<boolean>;
   fail(id: string, now: string, reason: string): Promise<boolean>;
   completeIfExhausted(id: string, now: string): Promise<boolean>;
+  /** Reserve at most one effective Queue wake for a runnable campaign. */
+  reserveWake(id: string, wakeToken: string, dueAt: string, message: string | null, now: string, replaceDueBefore?: string | null): Promise<boolean>;
+  /** Consume only the matching due wake. Duplicate Queue messages return null. */
+  consumeWake(id: string, wakeToken: string, now: string): Promise<CampaignRecord | null>;
+  markSchedulerWaiting(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean>;
+  listWatchdogWakeCandidates(now: string, staleBefore: string, limit?: number): Promise<CampaignRecord[]>;
+  completeExhaustedBatch(now: string, limit?: number): Promise<string[]>;
 }
 
 export interface RecipientJobRepository {
@@ -94,6 +102,7 @@ export interface RecipientJobRepository {
   listByCampaign(campaignId: string, limit?: number, offset?: number): Promise<RecipientJobRecord[]>;
   /** Claims one pending row and increments its attempt count atomically. */
   claimNextPending(campaignId: string, now: string, claimToken: string): Promise<RecipientJobRecord | null>;
+  releaseClaimForWait(id: string, claimToken: string, now: string, retryAt: string, category: string, message: string): Promise<boolean>;
   markSending(id: string, claimToken: string, now: string): Promise<boolean>;
   markAccepted(
     id: string,
@@ -133,6 +142,71 @@ export interface RecipientJobRepository {
   counts(campaignId: string): Promise<CampaignCounts>;
 }
 
+export type MailboxUnavailableReason = "lease" | "pace" | "provider_backoff" | "budget";
+
+export type MailboxLeaseDecision =
+  | { readonly kind: "acquired"; readonly attempt: DeliveryAttemptRecord }
+  | { readonly kind: "unavailable"; readonly reason: MailboxUnavailableReason; readonly nextAvailableAt: string };
+
+export interface MailboxLeaseRequest {
+  readonly attemptId: string;
+  readonly attemptToken: string;
+  readonly ownerUserId: string;
+  readonly campaignId: string;
+  readonly recipientJobId: string | null;
+  readonly testSendId: string | null;
+  readonly envelopeRecipientCount: number;
+  readonly now: string;
+  readonly leaseExpiresAt: string;
+  readonly budgetExpiresAt: string;
+  readonly campaignNotBefore?: string | null;
+}
+
+export interface CampaignAttemptCompletion {
+  readonly attemptToken: string;
+  readonly ownerUserId: string;
+  readonly campaignId: string;
+  readonly recipientJobId: string;
+  readonly claimToken: string;
+  readonly now: string;
+  readonly nextSendAt: string;
+  readonly providerBackoffUntil?: string | null;
+  readonly outcome: "accepted" | "unknown" | "failed" | "retry";
+  readonly retryAt?: string | null;
+  readonly category?: string | null;
+  readonly message?: string | null;
+  readonly providerMessageId?: string | null;
+  readonly providerRequestId?: string | null;
+}
+
+export interface TestAttemptCompletion {
+  readonly attemptToken: string;
+  readonly ownerUserId: string;
+  readonly testSendId: string;
+  readonly now: string;
+  readonly nextSendAt: string;
+  readonly providerBackoffUntil?: string | null;
+  readonly acceptedResult?: unknown;
+  readonly failure?: { readonly status: number; readonly code: string; readonly message: string };
+  readonly safeToRetry?: boolean;
+}
+
+export interface RecoveryEvent {
+  readonly kind: "claimed_recovered" | "provider_unknown" | "test_released" | "test_unknown" | "lease_released";
+  readonly campaignId: string | null;
+  readonly recipientJobId: string | null;
+  readonly testSendId: string | null;
+}
+
+export interface MailboxDeliveryRepository {
+  acquire(request: MailboxLeaseRequest): Promise<MailboxLeaseDecision>;
+  markCampaignProviderBound(attemptToken: string, recipientJobId: string, claimToken: string, now: string, leaseExpiresAt: string): Promise<boolean>;
+  markTestProviderBound(attemptToken: string, testSendId: string, now: string, leaseExpiresAt: string): Promise<boolean>;
+  completeCampaignAttempt(input: CampaignAttemptCompletion): Promise<boolean>;
+  completeTestAttempt(input: TestAttemptCompletion): Promise<boolean>;
+  recoverStale(now: string, staleBefore: string, limit?: number): Promise<RecoveryEvent[]>;
+}
+
 export interface AuditRepository {
   append(event: AuditEventRecord): Promise<void>;
   listByCampaign(campaignId: string, limit?: number): Promise<AuditEventRecord[]>;
@@ -146,4 +220,5 @@ export interface Repositories {
   recipientJobs: RecipientJobRepository;
   audit: AuditRepository;
   attachments: AttachmentRepository;
+  mailboxDelivery: MailboxDeliveryRepository;
 }

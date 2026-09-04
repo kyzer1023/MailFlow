@@ -7,6 +7,7 @@ import { D1AttachmentRepository } from "./d1-attachments";
 import { D1AuditRepository } from "./d1-audit";
 import { D1CampaignRepository } from "./d1-campaigns";
 import { D1FlowRepository } from "./d1-flows";
+import { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 import { D1RecipientJobRepository } from "./d1-recipient-jobs";
 import { D1TemplateVersionRepository } from "./d1-template-versions";
 import { D1UserRepository } from "./d1-users";
@@ -18,6 +19,7 @@ export { D1FlowRepository } from "./d1-flows";
 export { D1TemplateVersionRepository } from "./d1-template-versions";
 export { D1UserRepository } from "./d1-users";
 export { D1RecipientJobRepository } from "./d1-recipient-jobs";
+export { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 
 export function createD1Repositories(db: D1Database): Repositories {
   return {
@@ -28,5 +30,6 @@ export function createD1Repositories(db: D1Database): Repositories {
     recipientJobs: new D1RecipientJobRepository(db),
     audit: new D1AuditRepository(db),
     attachments: new D1AttachmentRepository(db),
+    mailboxDelivery: new D1MailboxDeliveryRepository(db),
   };
 }

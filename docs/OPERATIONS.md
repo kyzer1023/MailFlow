@@ -110,7 +110,7 @@ Keep the staging callback alongside localhost and production. OneDrive consent c
 
 The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply both attachment migrations and verify chained OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, never combine SMTP and Graph scopes into one authorization request or token record. New homepage sign-ins chain the two grants; members whose stored grant lacks `SMTP.Send` use Reconnect Microsoft, while declined, failed, or legacy OneDrive grants use the separate Connect OneDrive recovery action.
 
-The scheduled handler runs hourly at minute 15. It drains expired OAuth states, expired or revoked sessions, endpoint counters, and abandoned test-send claims in bounded batches before removing unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
+The scheduled handler runs hourly at minute 15. It first performs a bounded mailbox scheduler reconciliation: pre-submission stale attempts return safely to pending, provider-bound stale attempts become terminal `unknown`, expired classified leases are released, exhausted campaigns complete, and missing or stale durable Queue wakes are recreated. It then drains expired OAuth states, expired or revoked sessions, endpoint counters, and abandoned test-send claims in bounded batches before removing unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
 
 ## Smoke test order
 
@@ -153,6 +153,8 @@ Notes without addresses, tokens, or message content:
 - Never reset an `unknown` row to pending automatically.
 - A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.
 - Preserve D1 and Queue resources when rolling back application code.
+- Migration `0007_mailbox_scheduler_recovery.sql` is forward-only. Do not deploy earlier code that assumes it can recreate provider-bound work, and never delete or reset `delivery_attempts` to clear a wait because accepted and unknown rows are part of the rolling mailbox budget.
+- If a campaign is waiting, inspect only its public scheduler reason and next-attempt time plus sanitized audit categories. Never copy wake, lease, claim, or attempt tokens into tickets or logs.
 - Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
 - If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.
 - If a session or token-encryption secret is exposed, rotate it and invalidate affected sessions. Follow the token-key rotation path before changing the encryption key.

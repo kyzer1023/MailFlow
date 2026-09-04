@@ -1,4 +1,6 @@
 import type { AuditEventType } from "../../domain/types";
+import { MAILBOX_BUDGET_WINDOW_MS, MAILBOX_LEASE_MS, mailboxWaitMessage } from "../../domain/mailbox-scheduler";
+import { DEFAULT_PACE_PER_MINUTE, paceDelaySeconds, parseRetryAfterSeconds } from "../../domain/pacing";
 import { sha256Base64Url } from "../auth/crypto";
 import type {
   PublicControlStore,
@@ -6,6 +8,7 @@ import type {
   StoredTestSendFailure,
   StoredTestSendRecord,
 } from "../database/d1-public-controls";
+import type { MailboxDeliveryRepository } from "../database/contracts";
 
 export const TEST_SEND_RATE_LIMIT = 5;
 export const TEST_SEND_RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -35,11 +38,13 @@ export interface ClassifiedTestSendFailure {
   readonly failure: StoredTestSendFailure;
   /** True only when the failure happened before submission or proves no acceptance. */
   readonly safeToRetry: boolean;
+  readonly category?: string | null;
+  readonly retryAfter?: number | string | Date | null;
 }
 export type TestSendFailureClassifier = (error: unknown) => ClassifiedTestSendFailure;
 
 export class ControlledTestSendError extends Error {
-  constructor(readonly failure: StoredTestSendFailure) {
+  constructor(readonly failure: StoredTestSendFailure, readonly retryAfterSeconds: number | null = null) {
     super(failure.message);
     this.name = "ControlledTestSendError";
   }
@@ -90,14 +95,17 @@ async function safeAudit(audit: TestSendAudit, input: TestSendAuditInput): Promi
 
 export async function executeControlledTestSend(options: {
   readonly store: PublicControlStore;
+  readonly mailboxDelivery: MailboxDeliveryRepository;
   readonly input: ControlledTestSendInput;
   readonly send: (sendKey: string) => Promise<StoredTestSendResult>;
   readonly audit: TestSendAudit;
   readonly classifyFailure: TestSendFailureClassifier;
+  readonly pacePerMinute?: number;
   readonly now?: () => number;
   readonly createId?: () => string;
 }): Promise<{ result: StoredTestSendResult; replayed: boolean }> {
   const now = options.now?.() ?? Date.now();
+  const pacePerMinute = options.pacePerMinute ?? DEFAULT_PACE_PER_MINUTE;
   const fingerprint = await testSendFingerprint(options.input);
   const existing = await options.store.findTestSend(options.input.ownerUserId, options.input.idempotencyKey);
   if (existing) return { result: replay(existing, fingerprint), replayed: true };
@@ -140,7 +148,7 @@ export async function executeControlledTestSend(options: {
       status: 429,
       code: "test_send_rate_limited",
       message: "Too many test messages were requested. Wait a few minutes, then try again.",
-    });
+    }, limit.retryAfterSeconds);
   }
 
   try {
@@ -156,13 +164,79 @@ export async function executeControlledTestSend(options: {
     throw new ControlledTestSendError(classified.failure);
   }
 
+  const attemptToken = `attempt_${crypto.randomUUID()}`;
+  const reservationNow = options.now?.() ?? Date.now();
+  const reservationNowIso = new Date(reservationNow).toISOString();
+  const acquired = await options.mailboxDelivery.acquire({
+    attemptId: `delivery_${crypto.randomUUID()}`,
+    attemptToken,
+    ownerUserId: options.input.ownerUserId,
+    campaignId: options.input.campaignId,
+    recipientJobId: null,
+    testSendId,
+    envelopeRecipientCount: 1,
+    now: reservationNowIso,
+    leaseExpiresAt: new Date(reservationNow + MAILBOX_LEASE_MS).toISOString(),
+    budgetExpiresAt: new Date(reservationNow + MAILBOX_BUDGET_WINDOW_MS).toISOString(),
+  });
+  if (acquired.kind === "unavailable") {
+    await options.store.removePendingTestSend(testSendId);
+    await safeAudit(options.audit, {
+      eventType: "test_send.mailbox_waiting",
+      campaignId: options.input.campaignId,
+      actorUserId: options.input.ownerUserId,
+      metadata: { reason: acquired.reason, nextAttemptAt: acquired.nextAvailableAt, envelopeRecipientCount: 1 },
+    });
+    throw new ControlledTestSendError({
+      status: 429,
+      code: acquired.reason === "budget" ? "mailbox_daily_budget" : "mailbox_temporarily_busy",
+      message: mailboxWaitMessage(acquired.reason, acquired.nextAvailableAt),
+    }, Math.max(1, Math.ceil((Date.parse(acquired.nextAvailableAt) - reservationNow) / 1_000)));
+  }
+
+  const boundaryNow = options.now?.() ?? Date.now();
+  const providerBound = await options.mailboxDelivery.markTestProviderBound(
+    attemptToken,
+    testSendId,
+    new Date(boundaryNow).toISOString(),
+    new Date(boundaryNow + MAILBOX_LEASE_MS).toISOString(),
+  );
+  if (!providerBound) {
+    throw new ControlledTestSendError({
+      status: 503,
+      code: "test_send_state_unavailable",
+      message: "The test was not submitted because mailbox coordination could not be confirmed. Wait for recovery before trying again.",
+    });
+  }
+
   let result: StoredTestSendResult;
   try {
     result = await options.send(`test:${testSendId}`);
   } catch (error) {
     const classified = options.classifyFailure(error);
-    if (classified.safeToRetry) await options.store.removePendingTestSend(testSendId);
-    else await options.store.completeTestSendFailed(testSendId, classified.failure, options.now?.() ?? Date.now());
+    const completedAt = options.now?.() ?? Date.now();
+    const retryAfterSeconds = parseRetryAfterSeconds(classified.retryAfter, new Date(completedAt));
+    const delaySeconds = Math.max(paceDelaySeconds(pacePerMinute), retryAfterSeconds ?? 0);
+    const providerBackoffUntil = classified.category === "throttle" && retryAfterSeconds !== null
+      ? new Date(completedAt + retryAfterSeconds * 1_000).toISOString()
+      : null;
+    const persisted = await options.mailboxDelivery.completeTestAttempt({
+      attemptToken,
+      ownerUserId: options.input.ownerUserId,
+      testSendId,
+      now: new Date(completedAt).toISOString(),
+      nextSendAt: new Date(completedAt + delaySeconds * 1_000).toISOString(),
+      providerBackoffUntil,
+      failure: classified.failure,
+      safeToRetry: classified.safeToRetry,
+    });
+    if (!persisted) {
+      throw new ControlledTestSendError({
+        status: 503,
+        code: "test_send_state_unavailable",
+        message: "The test outcome could not be stored safely. Do not resend it blindly.",
+      });
+    }
     await safeAudit(options.audit, {
       eventType: "test_send.failed",
       campaignId: options.input.campaignId,
@@ -172,7 +246,15 @@ export async function executeControlledTestSend(options: {
     throw new ControlledTestSendError(classified.failure);
   }
 
-  const completed = await options.store.completeTestSendAccepted(testSendId, result, options.now?.() ?? Date.now());
+  const completedAt = options.now?.() ?? Date.now();
+  const completed = await options.mailboxDelivery.completeTestAttempt({
+    attemptToken,
+    ownerUserId: options.input.ownerUserId,
+    testSendId,
+    now: new Date(completedAt).toISOString(),
+    nextSendAt: new Date(completedAt + paceDelaySeconds(pacePerMinute) * 1_000).toISOString(),
+    acceptedResult: result,
+  });
   if (!completed) {
     throw new ControlledTestSendError({
       status: 503,

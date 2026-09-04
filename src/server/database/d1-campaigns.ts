@@ -25,6 +25,10 @@ interface CampaignRow {
   queued_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  scheduler_next_attempt_at: string | null;
+  scheduler_message: string | null;
+  wake_token: string | null;
+  wake_due_at: string | null;
   updated_at: string;
 }
 
@@ -47,6 +51,10 @@ function toCampaign(row: CampaignRow): CampaignRecord {
     queuedAt: row.queued_at ?? null,
     startedAt: row.started_at ?? null,
     completedAt: row.completed_at ?? null,
+    schedulerNextAttemptAt: row.scheduler_next_attempt_at ?? null,
+    schedulerMessage: row.scheduler_message ?? null,
+    wakeToken: row.wake_token ?? null,
+    wakeDueAt: row.wake_due_at ?? null,
     updatedAt: row.updated_at,
   };
 }
@@ -177,7 +185,8 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'paused', pause_reason = ?1, updated_at = ?2
+          `UPDATE campaigns SET state = 'paused', pause_reason = ?1, wake_token = NULL,
+             wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?2
            WHERE id = ?3 AND owner_user_id = ?4 AND state IN ('queued', 'running')`,
         ),
         [reason.trim() || "Paused by member", now, id, ownerUserId],
@@ -202,7 +211,8 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'failed', pause_reason = ?1, updated_at = ?2
+          `UPDATE campaigns SET state = 'failed', pause_reason = ?1, wake_token = NULL,
+             wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?2
            WHERE id = ?3 AND state IN ('validated', 'queued', 'running', 'paused')`,
         ),
         [reason.trim() || "Campaign failed", now, id],
@@ -214,7 +224,9 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'completed', completed_at = COALESCE(completed_at, ?1), updated_at = ?1
+          `UPDATE campaigns SET state = 'completed', completed_at = COALESCE(completed_at, ?1),
+             wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL,
+             scheduler_message = NULL, updated_at = ?1
            WHERE id = ?2 AND state = 'running'
              AND NOT EXISTS (
                SELECT 1 FROM recipient_jobs
@@ -224,6 +236,100 @@ export class D1CampaignRepository implements CampaignRepository {
         [now, id],
       ).run(),
     ) === 1;
+  }
+
+  async reserveWake(
+    id: string,
+    wakeToken: string,
+    dueAt: string,
+    message: string | null,
+    now: string,
+    replaceDueBefore: string | null = null,
+  ): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE campaigns
+           SET wake_token = ?1, wake_due_at = ?2, scheduler_next_attempt_at = ?2,
+               scheduler_message = ?3, updated_at = ?4
+           WHERE id = ?5 AND state IN ('queued', 'running')
+             AND (wake_token IS NULL OR (?6 IS NOT NULL AND wake_due_at <= ?6))`,
+        ),
+        [wakeToken, dueAt, message, now, id, replaceDueBefore],
+      ).run(),
+    ) === 1;
+  }
+
+  async consumeWake(id: string, wakeToken: string, now: string): Promise<CampaignRecord | null> {
+    const row = await bind(
+      this.db.prepare(
+        `UPDATE campaigns
+         SET wake_token = NULL, wake_due_at = NULL, scheduler_message = NULL, updated_at = ?1
+         WHERE id = ?2 AND wake_token = ?3 AND wake_due_at <= ?1
+           AND state IN ('queued', 'running')
+         RETURNING *`,
+      ),
+      [now, id, wakeToken],
+    ).first<CampaignRow>();
+    return row ? toCampaign(row) : null;
+  }
+
+  async markSchedulerWaiting(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE campaigns SET scheduler_next_attempt_at = ?1, scheduler_message = ?2, updated_at = ?3
+           WHERE id = ?4 AND state IN ('queued', 'running')`,
+        ),
+        [nextAttemptAt, message, now, id],
+      ).run(),
+    ) === 1;
+  }
+
+  async listWatchdogWakeCandidates(now: string, staleBefore: string, limit = 100): Promise<CampaignRecord[]> {
+    const safeLimit = Math.max(1, Math.min(250, Math.floor(limit)));
+    const rows = await bind(
+      this.db.prepare(
+        `SELECT campaigns.* FROM campaigns
+         WHERE campaigns.state IN ('queued', 'running')
+           AND EXISTS (
+             SELECT 1 FROM recipient_jobs
+             WHERE recipient_jobs.campaign_id = campaigns.id
+               AND recipient_jobs.status = 'pending'
+               AND (recipient_jobs.next_attempt_at IS NULL OR recipient_jobs.next_attempt_at <= ?1)
+           )
+           AND (campaigns.wake_token IS NULL OR campaigns.wake_due_at <= ?2)
+         ORDER BY COALESCE(campaigns.wake_due_at, campaigns.updated_at) ASC
+         LIMIT ?3`,
+      ),
+      [now, staleBefore, safeLimit],
+    ).all<CampaignRow>();
+    return rows.results.map(toCampaign);
+  }
+
+  async completeExhaustedBatch(now: string, limit = 100): Promise<string[]> {
+    const safeLimit = Math.max(1, Math.min(250, Math.floor(limit)));
+    const rows = await bind(
+      this.db.prepare(
+        `UPDATE campaigns
+         SET state = 'completed', completed_at = COALESCE(completed_at, ?1),
+             wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL,
+             scheduler_message = NULL, updated_at = ?1
+         WHERE id IN (
+           SELECT campaigns.id FROM campaigns
+           WHERE campaigns.state IN ('queued', 'running')
+             AND NOT EXISTS (
+               SELECT 1 FROM recipient_jobs
+               WHERE recipient_jobs.campaign_id = campaigns.id
+                 AND recipient_jobs.status IN ('pending', 'claimed', 'sending')
+             )
+           LIMIT ?2
+         )
+         RETURNING id`,
+      ),
+      [now, safeLimit],
+    ).all<{ id: string }>();
+    return rows.results.map((row) => row.id);
   }
 
   private async updateState(

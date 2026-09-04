@@ -179,7 +179,14 @@ export class D1PublicControlStore implements PublicControlStore {
        SET status = 'failed', error_status = 503, error_code = 'test_send_interrupted',
            error_message = 'The earlier test request did not finish. Start a new test from Review.', updated_at = ?1
        WHERE id IN (
-         SELECT id FROM test_sends WHERE status = 'pending' AND updated_at <= ?2 LIMIT ?3
+         SELECT test_sends.id FROM test_sends
+         WHERE status = 'pending' AND updated_at <= ?2
+           AND NOT EXISTS (
+             SELECT 1 FROM delivery_attempts
+             WHERE delivery_attempts.test_send_id = test_sends.id
+               AND delivery_attempts.state IN ('reserved', 'provider_bound')
+           )
+         LIMIT ?3
        )`,
       [now, staleBefore, safeLimit],
     ).run();

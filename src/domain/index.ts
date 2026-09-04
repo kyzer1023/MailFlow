@@ -1,5 +1,6 @@
 export * from "./errors";
 export * from "./mail-provider";
+export * from "./mailbox-scheduler";
 export * from "./pacing";
 export * from "./state";
 export * from "./template";

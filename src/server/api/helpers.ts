@@ -22,7 +22,7 @@ import {
 } from "../attachments";
 import { createD1AuthStores } from "../database/d1-auth";
 import type { Repositories } from "../database/contracts";
-import { cloudflareQueueAdapter } from "../queue";
+import { cloudflareQueueAdapter, reserveCampaignWake } from "../queue";
 import type { MailFlowContext, AuthenticatedSession } from "./context";
 import { applicationOrigin, repositories, textEnv } from "./dependencies";
 import { validationIssues } from "./schemas";
@@ -66,8 +66,10 @@ export function publicFlow(flow: FlowRecord): Record<string, unknown> {
 }
 
 export function publicCampaign(campaign: import("../../domain/types").CampaignRecord): Record<string, unknown> {
-  const { idempotencyKey: _idempotencyKey, ...safe } = campaign;
+  const { idempotencyKey: _idempotencyKey, wakeToken: _wakeToken, wakeDueAt: _wakeDueAt, ...safe } = campaign;
   void _idempotencyKey;
+  void _wakeToken;
+  void _wakeDueAt;
   return safe;
 }
 
@@ -305,9 +307,23 @@ export function jobCsv(jobs: readonly RecipientJobRecord[]): string {
   return `${lines.join("\r\n")}\r\n`;
 }
 
-export async function enqueueTick(context: MailFlowContext, campaignId: string): Promise<void> {
+export async function enqueueTick(
+  context: MailFlowContext,
+  campaignId: string,
+  dueAt = nowIso(),
+  message: string | null = null,
+): Promise<{ reserved: boolean; published: boolean }> {
   if (!context.env.CAMPAIGN_QUEUE || typeof context.env.CAMPAIGN_QUEUE.send !== "function") throw new Error("Campaign queue is not configured on this Worker");
-  await cloudflareQueueAdapter(context.env.CAMPAIGN_QUEUE).enqueue({ type: "campaign.tick", campaignId }, { delaySeconds: 0 });
+  const now = new Date();
+  const result = await reserveCampaignWake({
+    campaigns: repositories(context).campaigns,
+    queue: cloudflareQueueAdapter(context.env.CAMPAIGN_QUEUE),
+    campaignId,
+    dueAt,
+    message,
+    now,
+  });
+  return { reserved: result.reserved, published: result.published };
 }
 
 export async function parseOrError<T>(context: MailFlowContext, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: import("zod").ZodError } }): Promise<T | Response> {

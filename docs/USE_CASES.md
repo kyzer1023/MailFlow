@@ -128,9 +128,12 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 
 - A Queue consumer advances the campaign after the browser closes.
 - Default pace is 12 messages per minute and can be reduced by configuration.
+- All campaigns and self-only test sends from one authenticated mailbox share one durable D1 lease, mailbox pace, provider backoff, and rolling recipient budget.
+- MailFlow reserves 8,000 envelope-recipient entries per mailbox in any rolling 24 hours. To, every CC entry, every BCC entry, and each test send count; repeated address occurrences count again.
 - Each job records status, attempts, timestamps, provider response category, and a human-readable note.
 - Campaigns can be paused and resumed.
 - A resume starts from the first eligible unsent row.
+- A durable wake token makes duplicate Queue messages harmless. The hourly watchdog recreates a missing wake after a publish failure.
 
 ## UC-12 Prevent blind duplicate sends
 
@@ -139,6 +142,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - A duplicate Queue delivery that finds a claimed or terminal job stops.
 - A known throttle or pre-send temporary failure can retry after a delay.
 - A timeout or lost response after the selected provider may have accepted a message becomes `unknown` and is never automatically resent.
+- Recovery returns a stale pre-submission claim to pending, but a stale provider-bound attempt becomes `unknown` and keeps its rolling-budget charge.
 
 ## UC-13 Understand results
 
@@ -164,6 +168,8 @@ Examples include:
 - Sign-in expired. Sign in again, then resume from the first unsent row.
 - USM has not approved this application's mail permission. No messages were sent.
 - Microsoft requested a temporary pause. Sending will continue at the displayed time.
+- The daily mailbox allowance is temporarily full. Sending will continue automatically at the displayed rolling-window release time.
+- The campaign is safe in storage and will continue when the background queue recovers.
 - This recipient address is invalid. The row was skipped.
 - The template uses a field that is missing from the spreadsheet.
 

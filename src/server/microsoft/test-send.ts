@@ -26,7 +26,12 @@ export interface TestSendResult {
 export class TestSendError extends Error {
   readonly code = "test_send_failed";
 
-  constructor(message = "A test message could not be prepared", readonly safeToRetry = false) {
+  constructor(
+    message = "A test message could not be prepared",
+    readonly safeToRetry = false,
+    readonly retryAfter: number | string | Date | null = null,
+    readonly category: string | null = null,
+  ) {
     super(message);
     this.name = "TestSendError";
   }
@@ -117,7 +122,14 @@ export async function sendProviderTestToSelf(
     htmlBody: input.bodyHtml,
     attachments: input.attachments,
   }, { sendKey });
-  if (result.kind !== "accepted") throw new TestSendError(result.message, result.kind !== "unknown");
+  if (result.kind !== "accepted") {
+    throw new TestSendError(
+      result.message,
+      result.kind !== "unknown",
+      result.kind === "retryable" ? result.retryAfter ?? null : null,
+      result.kind === "retryable" ? result.category : result.kind,
+    );
+  }
   return {
     status: "accepted",
     userMessage: "Accepted by Microsoft",

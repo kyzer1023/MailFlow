@@ -1,10 +1,11 @@
 import type { CampaignRecord } from "../../domain/types";
 import type { MailAttachment, MailProvider } from "../../domain/mail-provider";
-import type { CampaignRepository, RecipientJobRepository } from "../database/contracts";
+import type { AuditRepository, CampaignRepository, MailboxDeliveryRepository, MailboxUnavailableReason, RecipientJobRepository } from "../database/contracts";
 
 export interface CampaignTickMessage {
   type: "campaign.tick";
   campaignId: string;
+  wakeToken: string;
 }
 
 export interface QueueEnqueueOptions {
@@ -24,6 +25,8 @@ export interface CloudflareQueueProducer {
 export interface CampaignTickDependencies {
   campaigns: CampaignRepository;
   recipientJobs: RecipientJobRepository;
+  mailboxDelivery: MailboxDeliveryRepository;
+  audit: AuditRepository;
   queue: CampaignQueue;
   mailProvider: MailProvider | ((campaign: CampaignRecord) => Promise<MailProvider> | MailProvider);
   /**
@@ -36,10 +39,13 @@ export interface CampaignTickDependencies {
   attachmentCleanup: (campaignId: string) => Promise<void>;
   now?: () => Date;
   claimToken?: (campaignId: string, now: Date) => string;
+  attemptToken?: (campaignId: string, now: Date) => string;
+  wakeToken?: (campaignId: string, now: Date) => string;
 }
 
 export type TickResult =
-  | { kind: "ignored"; reason: "missing_campaign" | "paused" | "terminal" | "not_runnable" | "claim_lost" | "send_claim_lost" }
+  | { kind: "ignored"; reason: "missing_campaign" | "paused" | "terminal" | "not_runnable" | "claim_lost" | "send_claim_lost" | "stale_wake" }
+  | { kind: "waiting"; campaignId: string; jobId: string | null; reason: MailboxUnavailableReason | "not_due"; nextAttemptAt: string; delaySeconds: number }
   | { kind: "completed"; campaignId: string }
   | { kind: "failed"; campaignId: string; reason: "attachments_unavailable" }
   | { kind: "scheduled"; campaignId: string; jobId: string; delaySeconds: number; outcome: "accepted" | "failed" | "retry_scheduled" | "unknown" }
