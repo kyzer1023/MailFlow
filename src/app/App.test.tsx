@@ -570,6 +570,66 @@ describe("authenticated information architecture", () => {
     expect(screen.getByRole("status")).not.toHaveTextContent("2026-09-04T17:28:09.265Z");
     expect(document.body.textContent).not.toMatch(/wake_|attempt_|lease_/u);
   });
+
+  it("shows every recipient job in the campaign monitor", async () => {
+    window.history.replaceState({}, "", "/campaigns/campaign-full-list");
+    const campaign = {
+      id: "campaign-full-list",
+      flowId: "flow-full-list",
+      templateVersionId: "template-full-list",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Recipients.xlsx",
+      totalRecipients: 108,
+      validRecipients: 108,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "running" as const,
+      pauseReason: null,
+      createdAt: "2026-09-05T00:00:00.000Z",
+      queuedAt: "2026-09-05T00:00:01.000Z",
+      startedAt: "2026-09-05T00:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-05T00:02:00.000Z",
+    };
+    const counts = { pending: 88, claimed: 0, sending: 0, accepted: 20, failed: 0, skipped: 0, unknown: 0 };
+    const jobs = Array.from({ length: 108 }, (_, index) => ({
+      id: `job-${index + 1}`,
+      campaignId: campaign.id,
+      sourceRow: index + 2,
+      recipient: `recipient${String(index + 1).padStart(3, "0")}@example.test`,
+      cc: [],
+      bcc: [],
+      replyTo: [],
+      importance: "normal" as const,
+      mergeData: {},
+      renderedSubject: "Invitation",
+      renderedBodyHtml: "<p>Invitation</p>",
+      sendKey: `send-${index + 1}`,
+      status: index < 20 ? "accepted" as const : "pending" as const,
+      attemptCount: index < 20 ? 1 : 0,
+      claimToken: null,
+      claimedAt: null,
+      sendingAt: null,
+      acceptedAt: index < 20 ? "2026-09-05T00:02:00.000Z" : null,
+      nextAttemptAt: null,
+      lastErrorCategory: null,
+      lastErrorMessage: null,
+      providerMessageId: null,
+      providerRequestId: null,
+      createdAt: "2026-09-05T00:00:00.000Z",
+      updatedAt: "2026-09-05T00:02:00.000Z",
+    }));
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaignJobs.mockResolvedValue({ jobs, counts, limit: 500, offset: 0 });
+
+    render(<App />);
+
+    expect(await screen.findByText("recipient108@example.test")).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(109);
+    expect(screen.getByText("All 108 recipient jobs shown")).toBeInTheDocument();
+    expect(mockedGetCampaignJobs).toHaveBeenCalledWith("campaign-full-list", 500, 0);
+  });
 });
 
 describe("campaign attachments", () => {

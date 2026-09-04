@@ -1,15 +1,38 @@
-import { Check, Clock, DownloadSimple, Envelope, FlowArrow, MinusCircle, PaperPlaneTilt, Pause, Play, Rows, SpinnerGap, WarningCircle, X, type Icon } from "@phosphor-icons/react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Check,
+  Clock,
+  DownloadSimple,
+  Envelope,
+  FlowArrow,
+  MinusCircle,
+  PaperPlaneTilt,
+  Pause,
+  Play,
+  Rows,
+  SpinnerGap,
+  WarningCircle,
+  X,
+  type Icon,
+} from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { downloadCampaignExport, getCampaign, getCampaignJobs, pauseCampaign, resumeCampaign } from "../../api";
-import type { CampaignResponse } from "../../api";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { CampaignCounts, RecipientJobRecord } from "../../../domain/types";
+import {
+  downloadCampaignExport,
+  getCampaign,
+  getCampaignJobs,
+  pauseCampaign,
+  resumeCampaign,
+  type CampaignResponse,
+} from "../../api";
 import { StatusChip } from "../../components/common/StatusChip";
 import { AppShell } from "../../components/shell/AppShell";
 import { formatDate, formatSchedulerNotice } from "../../lib/format";
 import { useApi } from "../../state/api-context";
 
 type CampaignAction = "idle" | "pause" | "resume";
+
+const CAMPAIGN_JOB_PAGE_SIZE = 500;
 
 export function CampaignPage() {
   const { campaignId } = useParams<{ campaignId: string }>();
@@ -27,7 +50,10 @@ export function CampaignPage() {
     if (!campaignId) return;
     const sequence = ++loadSequence.current;
     try {
-      const [campaignResponse, jobsResponse] = await Promise.all([getCampaign(campaignId), getCampaignJobs(campaignId, 100, 0)]);
+      const [campaignResponse, jobsResponse] = await Promise.all([
+        getCampaign(campaignId),
+        getCampaignJobs(campaignId, CAMPAIGN_JOB_PAGE_SIZE, 0),
+      ]);
       if (sequence !== loadSequence.current) return;
       setCampaignState(campaignResponse.campaign);
       setCounts(campaignResponse.counts);
@@ -53,7 +79,16 @@ export function CampaignPage() {
   }, [load, campaignId]);
 
   if (!campaignId) {
-    return <AppShell><div className="route-gate" role="status"><WarningCircle weight="fill" /><h1>No campaign selected.</h1><p>Choose a campaign from Campaign history.</p><Link className="button button--outline" to="/campaigns">View campaigns</Link></div></AppShell>;
+    return (
+      <AppShell>
+        <div className="route-gate" role="status">
+          <WarningCircle weight="fill" />
+          <h1>No campaign selected.</h1>
+          <p>Choose a campaign from Campaign history.</p>
+          <Link className="button button--outline" to="/campaigns">View campaigns</Link>
+        </div>
+      </AppShell>
+    );
   }
 
   const paused = campaignState?.state === "paused";
@@ -61,7 +96,14 @@ export function CampaignPage() {
   const total = campaignState?.totalRecipients || 0;
   const processed = activeCounts.accepted + activeCounts.failed + activeCounts.skipped + activeCounts.unknown;
   const progress = campaignState ? Math.min(100, Math.round((processed / Math.max(1, total)) * 100)) : 0;
-  const routeCounts: readonly (readonly [string, number, Icon])[] = [["Total", total, Rows], ["Pending", activeCounts.pending, Clock], ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt], ["Accepted", activeCounts.accepted, Check], ["Skipped", activeCounts.skipped, MinusCircle], ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle]];
+  const routeCounts: readonly (readonly [string, number, Icon])[] = [
+    ["Total", total, Rows],
+    ["Pending", activeCounts.pending, Clock],
+    ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt],
+    ["Accepted", activeCounts.accepted, Check],
+    ["Skipped", activeCounts.skipped, MinusCircle],
+    ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
+  ];
   const displayJobs = jobs || [];
   const sender = campaignState?.senderAddress || user?.mailboxAddress || "Sender not available";
   const statusKind = campaignState?.state || "unknown";
@@ -69,7 +111,23 @@ export function CampaignPage() {
   const waitingMessage = campaignState?.schedulerMessage
     ? formatSchedulerNotice(campaignState.schedulerMessage, campaignState.schedulerNextAttemptAt)
     : "";
-  const statusLabel = statusKind === "paused" ? "Paused safely" : statusKind === "completed" ? "Completed" : statusKind === "failed" ? "Failed" : waiting ? "Waiting safely" : statusKind === "queued" ? "Queued" : statusKind === "validated" ? "Validated" : statusKind === "draft" ? "Draft" : loadError ? "Unavailable" : "Loading";
+  const statusLabel = statusKind === "paused"
+    ? "Paused safely"
+    : statusKind === "completed"
+      ? "Completed"
+      : statusKind === "failed"
+        ? "Failed"
+        : waiting
+          ? "Waiting safely"
+          : statusKind === "queued"
+          ? "Queued"
+          : statusKind === "validated"
+            ? "Validated"
+            : statusKind === "draft"
+              ? "Draft"
+              : loadError
+                ? "Unavailable"
+                : "Loading";
 
   const updateAction = async (action: Exclude<CampaignAction, "idle">) => {
     if (actionState !== "idle" || !campaignId || !["queued", "running", "paused"].includes(campaignState?.state as string)) return;
@@ -114,5 +172,149 @@ export function CampaignPage() {
     }
   };
 
-  return <AppShell><div className="page campaign-page"><header className="page-header campaign-header"><div><span className="section-kicker">CAMPAIGN</span><h1>The campaign can leave without you.</h1><p>Mail Flow keeps pacing and recording each row even after this page closes.</p></div><div className="header-actions"><button className="button button--outline" onClick={() => void updateAction(paused ? "resume" : "pause")} disabled={actionState !== "idle" || !["queued", "running", "paused"].includes(campaignState?.state as string)}>{actionState !== "idle" ? <SpinnerGap className="spin" /> : paused ? <Play weight="fill" /> : <Pause weight="fill" />}{paused ? "Resume campaign" : "Pause campaign"}</button><button className="button button--outline" onClick={() => navigate("/campaigns")}>Campaign history <X /></button></div></header>{loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}{waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}<div className="campaign-identity"><span className="mini-mark"><Envelope weight="fill" /></span><div><h2>{campaignState?.sourceFilename || "Campaign details"}</h2><code>{sender}</code></div><StatusChip status={statusKind}>{statusLabel}</StatusChip></div><section className="panel route-summary" aria-live="polite"><div className="route-counts">{routeCounts.map(([label, count, IconComponent]) => <div className={`count count--${label.toLowerCase()}`} key={label}><span><IconComponent weight="bold" /></span><strong>{count}</strong><small>{label}</small></div>)}</div><div className="progress-meta"><span>{paused ? "Paused, accepted rows remain protected" : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}</span><strong>{progress}%</strong></div><div className="progress-track" aria-label={`${progress}% processed`}><i style={{ width: `${progress}%` }} /></div></section><div className="campaign-lower"><section className="panel jobs-panel"><div className="section-heading"><div><h2>Recipient jobs</h2><p>Each spreadsheet row has one auditable outcome.</p></div><button className="button button--outline button--small" onClick={() => void exportRows()} disabled={!campaignState}><DownloadSimple /> Export results</button></div>{displayJobs.length > 0 ? <><div className="table-wrap"><table><thead><tr><th>Recipient</th><th>Row</th><th>Status</th><th>Attempts</th><th>Last update</th><th>Note</th></tr></thead><tbody>{displayJobs.slice(0, 5).map((job) => { const status = job.status; const note = job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft"); return <tr key={`${job.recipient}-${job.sourceRow}`}><td><strong>{job.recipient}</strong></td><td>{job.sourceRow}</td><td><StatusChip status={status}>{status === "accepted" ? "Accepted by Microsoft" : status[0].toUpperCase() + status.slice(1)}</StatusChip></td><td>{job.attemptCount}</td><td>{formatDate(job.updatedAt)}</td><td>{note}</td></tr>; })}</tbody></table></div><footer className="table-footer"><span>Showing 1-{Math.min(5, displayJobs.length)} of {total} rows</span></footer></> : <div className="empty-state">{campaignState ? "Recipient jobs will appear as the campaign starts." : "Loading recipient jobs..."}</div>}</section><aside className="campaign-aside"><section className="panel recovery-card"><span className="route-dot"><FlowArrow /></span><h2>If something interrupts</h2><p>Mail Flow recovers unsent work safely.</p><strong>Unknown outcomes are never sent again automatically.</strong></section><section className="panel campaign-details"><div className="section-heading"><div><span className="section-kicker">CAMPAIGN DETAILS</span><h2>Useful audit information</h2></div></div><dl><div><dt>Campaign ID</dt><dd><code>{campaignId}</code><button className="button button--text button--small" onClick={() => void copyCampaignId()}>{copied ? "Copied" : "Copy"}</button></dd></div><div><dt>Source file</dt><dd>{campaignState?.sourceFilename || "Not available"}</dd></div><div><dt>Flow</dt><dd><code>{campaignState?.flowId || "Not available"}</code></dd></div><div><dt>Template version</dt><dd><code>{campaignState?.templateVersionId || "Not available"}</code></dd></div><div><dt>Started</dt><dd>{formatDate(campaignState?.startedAt)}</dd></div><div><dt>Started by</dt><dd>{user?.displayName || "USM member"}</dd></div></dl></section></aside></div></div></AppShell>;
+  return (
+    <AppShell>
+      <div className="page campaign-page">
+        <header className="page-header campaign-header">
+          <div>
+            <span className="section-kicker">CAMPAIGN</span>
+            <h1>The campaign can leave without you.</h1>
+            <p>Mail Flow keeps pacing and recording each row even after this page closes.</p>
+          </div>
+          <div className="header-actions">
+            <button
+              className="button button--outline"
+              onClick={() => void updateAction(paused ? "resume" : "pause")}
+              disabled={actionState !== "idle" || !["queued", "running", "paused"].includes(campaignState?.state as string)}
+            >
+              {actionState !== "idle" ? <SpinnerGap className="spin" /> : paused ? <Play weight="fill" /> : <Pause weight="fill" />}
+              {paused ? "Resume campaign" : "Pause campaign"}
+            </button>
+            <button className="button button--outline" onClick={() => navigate("/campaigns")}>
+              Campaign history <X />
+            </button>
+          </div>
+        </header>
+
+        {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
+        {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
+
+        <div className="campaign-identity">
+          <span className="mini-mark"><Envelope weight="fill" /></span>
+          <div>
+            <h2>{campaignState?.sourceFilename || "Campaign details"}</h2>
+            <code>{sender}</code>
+          </div>
+          <StatusChip status={statusKind}>{statusLabel}</StatusChip>
+        </div>
+
+        <section className="panel route-summary" aria-live="polite">
+          <div className="route-counts">
+            {routeCounts.map(([label, count, IconComponent]) => (
+              <div className={`count count--${label.toLowerCase()}`} key={label}>
+                <span><IconComponent weight="bold" /></span>
+                <strong>{count}</strong>
+                <small>{label}</small>
+              </div>
+            ))}
+          </div>
+          <div className="progress-meta">
+            <span>
+              {paused
+                ? "Paused, accepted rows remain protected"
+                : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}
+            </span>
+            <strong>{progress}%</strong>
+          </div>
+          <div className="progress-track" aria-label={`${progress}% processed`}><i style={{ width: `${progress}%` }} /></div>
+        </section>
+
+        <div className="campaign-lower">
+          <section className="panel jobs-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Recipient jobs</h2>
+                <p>Each spreadsheet row has one auditable outcome.</p>
+              </div>
+              <button className="button button--outline button--small" onClick={() => void exportRows()} disabled={!campaignState}>
+                <DownloadSimple /> Export results
+              </button>
+            </div>
+            {displayJobs.length > 0 ? (
+              <>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Recipient</th>
+                        <th>Row</th>
+                        <th>Status</th>
+                        <th>Attempts</th>
+                        <th>Last update</th>
+                        <th>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayJobs.map((job) => {
+                        const status = job.status;
+                        const note = job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
+                        return (
+                          <tr key={`${job.recipient}-${job.sourceRow}`}>
+                            <td><strong>{job.recipient}</strong></td>
+                            <td>{job.sourceRow}</td>
+                            <td>
+                              <StatusChip status={status}>
+                                {status === "accepted" ? "Accepted by Microsoft" : status[0].toUpperCase() + status.slice(1)}
+                              </StatusChip>
+                            </td>
+                            <td>{job.attemptCount}</td>
+                            <td>{formatDate(job.updatedAt)}</td>
+                            <td>{note}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <footer className="table-footer"><span>All {displayJobs.length} recipient jobs shown</span></footer>
+              </>
+            ) : (
+              <div className="empty-state">{campaignState ? "Recipient jobs will appear as the campaign starts." : "Loading recipient jobs..."}</div>
+            )}
+          </section>
+
+          <aside className="campaign-aside">
+            <section className="panel recovery-card">
+              <span className="route-dot"><FlowArrow /></span>
+              <h2>If something interrupts</h2>
+              <p>Mail Flow recovers unsent work safely.</p>
+              <strong>Unknown outcomes are never sent again automatically.</strong>
+            </section>
+            <section className="panel campaign-details">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">CAMPAIGN DETAILS</span>
+                  <h2>Useful audit information</h2>
+                </div>
+              </div>
+              <dl>
+                <div>
+                  <dt>Campaign ID</dt>
+                  <dd>
+                    <code>{campaignId}</code>
+                    <button className="button button--text button--small" onClick={() => void copyCampaignId()}>{copied ? "Copied" : "Copy"}</button>
+                  </dd>
+                </div>
+                <div><dt>Source file</dt><dd>{campaignState?.sourceFilename || "Not available"}</dd></div>
+                <div><dt>Flow</dt><dd><code>{campaignState?.flowId || "Not available"}</code></dd></div>
+                <div><dt>Template version</dt><dd><code>{campaignState?.templateVersionId || "Not available"}</code></dd></div>
+                <div><dt>Started</dt><dd>{formatDate(campaignState?.startedAt)}</dd></div>
+                <div><dt>Started by</dt><dd>{user?.displayName || "USM member"}</dd></div>
+              </dl>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </AppShell>
+  );
 }
