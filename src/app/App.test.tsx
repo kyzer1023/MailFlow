@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./api";
+import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaignJobs, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -19,6 +19,7 @@ vi.mock("./api", async (importOriginal) => {
     getFlows: vi.fn(),
     getCampaigns: vi.fn(),
     getCampaign: vi.fn(),
+    getCampaignJobs: vi.fn(),
     getFlow: vi.fn(),
     logout: vi.fn(),
     sendCampaignTest: vi.fn(),
@@ -37,6 +38,7 @@ const mockedDeleteAttachmentFile = vi.mocked(deleteAttachmentFile);
 const mockedGetFlows = vi.mocked(getFlows);
 const mockedGetCampaigns = vi.mocked(getCampaigns);
 const mockedGetCampaign = vi.mocked(getCampaign);
+const mockedGetCampaignJobs = vi.mocked(getCampaignJobs);
 const mockedGetFlow = vi.mocked(getFlow);
 const mockedLogout = vi.mocked(logout);
 const mockedSendCampaignTest = vi.mocked(sendCampaignTest);
@@ -531,6 +533,42 @@ describe("authenticated information architecture", () => {
     expect(await screen.findByText("Y2 Talent Recruitment")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.queryByText(/Campaign campaign_/)).not.toBeInTheDocument();
+  });
+
+  it("shows a safe waiting status and exact next check without exposing coordination tokens", async () => {
+    window.history.replaceState({}, "", "/campaigns/campaign-waiting");
+    const counts = { pending: 1, claimed: 0, sending: 0, accepted: 0, failed: 0, skipped: 0, unknown: 0 };
+    const campaign = {
+      id: "campaign-waiting",
+      flowId: "flow-waiting",
+      templateVersionId: "template-waiting",
+      ownerUserId: "user-1",
+      senderAddress: "amina@student.example",
+      sourceFilename: "Recipients.xlsx",
+      totalRecipients: 1,
+      validRecipients: 1,
+      skippedRecipients: 0,
+      pacePerMinute: 12,
+      state: "running" as const,
+      pauseReason: null,
+      schedulerNextAttemptAt: "2026-09-06T08:30:00.000Z",
+      schedulerMessage: "Mailbox pacing is active. Sending will continue after 2026-09-04T17:28:09.265Z.",
+      createdAt: "2026-09-05T08:00:00.000Z",
+      queuedAt: "2026-09-05T08:00:01.000Z",
+      startedAt: "2026-09-05T08:00:02.000Z",
+      completedAt: null,
+      updatedAt: "2026-09-05T08:00:03.000Z",
+    };
+    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaignJobs.mockResolvedValue({ jobs: [], counts, limit: 100, offset: 0 });
+
+    render(<App />);
+
+    expect(await screen.findByText("Waiting safely")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Mailbox pacing is active");
+    expect(screen.getByRole("status")).toHaveTextContent("5 Sep 2026, 1:28 AM (Malaysia time, GMT+8)");
+    expect(screen.getByRole("status")).not.toHaveTextContent("2026-09-04T17:28:09.265Z");
+    expect(document.body.textContent).not.toMatch(/wake_|attempt_|lease_/u);
   });
 });
 

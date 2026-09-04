@@ -7,6 +7,7 @@ import type {
   StoredTestSendResult,
   TestSendClaimInput,
 } from "../database/d1-public-controls";
+import type { MailboxDeliveryRepository, MailboxLeaseDecision, TestAttemptCompletion } from "../database/contracts";
 import {
   consumeOAuthStartLimit,
   OAUTH_START_GLOBAL_RATE_LIMIT,
@@ -89,6 +90,52 @@ class MemoryPublicControlStore implements PublicControlStore {
   }
 }
 
+class MemoryMailboxDelivery implements MailboxDeliveryRepository {
+  decision: MailboxLeaseDecision | null = null;
+  readonly completions: TestAttemptCompletion[] = [];
+
+  constructor(private readonly store: MemoryPublicControlStore) {}
+
+  async acquire(input: Parameters<MailboxDeliveryRepository["acquire"]>[0]): Promise<MailboxLeaseDecision> {
+    return this.decision ?? {
+      kind: "acquired",
+      attempt: {
+        id: input.attemptId,
+        ownerUserId: input.ownerUserId,
+        campaignId: input.campaignId,
+        recipientJobId: input.recipientJobId,
+        testSendId: input.testSendId,
+        attemptToken: input.attemptToken,
+        envelopeRecipientCount: input.envelopeRecipientCount,
+        state: "reserved",
+        reservedAt: input.now,
+        providerBoundAt: null,
+        completedAt: null,
+        budgetExpiresAt: input.budgetExpiresAt,
+        releaseReason: null,
+        providerRequestId: null,
+      },
+    };
+  }
+
+  async markCampaignProviderBound(): Promise<boolean> { return false; }
+  async markTestProviderBound(): Promise<boolean> { return true; }
+  async completeCampaignAttempt(): Promise<boolean> { return false; }
+  async recoverStale(): Promise<[]> { return []; }
+
+  async completeTestAttempt(input: TestAttemptCompletion): Promise<boolean> {
+    this.completions.push(input);
+    if (input.acceptedResult) {
+      return this.store.completeTestSendAccepted(input.testSendId, input.acceptedResult as StoredTestSendResult, Date.parse(input.now));
+    }
+    if (input.safeToRetry) {
+      await this.store.removePendingTestSend(input.testSendId);
+      return true;
+    }
+    return this.store.completeTestSendFailed(input.testSendId, input.failure as StoredTestSendFailure, Date.parse(input.now));
+  }
+}
+
 const result: StoredTestSendResult = {
   status: "accepted",
   userMessage: "Accepted by Microsoft",
@@ -119,6 +166,7 @@ describe("test-send public controls", () => {
     const audits: string[] = [];
     const options = {
       store,
+      mailboxDelivery: new MemoryMailboxDelivery(store),
       input: baseInput,
       send: async (sendKey: string) => { sends.push(sendKey); return result; },
       audit: async ({ eventType }: { eventType: string }) => { audits.push(eventType); },
@@ -139,6 +187,7 @@ describe("test-send public controls", () => {
     let sends = 0;
     const execute = (input = baseInput) => executeControlledTestSend({
       store,
+      mailboxDelivery: new MemoryMailboxDelivery(store),
       input,
       send: async () => { sends += 1; return result; },
       audit: async () => undefined,
@@ -160,6 +209,7 @@ describe("test-send public controls", () => {
     for (let index = 0; index < TEST_SEND_RATE_LIMIT; index += 1) {
       await executeControlledTestSend({
         store,
+        mailboxDelivery: new MemoryMailboxDelivery(store),
         input: { ...baseInput, idempotencyKey: `test-${index}` },
         send: async () => { sends += 1; return result; },
         audit: async ({ eventType }) => { audits.push(eventType); },
@@ -170,6 +220,7 @@ describe("test-send public controls", () => {
     }
     await expect(executeControlledTestSend({
       store,
+      mailboxDelivery: new MemoryMailboxDelivery(store),
       input: { ...baseInput, idempotencyKey: "over-limit" },
       send: async () => { sends += 1; return result; },
       audit: async ({ eventType }) => { audits.push(eventType); },
@@ -187,6 +238,7 @@ describe("test-send public controls", () => {
     let sends = 0;
     const execute = () => executeControlledTestSend({
       store,
+      mailboxDelivery: new MemoryMailboxDelivery(store),
       input: baseInput,
       send: async () => {
         sends += 1;
@@ -213,6 +265,7 @@ describe("test-send public controls", () => {
     let sends = 0;
     const execute = () => executeControlledTestSend({
       store,
+      mailboxDelivery: new MemoryMailboxDelivery(store),
       input: baseInput,
       send: async () => { sends += 1; throw new Error("ambiguous provider outcome"); },
       audit: async () => undefined,
@@ -224,6 +277,66 @@ describe("test-send public controls", () => {
     await expect(execute()).rejects.toMatchObject({ failure: { status: 502 } });
     await expect(execute()).rejects.toMatchObject({ failure: { status: 502 } });
     expect(sends).toBe(1);
+  });
+
+  it("uses the mailbox rolling budget for self-only test sends", async () => {
+    const store = new MemoryPublicControlStore();
+    const mailboxDelivery = new MemoryMailboxDelivery(store);
+    mailboxDelivery.decision = {
+      kind: "unavailable",
+      reason: "budget",
+      nextAvailableAt: "2026-09-06T08:30:00.000Z",
+    };
+    const audits: string[] = [];
+    let sends = 0;
+    await expect(executeControlledTestSend({
+      store,
+      mailboxDelivery,
+      input: baseInput,
+      send: async () => { sends += 1; return result; },
+      audit: async ({ eventType }) => { audits.push(eventType); },
+      classifyFailure,
+      now: () => Date.parse("2026-09-05T08:30:00.000Z"),
+      createId: () => "test-send-budget",
+    })).rejects.toMatchObject({
+      retryAfterSeconds: 86_400,
+      failure: {
+        status: 429,
+        code: "mailbox_daily_budget",
+        message: expect.stringContaining("6 Sep 2026, 4:30 PM (Malaysia time, GMT+8)"),
+      },
+    });
+    expect(sends).toBe(0);
+    expect(audits).toEqual(["test_send.requested", "test_send.mailbox_waiting"]);
+    expect(await store.findTestSend("user-1", "test-key-1")).toBeNull();
+  });
+
+  it("applies provider Retry-After to the shared mailbox state for a safe test-send retry", async () => {
+    const store = new MemoryPublicControlStore();
+    const mailboxDelivery = new MemoryMailboxDelivery(store);
+    await expect(executeControlledTestSend({
+      store,
+      mailboxDelivery,
+      input: baseInput,
+      send: async () => { throw new Error("throttled before submission"); },
+      audit: async () => undefined,
+      classifyFailure: () => ({
+        safeToRetry: true,
+        category: "throttle",
+        retryAfter: 120,
+        failure: { status: 503, code: "test_send_failed", message: "Microsoft requested a pause" },
+      }),
+      pacePerMinute: 12,
+      now: () => Date.parse("2026-09-05T08:30:00.000Z"),
+      createId: () => "test-send-throttle",
+    })).rejects.toMatchObject({ failure: { status: 503 } });
+
+    expect(mailboxDelivery.completions).toContainEqual(expect.objectContaining({
+      nextSendAt: "2026-09-05T08:32:00.000Z",
+      providerBackoffUntil: "2026-09-05T08:32:00.000Z",
+      safeToRetry: true,
+    }));
+    expect(await store.findTestSend("user-1", "test-key-1")).toBeNull();
   });
 
   it("bounds OAuth starts and never uses the raw client address as the counter key", async () => {

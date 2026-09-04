@@ -38,8 +38,10 @@ export interface FlowResponse {
   readonly templateVersion: TemplateVersionRecord | null;
 }
 
+export type PublicCampaignRecord = Omit<CampaignRecord, "idempotencyKey" | "wakeToken" | "wakeDueAt">;
+
 export interface CampaignResponse {
-  readonly campaign: Omit<CampaignRecord, "idempotencyKey">;
+  readonly campaign: PublicCampaignRecord;
   readonly counts: CampaignCounts;
 }
 
@@ -206,8 +208,8 @@ export function updateFlow(
   });
 }
 
-export function getCampaigns(): Promise<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }> {
-  return apiRequest<{ campaigns: readonly Omit<CampaignRecord, "idempotencyKey">[] }>("/api/campaigns");
+export function getCampaigns(): Promise<{ campaigns: readonly PublicCampaignRecord[] }> {
+  return apiRequest<{ campaigns: readonly PublicCampaignRecord[] }>("/api/campaigns");
 }
 
 export function createCampaign(payload: CampaignCreatePayload, csrfToken: string): Promise<CampaignResponse> {

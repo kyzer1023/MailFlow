@@ -158,6 +158,28 @@ export class D1RecipientJobRepository implements RecipientJobRepository {
     return row ? toRecipientJob(row) : null;
   }
 
+  async releaseClaimForWait(
+    id: string,
+    claimToken: string,
+    now: string,
+    retryAt: string,
+    category: string,
+    message: string,
+  ): Promise<boolean> {
+    return changes(
+      await bind(
+        this.db.prepare(
+          `UPDATE recipient_jobs
+           SET status = 'pending', claim_token = NULL, claimed_at = NULL,
+               next_attempt_at = ?1, last_error_category = ?2,
+               last_error_message = ?3, updated_at = ?4
+           WHERE id = ?5 AND status = 'claimed' AND claim_token = ?6`,
+        ),
+        [retryAt, category, message, now, id, claimToken],
+      ).run(),
+    ) === 1;
+  }
+
   async markSending(id: string, claimToken: string, now: string): Promise<boolean> {
     return changes(
       await bind(

@@ -27,8 +27,9 @@ Acceptance: mocked integration tests pass, then both student accounts can authen
 - Flow, template version, campaign, recipient job, attachment metadata, and audit persistence.
 - Per-user OneDrive App Folder attachment bytes, integrity checks, immutable association, and retention cleanup.
 - Queue tick pacing, pause, resume, conditional claims, retries, and unknown outcomes.
+- D1 mailbox-wide leases, provider-bound attempt ledger, rolling 8,000-recipient budget, durable wake tokens, and bounded scheduled recovery.
 
-Acceptance: local D1 and queue tests cover state transitions and duplicate deliveries.
+Acceptance: local D1 and queue tests cover state transitions, atomic mailbox races, duplicate deliveries, exact backoff and budget release times, and crash-boundary recovery.
 
 ### W4 Client workflow and mock fidelity
 
@@ -64,6 +65,7 @@ Acceptance: deployed URL works, real acceptance is recorded accurately, and test
 - No attachment deployment unless SMTP mode, migrations `0004` and `0005`, `SMTP.Send` reauthorization, the shared OAuth callback, and `Files.ReadWrite.AppFolder` consent are ready together.
 - No deployment before `.env` and `.dev.vars` are ignored and Git history is checked for secrets.
 - No automatic retry for `unknown` outcomes.
+- No provider submission outside the shared mailbox lease and attempt ledger, including self-only test sends.
 - No visual handoff before reference and implementation states are compared at the required viewports and any remaining blocker is recorded.
 - No completion claim before the deployed journey is tested in a real browser.
 

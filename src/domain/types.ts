@@ -109,6 +109,11 @@ export interface CampaignRecord {
   queuedAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  /** Durable scheduler status. Coordination tokens are never exposed here. */
+  schedulerNextAttemptAt?: string | null;
+  schedulerMessage?: string | null;
+  wakeToken?: string | null;
+  wakeDueAt?: string | null;
   updatedAt: string;
 }
 
@@ -150,17 +155,49 @@ export type AuditEventType =
   | "campaign.resumed"
   | "campaign.completed"
   | "campaign.failed"
+  | "campaign.mailbox_waiting"
+  | "campaign.wake_recovered"
   | "test_send.requested"
   | "test_send.accepted"
   | "test_send.failed"
   | "test_send.rate_limited"
+  | "test_send.mailbox_waiting"
   | "recipient.claimed"
   | "recipient.sending"
   | "recipient.accepted"
   | "recipient.failed"
   | "recipient.retry_scheduled"
   | "recipient.skipped"
-  | "recipient.unknown";
+  | "recipient.unknown"
+  | "recipient.recovered"
+  | "recipient.recovery_unknown";
+
+export const MAILBOX_ATTEMPT_STATES = [
+  "reserved",
+  "provider_bound",
+  "accepted",
+  "unknown",
+  "not_submitted",
+] as const;
+
+export type MailboxAttemptState = (typeof MAILBOX_ATTEMPT_STATES)[number];
+
+export interface DeliveryAttemptRecord {
+  id: string;
+  ownerUserId: string;
+  campaignId: string | null;
+  recipientJobId: string | null;
+  testSendId: string | null;
+  attemptToken: string;
+  envelopeRecipientCount: number;
+  state: MailboxAttemptState;
+  reservedAt: string;
+  providerBoundAt: string | null;
+  completedAt: string | null;
+  budgetExpiresAt: string;
+  releaseReason: string | null;
+  providerRequestId: string | null;
+}
 
 export interface AuditEventRecord {
   id: string;

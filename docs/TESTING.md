@@ -31,6 +31,11 @@
 - Flow and template version repositories.
 - Campaign creation and recipient-job insertion.
 - Conditional claim behavior under duplicate Queue deliveries.
+- D1 transaction-backed mailbox lease races across campaigns, with exactly one acquired provider attempt.
+- Durable wake reservation and duplicate physical Queue delivery consumption.
+- Rolling 8,000-recipient accounting across To, CC, BCC, duplicate occurrences, and self-only test sends.
+- Exact rolling-window release, shared campaign and test-send pacing, and provider Retry-After backoff.
+- Idempotent watchdog recovery for stale reserved attempts, stale provider-bound attempts, missing wakes, and exhausted campaigns.
 - Pause and resume behavior.
 - Safe retry for explicit throttles.
 - `unknown` behavior for ambiguous transport failures.
@@ -90,7 +95,7 @@ Record sanitized evidence: test timestamp, sender alias such as `primary` or `se
 
 - Production D1 migrations applied.
 - Queue producer and consumer bound.
-- Attachment, resource-token, and public endpoint control migrations applied and hourly cleanup trigger registered.
+- Attachment, resource-token, public endpoint control, and mailbox scheduler migrations applied and hourly cleanup and recovery trigger registered.
 - Production and local OneDrive callback URIs registered on the existing Entra application.
 - Static assets served by the Worker.
 - Production origin and both local and production Entra redirect URIs configured.
@@ -107,5 +112,6 @@ For staging, verify separately:
 - Localhost, production, and staging Web callbacks coexist on the existing Entra application.
 - A staging build runs with `CLOUDFLARE_ENV=staging` before the staging Wrangler dry run or deploy.
 - Hosted landing, hashed assets, unauthenticated API behavior, OAuth redirect origin and SMTP scope, schedule, D1, Queue, and DLQ checks pass without initiating mail.
+- Migration `0007_mailbox_scheduler_recovery.sql` is applied before deploying code that reads scheduler or delivery-attempt tables.
 - The deployed Worker version corresponds to the recorded exact candidate commit.
 
