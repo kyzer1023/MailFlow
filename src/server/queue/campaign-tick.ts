@@ -367,11 +367,14 @@ export async function handleCampaignQueueMessage(message: unknown, dependencies:
 
 /** Validate queue payloads at the runtime boundary before reading fields. */
 export function isCampaignTickMessage(value: unknown): value is CampaignTickMessage {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (Object.keys(value).length !== 3) return false;
   const candidate = value as Partial<CampaignTickMessage>;
   return candidate.type === "campaign.tick"
     && typeof candidate.campaignId === "string"
     && candidate.campaignId.trim().length > 0
+    && candidate.campaignId.length <= 128
     && typeof candidate.wakeToken === "string"
-    && candidate.wakeToken.trim().length > 0;
+    && candidate.wakeToken.trim().length > 0
+    && candidate.wakeToken.length <= 128;
 }

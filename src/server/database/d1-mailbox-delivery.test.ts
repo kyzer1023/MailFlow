@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
@@ -69,15 +69,10 @@ class SqliteD1 implements D1Database {
 
 function migratedDatabase(): SqliteD1 {
   const db = new SqliteD1();
-  for (let migration = 1; migration <= 7; migration += 1) {
-    const prefix = String(migration).padStart(4, "0");
-    const filename = migration === 1 ? `${prefix}_initial.sql`
-      : migration === 2 ? `${prefix}_message_importance.sql`
-        : migration === 3 ? `${prefix}_unique_flow_names.sql`
-          : migration === 4 ? `${prefix}_campaign_attachments.sql`
-            : migration === 5 ? `${prefix}_oauth_resource_tokens.sql`
-              : migration === 6 ? `${prefix}_public_endpoint_controls.sql`
-                : `${prefix}_mailbox_scheduler_recovery.sql`;
+  const migrations = readdirSync(resolve(process.cwd(), "migrations"))
+    .filter((filename) => /^\d{4}_.+\.sql$/u.test(filename))
+    .sort();
+  for (const filename of migrations) {
     db.database.exec(readFileSync(resolve(process.cwd(), "migrations", filename), "utf8"));
   }
   return db;
@@ -87,27 +82,38 @@ function run(db: SqliteD1, query: string, ...values: SqliteValue[]): void {
   db.database.prepare(query).run(...values);
 }
 
-function seedCampaign(db: SqliteD1, suffix = "1"): { userId: string; campaignId: string; jobId: string } {
-  const userId = `user-${suffix}`;
+function seedCampaign(
+  db: SqliteD1,
+  suffix = "1",
+  existingOwner?: { userId: string; mailboxAddress: string },
+): { userId: string; campaignId: string; jobId: string } {
+  const userId = existingOwner?.userId ?? `user-${suffix}`;
+  const mailboxAddress = existingOwner?.mailboxAddress ?? `member-${suffix}@example.test`;
   const flowId = `flow-${suffix}`;
   const templateId = `template-${suffix}`;
   const campaignId = `campaign-${suffix}`;
   const jobId = `job-${suffix}`;
   const now = "2026-09-05T00:00:00.000Z";
-  run(db, `INSERT INTO users(id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at)
-    VALUES (?, 'tenant', ?, ?, ?, 'Member', 'member', ?)`, userId, `object-${suffix}`, `member-${suffix}@example.test`, `member-${suffix}@example.test`, now);
+  if (!existingOwner) {
+    run(db, `INSERT INTO users(id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at)
+      VALUES (?, 'tenant', ?, ?, ?, 'Member', 'member', ?)`, userId, `object-${suffix}`, mailboxAddress, mailboxAddress, now);
+  }
   run(db, `INSERT INTO flows(id, owner_user_id, name, state, created_at, updated_at)
     VALUES (?, ?, ?, 'active', ?, ?)`, flowId, userId, `Flow ${suffix}`, now, now);
   run(db, `INSERT INTO template_versions(id, flow_id, version, subject_template, body_html, recipient_configuration_json, placeholder_manifest_json, created_at)
     VALUES (?, ?, 1, 'Subject', '<p>Body</p>', '{}', '[]', ?)`, templateId, flowId, now);
   run(db, `INSERT INTO campaigns(id, flow_id, template_version_id, owner_user_id, sender_address,
-    total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state, idempotency_key, created_at, queued_at, started_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, 1, 0, 12, 'running', ?, ?, ?, ?, ?)`,
-    campaignId, flowId, templateId, userId, `member-${suffix}@example.test`, `key-${suffix}`, now, now, now, now);
+    total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state, idempotency_key,
+    request_fingerprint, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, 1, 0, 12, 'draft', ?, ?, ?, ?)`,
+    campaignId, flowId, templateId, userId, mailboxAddress, `key-${suffix}`, suffix.padEnd(43, "a").slice(0, 43), now, now);
   run(db, `INSERT INTO recipient_jobs(id, campaign_id, source_row, recipient, cc_json, bcc_json,
-    rendered_subject, rendered_body_html, send_key, status, attempt_count, claim_token, claimed_at, created_at, updated_at)
-    VALUES (?, ?, 1, 'to@example.test', '[]', '[]', 'Subject', '<p>Body</p>', ?, 'claimed', 1, ?, ?, ?, ?)`,
-    jobId, campaignId, `send-${suffix}`, `claim-${suffix}`, now, now, now);
+    rendered_subject, rendered_body_html, send_key, status, attempt_count, created_at, updated_at)
+    VALUES (?, ?, 1, 'to@example.test', '[]', '[]', 'Subject', '<p>Body</p>', ?, 'pending', 0, ?, ?)`,
+    jobId, campaignId, `send-${suffix}`, now, now);
+  run(db, "UPDATE campaigns SET state = 'validated' WHERE id = ?", campaignId);
+  run(db, "UPDATE campaigns SET state = 'running', queued_at = ?, started_at = ? WHERE id = ?", now, now, campaignId);
+  run(db, "UPDATE recipient_jobs SET status = 'claimed', attempt_count = 1, claim_token = ?, claimed_at = ? WHERE id = ?", `claim-${suffix}`, now, jobId);
   return { userId, campaignId, jobId };
 }
 
@@ -137,11 +143,10 @@ describe("D1 mailbox delivery coordination", () => {
   });
 
   it("atomically grants only one mailbox lease to concurrent campaigns", async () => {
-    const db = migratedDatabase();
+      const db = migratedDatabase();
     try {
       const first = seedCampaign(db, "1");
-      const second = seedCampaign(db, "2");
-      run(db, "UPDATE campaigns SET owner_user_id = ?, sender_address = ? WHERE id = ?", first.userId, "member-1@example.test", second.campaignId);
+      const second = seedCampaign(db, "2", { userId: first.userId, mailboxAddress: "member-1@example.test" });
       const repo = new D1MailboxDeliveryRepository(db);
       const results = await Promise.all([
         repo.acquire(leaseRequest(first, "one")),
@@ -188,11 +193,10 @@ describe("D1 mailbox delivery coordination", () => {
   });
 
   it("does not replace an expired provider-bound lease before recovery classifies it", async () => {
-    const db = migratedDatabase();
+      const db = migratedDatabase();
     try {
       const first = seedCampaign(db, "bound");
-      const second = seedCampaign(db, "waiting");
-      run(db, "UPDATE campaigns SET owner_user_id = ?, sender_address = ? WHERE id = ?", first.userId, "member-bound@example.test", second.campaignId);
+      const second = seedCampaign(db, "waiting", { userId: first.userId, mailboxAddress: "member-bound@example.test" });
       const repo = new D1MailboxDeliveryRepository(db);
       expect((await repo.acquire({
         ...leaseRequest(first, "bound"),

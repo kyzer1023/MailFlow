@@ -1,14 +1,16 @@
 import type { Hono } from "hono";
-import { makeSendKey, validateRecipientRows } from "../../../domain";
+import { MAX_CAMPAIGN_CREATE_BODY_BYTES, emptyCampaignCounts, makeSendKey, validateRecipientRows } from "../../../domain";
 import type {
   CampaignRecord,
   RecipientJobRecord,
+  TemplateVersionRecord,
 } from "../../../domain/types";
 import {
   AttachmentError,
 } from "../../attachments";
 import { resolveMailTransport } from "../../microsoft";
 import type { MailFlowAppEnv } from "../context";
+import { campaignCreateFingerprint, campaignReplayFingerprint } from "../campaign-create-control";
 import {
   attachmentServiceFor,
   integerEnv,
@@ -17,7 +19,6 @@ import {
   smtpAuthorizedFor,
 } from "../dependencies";
 import {
-  audit,
   createTemplateVersion,
   id,
   nowIso,
@@ -37,12 +38,31 @@ import {
   validateTemplateSubject,
 } from "../security";
 
+function templateMatches(
+  templateVersion: TemplateVersionRecord,
+  subject: string,
+  bodyHtml: string,
+  recipientConfiguration: TemplateVersionRecord["recipientConfiguration"],
+): boolean {
+  const storedConfiguration = versionConfigFromInput(templateVersion.recipientConfiguration);
+  const storedMappings = Object.fromEntries(Object.entries(storedConfiguration.placeholderMappings ?? {}).sort(([left], [right]) => left.localeCompare(right)));
+  const requestedMappings = Object.fromEntries(Object.entries(recipientConfiguration.placeholderMappings ?? {}).sort(([left], [right]) => left.localeCompare(right)));
+  return templateVersion.subjectTemplate === subject
+    && templateVersion.bodyHtml === bodyHtml
+    && JSON.stringify({ ...storedConfiguration, placeholderMappings: storedMappings })
+      === JSON.stringify({ ...recipientConfiguration, placeholderMappings: requestedMappings });
+}
+
 /** Register campaign creation between the campaign list and detail routes. */
 export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
   app.post("/api/campaigns", async (context) => {
     const authenticated = await requireMutationSession(context);
     if (authenticated instanceof Response) return authenticated;
-    const input = await parseOrError(context, campaignCreateSchema);
+    const input = await parseOrError(context, campaignCreateSchema, {
+      maxBytes: MAX_CAMPAIGN_CREATE_BODY_BYTES,
+      tooLargeCode: "campaign_request_too_large",
+      tooLargeMessage: "The campaign request is too large. Reduce the message size or split the campaign.",
+    });
     if (input instanceof Response) return input;
     const maxRecipients = integerEnv(context.env.MAX_CAMPAIGN_RECIPIENTS, 300, 1, 300);
     const pacePerMinute = input.pacePerMinute ?? integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600);
@@ -83,9 +103,22 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
         return responseError(context, 422, "invalid_rendered_message", "One rendered message is no longer safe or still contains an unmapped field. Review the message again.");
       }
     }
+    const recipientConfiguration = versionConfigFromInput(input.recipientConfiguration);
+    const sourceFilename = safeSourceFilename(input.sourceFilename);
+    const requestFingerprint = await campaignCreateFingerprint({
+      request: input,
+      subjectTemplate: subject.subject,
+      bodyHtml: body.html,
+      recipientConfiguration,
+      sourceFilename,
+      pacePerMinute,
+    });
     const repo = repositories(context);
     const existingCampaign = await repo.campaigns.getByIdempotencyKey(authenticated.user.id, input.idempotencyKey);
     if (existingCampaign) {
+      if (campaignReplayFingerprint(existingCampaign.requestFingerprint, requestFingerprint) === "conflict") {
+        return responseError(context, 409, "campaign_key_reused", "This campaign request key was already used for different content. Refresh Review and try again.");
+      }
       const existingAttachmentSet = await repo.attachments.getSetByCampaignId(existingCampaign.id);
       const requestedAttachmentSetId = input.attachmentSetId ?? null;
       const existingAttachmentSetId = existingAttachmentSet?.id ?? null;
@@ -99,6 +132,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
     }
     const flow = await repo.flows.getByIdForOwner(input.flowId, authenticated.user.id);
     if (!flow) return responseError(context, 404, "flow_not_found", "Save the flow before creating a campaign.");
+    if (flow.state !== "active") return responseError(context, 409, "flow_archived", "This flow was removed and cannot start a new campaign.");
     if (input.attachmentSetId) {
       if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
         return responseError(context, 409, "attachments_require_smtp", "This campaign uses attachments and must be sent with SMTP delivery.");
@@ -129,10 +163,20 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
         return attachmentErrorResponse(context, error);
       }
     }
-    let templateVersion = input.templateVersionId ? await repo.templateVersions.getById(input.templateVersionId) : null;
+    let templateVersion = input.templateVersionId
+      ? await repo.templateVersions.getById(input.templateVersionId)
+      : flow.currentTemplateVersionId
+        ? await repo.templateVersions.getById(flow.currentTemplateVersionId)
+        : null;
     if (templateVersion && templateVersion.flowId !== flow.id) return responseError(context, 404, "template_not_found", "That template version is not available.");
-    if (templateVersion && (templateVersion.subjectTemplate !== subject.subject || templateVersion.bodyHtml !== body.html || JSON.stringify(versionConfigFromInput(templateVersion.recipientConfiguration)) !== JSON.stringify(versionConfigFromInput(input.recipientConfiguration)))) {
+    if (templateVersion && !templateMatches(templateVersion, subject.subject, body.html, recipientConfiguration) && input.templateVersionId) {
       return responseError(context, 422, "template_changed", "The selected template changed after validation. Review and save it again.");
+    }
+    if (templateVersion && !templateMatches(templateVersion, subject.subject, body.html, recipientConfiguration)) templateVersion = null;
+    if (!templateVersion && !input.templateVersionId) {
+      templateVersion = (await repo.templateVersions.listByFlow(flow.id)).find((version) => (
+        templateMatches(version, subject.subject, body.html, recipientConfiguration)
+      )) ?? null;
     }
     if (!templateVersion) {
       try {
@@ -140,11 +184,18 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
           subjectTemplate: subject.subject,
           bodyHtml: body.html,
           placeholderManifest: placeholders,
-          recipientConfiguration: versionConfigFromInput(input.recipientConfiguration),
+          recipientConfiguration,
         });
       } catch (errorValue) {
-        const message = errorValue instanceof Error ? errorValue.message : "The template could not be saved.";
-        return responseError(context, 422, "invalid_template", message);
+        const concurrentVersion = (await repo.templateVersions.listByFlow(flow.id)).find((version) => (
+          templateMatches(version, subject.subject, body.html, recipientConfiguration)
+        ));
+        if (concurrentVersion) {
+          templateVersion = concurrentVersion;
+        } else {
+          const message = errorValue instanceof Error ? errorValue.message : "The template could not be saved.";
+          return responseError(context, 422, "invalid_template", message);
+        }
       }
     }
     const createdAt = nowIso();
@@ -182,14 +233,15 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
       templateVersionId: templateVersion.id,
       ownerUserId: authenticated.user.id,
       senderAddress: authenticated.user.mailboxAddress,
-      sourceFilename: safeSourceFilename(input.sourceFilename),
+      sourceFilename,
       totalRecipients: input.totalRecipients,
       validRecipients: input.validRecipients,
       skippedRecipients: input.skippedRecipients,
       pacePerMinute,
-      state: "draft",
+      state: "validated",
       pauseReason: null,
       idempotencyKey: input.idempotencyKey,
+      requestFingerprint,
       createdAt,
       queuedAt: null,
       startedAt: null,
@@ -197,32 +249,49 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
       updatedAt: createdAt,
     };
     try {
-      await repo.campaigns.create(campaign, jobs, input.attachmentSetId);
+      await repo.campaigns.create(campaign, jobs, input.attachmentSetId, [
+        {
+          id: id("audit"),
+          actorUserId: authenticated.user.id,
+          campaignId: campaign.id,
+          recipientJobId: null,
+          eventType: "campaign.created",
+          metadata: { totalRecipients: campaign.totalRecipients, validRecipients: campaign.validRecipients, skippedRecipients: campaign.skippedRecipients },
+          createdAt,
+        },
+        {
+          id: id("audit"),
+          actorUserId: authenticated.user.id,
+          campaignId: campaign.id,
+          recipientJobId: null,
+          eventType: "campaign.validated",
+          metadata: {},
+          createdAt,
+        },
+      ]);
     } catch (errorValue) {
       const message = errorValue instanceof Error ? errorValue.message : "";
-      if (/unique|constraint/iu.test(message)) {
-        const concurrentCampaign = await repo.campaigns.getByIdempotencyKey(authenticated.user.id, input.idempotencyKey);
-        if (concurrentCampaign) {
-          const concurrentAttachmentSet = await repo.attachments.getSetByCampaignId(concurrentCampaign.id);
-          if ((input.attachmentSetId ?? null) !== (concurrentAttachmentSet?.id ?? null)) {
-            return responseError(context, 409, "campaign_attachment_conflict", "This request key already belongs to a campaign with a different attachment set.");
-          }
-          return context.json({
-            campaign: publicCampaign(concurrentCampaign),
-            counts: await repo.recipientJobs.counts(concurrentCampaign.id),
-          });
+      const concurrentCampaign = await repo.campaigns.getByIdempotencyKey(authenticated.user.id, input.idempotencyKey);
+      if (concurrentCampaign) {
+        if (campaignReplayFingerprint(concurrentCampaign.requestFingerprint, requestFingerprint) === "conflict") {
+          return responseError(context, 409, "campaign_key_reused", "This campaign request key was already used for different content. Refresh Review and try again.");
         }
-        if (input.attachmentSetId) {
-          return responseError(context, 409, "attachment_set_changed", "The attachment set changed while the campaign was being created. Upload the files again and review the campaign.");
+        const concurrentAttachmentSet = await repo.attachments.getSetByCampaignId(concurrentCampaign.id);
+        if ((input.attachmentSetId ?? null) !== (concurrentAttachmentSet?.id ?? null)) {
+          return responseError(context, 409, "campaign_attachment_conflict", "This request key already belongs to a campaign with a different attachment set.");
         }
-        return responseError(context, 409, "duplicate_idempotency_key", "A campaign with this request key already exists.");
+        return context.json({
+          campaign: publicCampaign(concurrentCampaign),
+          counts: await repo.recipientJobs.counts(concurrentCampaign.id),
+        });
+      }
+      if (input.attachmentSetId && /mailbox_coordination_guard\.singleton/iu.test(message)) {
+        return responseError(context, 409, "attachment_set_changed", "The attachment set changed while the campaign was being created. Upload the files again and review the campaign.");
       }
       throw errorValue;
     }
-    await repo.campaigns.markValidated(campaign.id, authenticated.user.id, nowIso());
-    const validated = (await repo.campaigns.getById(campaign.id)) ?? { ...campaign, state: "validated" as const };
-    await audit(repo, "campaign.created", { actorUserId: authenticated.user.id, campaignId: campaign.id, metadata: { totalRecipients: campaign.totalRecipients, validRecipients: campaign.validRecipients, skippedRecipients: campaign.skippedRecipients } });
-    await audit(repo, "campaign.validated", { actorUserId: authenticated.user.id, campaignId: campaign.id });
-    return context.json({ campaign: publicCampaign(validated), counts: await repo.recipientJobs.counts(campaign.id) }, 201);
+    const counts = emptyCampaignCounts();
+    counts.pending = jobs.length;
+    return context.json({ campaign: publicCampaign(campaign), counts }, 201);
   });
 }

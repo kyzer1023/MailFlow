@@ -1,4 +1,5 @@
 export * from "./errors";
+export * from "./campaign-limits";
 export * from "./mail-provider";
 export * from "./mailbox-scheduler";
 export * from "./pacing";

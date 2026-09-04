@@ -1,11 +1,12 @@
-import type { CampaignRecord, RecipientJobRecord } from "../../domain/types";
+import type { AuditEventRecord, CampaignRecord, RecipientJobRecord } from "../../domain/types";
 import type {
   CampaignRepository,
   D1Database,
   D1PreparedStatement,
 } from "./contracts";
 import { bind, changes } from "./d1-helpers";
-import { buildRecipientJobInsert } from "./d1-recipient-jobs";
+import { buildAuditEventInsert } from "./d1-audit";
+import { buildRecipientJobInserts } from "./d1-recipient-jobs";
 
 interface CampaignRow {
   id: string;
@@ -21,6 +22,7 @@ interface CampaignRow {
   state: CampaignRecord["state"];
   pause_reason: string | null;
   idempotency_key: string;
+  request_fingerprint: string | null;
   created_at: string;
   queued_at: string | null;
   started_at: string | null;
@@ -47,6 +49,7 @@ function toCampaign(row: CampaignRow): CampaignRecord {
     state: row.state,
     pauseReason: row.pause_reason ?? null,
     idempotencyKey: row.idempotency_key,
+    requestFingerprint: row.request_fingerprint ?? null,
     createdAt: row.created_at,
     queuedAt: row.queued_at ?? null,
     startedAt: row.started_at ?? null,
@@ -89,15 +92,28 @@ export class D1CampaignRepository implements CampaignRepository {
     return result.results.map(toCampaign);
   }
 
-  async create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[], attachmentSetId?: string | null): Promise<void> {
+  async create(
+    campaign: CampaignRecord,
+    jobs: readonly RecipientJobRecord[],
+    attachmentSetId?: string | null,
+    auditEvents: readonly AuditEventRecord[] = [],
+  ): Promise<void> {
+    if (campaign.state !== "validated"
+      || !campaign.requestFingerprint
+      || campaign.totalRecipients !== campaign.validRecipients + campaign.skippedRecipients
+      || campaign.validRecipients !== jobs.length
+      || campaign.validRecipients < 1
+      || jobs.some((job) => job.campaignId !== campaign.id || job.status !== "pending" || job.attemptCount !== 0)) {
+      throw new Error("Campaign create invariants are not satisfied");
+    }
     const statements: D1PreparedStatement[] = [
       bind(
         this.db.prepare(
           `INSERT INTO campaigns
            (id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
             total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
-            pause_reason, idempotency_key, created_at, queued_at, started_at, completed_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)`,
+            pause_reason, idempotency_key, request_fingerprint, created_at, queued_at, started_at, completed_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)`,
         ),
         [
           campaign.id,
@@ -110,9 +126,10 @@ export class D1CampaignRepository implements CampaignRepository {
           campaign.validRecipients,
           campaign.skippedRecipients,
           campaign.pacePerMinute,
-          campaign.state,
+          "draft",
           campaign.pauseReason,
           campaign.idempotencyKey,
+          campaign.requestFingerprint,
           campaign.createdAt,
           campaign.queuedAt,
           campaign.startedAt,
@@ -143,22 +160,36 @@ export class D1CampaignRepository implements CampaignRepository {
       statements.push(
         bind(
           this.db.prepare(
-            `INSERT INTO campaigns
-             (id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
-              total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
-              pause_reason, idempotency_key, created_at, queued_at, started_at, completed_at, updated_at)
-             SELECT id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
-                    total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
-                    pause_reason, idempotency_key, created_at, queued_at, started_at, completed_at, updated_at
-             FROM campaigns
-             WHERE id = ?1 AND changes() != 1`,
+            `INSERT INTO mailbox_coordination_guard(singleton)
+             SELECT 1 WHERE changes() != 1`,
           ),
-          [campaign.id],
+          [],
         ),
       );
     }
-    for (const job of jobs) statements.push(buildRecipientJobInsert(this.db, job));
-    await this.db.batch(statements);
+    statements.push(...buildRecipientJobInserts(this.db, jobs));
+    statements.push(
+      bind(
+        this.db.prepare(
+          `UPDATE campaigns SET state = 'validated', updated_at = ?1
+           WHERE id = ?2 AND state = 'draft'
+             AND valid_recipients = (
+               SELECT COUNT(*) FROM recipient_jobs WHERE campaign_id = ?2
+             )`,
+        ),
+        [campaign.updatedAt, campaign.id],
+      ),
+      bind(
+        this.db.prepare(
+          `INSERT INTO mailbox_coordination_guard(singleton)
+           SELECT 1 WHERE changes() != 1`,
+        ),
+        [],
+      ),
+    );
+    statements.push(...auditEvents.map((event) => buildAuditEventInsert(this.db, event)));
+    const results = await this.db.batch(statements);
+    if (results.some((result) => result.success === false)) throw new Error("D1 campaign batch did not complete successfully");
   }
 
   async markValidated(id: string, ownerUserId: string, now: string): Promise<boolean> {

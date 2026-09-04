@@ -57,6 +57,7 @@ Then confirm:
 - `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
 - The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
 - `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, and `0006_public_endpoint_controls.sql`, and both delegated resource grants move together. Do not enable only part of this set.
+- Migration `0008_campaign_create_safeguards.sql` is applied before code that writes campaign request fingerprints and bounded recipient chunks. It depends on the permanent transaction guard created by migration `0007`.
 - Real-mail recipients and message content have been explicitly approved for the test.
 - A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
 - Run `prepare:staging-config` after the staging build and deploy only through its validated, staging-only config snapshot. Do not add `--env staging` to that generated snapshot or deploy from a mutable redirected config in a shared worktree.
@@ -156,6 +157,7 @@ Notes without addresses, tokens, or message content:
 - A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.
 - Preserve D1 and Queue resources when rolling back application code.
 - Migration `0007_mailbox_scheduler_recovery.sql` is forward-only. Do not deploy earlier code that assumes it can recreate provider-bound work, and never delete or reset `delivery_attempts` to clear a wait because accepted and unknown rows are part of the rolling mailbox budget.
+- Migration `0008_campaign_create_safeguards.sql` is forward-only. After it is applied, do not roll back to campaign-create code that inserts `draft` campaigns without a request fingerprint; the database triggers intentionally reject that unsafe write path. Preserve legacy rows with a null fingerprint.
 - If a campaign is waiting, inspect only its public scheduler reason and next-attempt time plus sanitized audit categories. Never copy wake, lease, claim, or attempt tokens into tickets or logs.
 - Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
 - If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.

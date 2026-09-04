@@ -66,8 +66,15 @@ export function publicFlow(flow: FlowRecord): Record<string, unknown> {
 }
 
 export function publicCampaign(campaign: import("../../domain/types").CampaignRecord): Record<string, unknown> {
-  const { idempotencyKey: _idempotencyKey, wakeToken: _wakeToken, wakeDueAt: _wakeDueAt, ...safe } = campaign;
+  const {
+    idempotencyKey: _idempotencyKey,
+    requestFingerprint: _requestFingerprint,
+    wakeToken: _wakeToken,
+    wakeDueAt: _wakeDueAt,
+    ...safe
+  } = campaign;
   void _idempotencyKey;
+  void _requestFingerprint;
   void _wakeToken;
   void _wakeDueAt;
   return safe;
@@ -128,11 +135,48 @@ export function attachmentErrorResponse(context: MailFlowContext, error: unknown
   return responseError(context, status, `attachment_${error.code}`, message);
 }
 
-async function bodyJson(context: MailFlowContext): Promise<unknown | null> {
+type JsonBodyResult =
+  | { readonly kind: "ok"; readonly value: unknown }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "too_large" };
+
+async function bodyJson(context: MailFlowContext, maxBytes?: number): Promise<JsonBodyResult> {
+  const contentLength = context.req.header("Content-Length");
+  if (maxBytes !== undefined && contentLength) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) return { kind: "too_large" };
+  }
   try {
-    return await context.req.json<unknown>();
+    if (maxBytes === undefined) {
+      const value = await context.req.json<unknown>();
+      return value === null ? { kind: "invalid" } : { kind: "ok", value };
+    }
+    const body = context.req.raw.body;
+    if (!body) return { kind: "invalid" };
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      totalBytes += next.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        return { kind: "too_large" };
+      }
+      chunks.push(next.value);
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const value = JSON.parse(text) as unknown;
+    return value === null ? { kind: "invalid" } : { kind: "ok", value };
   } catch {
-    return null;
+    return { kind: "invalid" };
   }
 }
 
@@ -326,10 +370,22 @@ export async function enqueueTick(
   return { reserved: result.reserved, published: result.published };
 }
 
-export async function parseOrError<T>(context: MailFlowContext, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: import("zod").ZodError } }): Promise<T | Response> {
-  const raw = await bodyJson(context);
-  if (raw === null) return responseError(context, 400, "invalid_json", "Send a valid JSON request body.");
-  const parsed = schema.safeParse(raw);
+export async function parseOrError<T>(
+  context: MailFlowContext,
+  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: import("zod").ZodError } },
+  options: { readonly maxBytes?: number; readonly tooLargeCode?: string; readonly tooLargeMessage?: string } = {},
+): Promise<T | Response> {
+  const raw = await bodyJson(context, options.maxBytes);
+  if (raw.kind === "too_large") {
+    return responseError(
+      context,
+      413,
+      options.tooLargeCode ?? "request_too_large",
+      options.tooLargeMessage ?? "The request body is too large.",
+    );
+  }
+  if (raw.kind === "invalid") return responseError(context, 400, "invalid_json", "Send a valid JSON request body.");
+  const parsed = schema.safeParse(raw.value);
   if (!parsed.success) return responseError(context, 422, "invalid_input", "Review the highlighted fields and try again.", validationIssues(parsed.error));
   return parsed.data;
 }

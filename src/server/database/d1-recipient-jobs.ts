@@ -5,6 +5,7 @@ import type {
   D1PreparedStatement,
   RecipientJobRepository,
 } from "./contracts";
+import { MAX_RECIPIENT_SNAPSHOT_BYTES } from "../../domain/campaign-limits";
 import { bind, changes, json, parseJson } from "./d1-helpers";
 
 interface RecipientJobRow {
@@ -65,46 +66,80 @@ function toRecipientJob(row: RecipientJobRow): RecipientJobRecord {
   };
 }
 
-/** Build the recipient insert used by campaign creation's atomic batch. */
-export function buildRecipientJobInsert(db: D1Database, job: RecipientJobRecord): D1PreparedStatement {
-  return bind(
-    db.prepare(
-      `INSERT INTO recipient_jobs
-       (id, campaign_id, source_row, recipient, cc_json, bcc_json, reply_to_json, importance,
-        merge_data_json, rendered_subject, rendered_body_html, send_key, status, attempt_count,
-        claim_token, claimed_at, sending_at, accepted_at, next_attempt_at,
-        last_error_category, last_error_message, provider_message_id, provider_request_id,
-        created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)`,
-    ),
-    [
-      job.id,
-      job.campaignId,
-      job.sourceRow,
-      job.recipient,
-      json(job.cc),
-      json(job.bcc),
-      json(job.replyTo),
-      job.importance ?? "normal",
-      json(job.mergeData),
-      job.renderedSubject,
-      job.renderedBodyHtml,
-      job.sendKey,
-      job.status,
-      job.attemptCount,
-      job.claimToken,
-      job.claimedAt,
-      job.sendingAt,
-      job.acceptedAt,
-      job.nextAttemptAt,
-      job.lastErrorCategory,
-      job.lastErrorMessage,
-      job.providerMessageId,
-      job.providerRequestId,
-      job.createdAt,
-      job.updatedAt,
-    ],
-  );
+function recipientInsertTuple(job: RecipientJobRecord): readonly unknown[] {
+  return [
+    job.id,
+    job.campaignId,
+    job.sourceRow,
+    job.recipient,
+    json(job.cc),
+    json(job.bcc),
+    json(job.replyTo),
+    job.importance ?? "normal",
+    json(job.mergeData),
+    job.renderedSubject,
+    job.renderedBodyHtml,
+    job.sendKey,
+    job.status,
+    job.attemptCount,
+    job.claimToken,
+    job.claimedAt,
+    job.sendingAt,
+    job.acceptedAt,
+    job.nextAttemptAt,
+    job.lastErrorCategory,
+    job.lastErrorMessage,
+    job.providerMessageId,
+    job.providerRequestId,
+    job.createdAt,
+    job.updatedAt,
+  ];
+}
+
+/**
+ * Build a small number of bounded inserts for campaign creation. Each JSON
+ * string is one D1 parameter below the 2 MB binding limit, while db.batch()
+ * keeps all chunks in the same transaction as the campaign row.
+ */
+export function buildRecipientJobInserts(db: D1Database, jobs: readonly RecipientJobRecord[]): D1PreparedStatement[] {
+  const encodedRows = jobs.map((job) => JSON.stringify(recipientInsertTuple(job)));
+  const chunks: string[] = [];
+  let chunkRows: string[] = [];
+  let chunkBytes = 2;
+  for (const encoded of encodedRows) {
+    const encodedBytes = new TextEncoder().encode(encoded).byteLength;
+    if (encodedBytes + 2 > MAX_RECIPIENT_SNAPSHOT_BYTES) {
+      throw new Error("Recipient snapshot exceeds the D1-safe persistence bound");
+    }
+    const nextBytes = chunkBytes + encodedBytes + (chunkRows.length > 0 ? 1 : 0);
+    if (chunkRows.length > 0 && nextBytes > MAX_RECIPIENT_SNAPSHOT_BYTES) {
+      chunks.push(`[${chunkRows.join(",")}]`);
+      chunkRows = [];
+      chunkBytes = 2;
+    }
+    chunkRows.push(encoded);
+    chunkBytes += encodedBytes + (chunkRows.length > 1 ? 1 : 0);
+  }
+  if (chunkRows.length > 0) chunks.push(`[${chunkRows.join(",")}]`);
+
+  const sql = `INSERT INTO recipient_jobs
+    (id, campaign_id, source_row, recipient, cc_json, bcc_json, reply_to_json, importance,
+     merge_data_json, rendered_subject, rendered_body_html, send_key, status, attempt_count,
+     claim_token, claimed_at, sending_at, accepted_at, next_attempt_at,
+     last_error_category, last_error_message, provider_message_id, provider_request_id,
+     created_at, updated_at)
+    SELECT
+      json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'),
+      json_extract(value, '$[3]'), json_extract(value, '$[4]'), json_extract(value, '$[5]'),
+      json_extract(value, '$[6]'), json_extract(value, '$[7]'), json_extract(value, '$[8]'),
+      json_extract(value, '$[9]'), json_extract(value, '$[10]'), json_extract(value, '$[11]'),
+      json_extract(value, '$[12]'), json_extract(value, '$[13]'), json_extract(value, '$[14]'),
+      json_extract(value, '$[15]'), json_extract(value, '$[16]'), json_extract(value, '$[17]'),
+      json_extract(value, '$[18]'), json_extract(value, '$[19]'), json_extract(value, '$[20]'),
+      json_extract(value, '$[21]'), json_extract(value, '$[22]'), json_extract(value, '$[23]'),
+      json_extract(value, '$[24]')
+    FROM json_each(?1)`;
+  return chunks.map((chunk) => bind(db.prepare(sql), [chunk]));
 }
 
 export class D1RecipientJobRepository implements RecipientJobRepository {

@@ -75,10 +75,15 @@ export interface CampaignRepository {
   getByIdempotencyKey(ownerUserId: string, idempotencyKey: string): Promise<CampaignRecord | null>;
   listByOwner(ownerUserId: string, limit?: number): Promise<CampaignRecord[]>;
   /**
-   * Creates the campaign snapshot, recipient jobs, and (when present) the
-   * owner-matching attachment-set association in one D1 batch.
+   * Creates and validates the campaign snapshot, recipient jobs, creation
+   * audits, and optional owner-matching attachment association in one batch.
    */
-  create(campaign: CampaignRecord, jobs: readonly RecipientJobRecord[], attachmentSetId?: string | null): Promise<void>;
+  create(
+    campaign: CampaignRecord,
+    jobs: readonly RecipientJobRecord[],
+    attachmentSetId?: string | null,
+    auditEvents?: readonly AuditEventRecord[],
+  ): Promise<void>;
   /** Conditional lifecycle transitions return false when a concurrent update won. */
   markValidated(id: string, ownerUserId: string, now: string): Promise<boolean>;
   queue(id: string, ownerUserId: string, now: string): Promise<boolean>;

@@ -187,6 +187,12 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
 }
 
 describe("campaign tick", () => {
+  it("rejects non-minimal or oversized Queue payloads", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    await expect(handleCampaignQueueMessage({ ...TICK, rows: [] }, deps)).resolves.toEqual({ kind: "ignored", reason: "not_runnable" });
+    await expect(handleCampaignQueueMessage({ ...TICK, campaignId: "x".repeat(129) }, deps)).resolves.toEqual({ kind: "ignored", reason: "not_runnable" });
+  });
+
   it("rejects malformed or tokenless queue payloads", async () => {
     const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
     await expect(handleCampaignQueueMessage({ type: "campaign.tick", campaignId: "campaign-1" }, deps)).resolves.toEqual({ kind: "ignored", reason: "not_runnable" });

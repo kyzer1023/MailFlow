@@ -30,6 +30,9 @@
 - D1 migrations from an empty database.
 - Flow and template version repositories.
 - Campaign creation and recipient-job insertion.
+- Campaign-create request-size rejection before JSON parsing, normalized request-fingerprint replay and changed-content conflict behavior.
+- Atomic 300-row campaign creation through bounded D1 JSON chunks, including full rollback on one invalid recipient or a lost attachment association.
+- Campaign and recipient snapshot triggers for owner, sender, flow/template, totals, initial state, JSON shape, size, and immutability bypasses.
 - Conditional claim behavior under duplicate Queue deliveries.
 - D1 transaction-backed mailbox lease races across campaigns, with exactly one acquired provider attempt.
 - Durable wake reservation and duplicate physical Queue delivery consumption.
@@ -113,5 +116,6 @@ For staging, verify separately:
 - A staging build runs with `CLOUDFLARE_ENV=staging` before the staging Wrangler dry run or deploy.
 - Hosted landing, hashed assets, unauthenticated API behavior, OAuth redirect origin and SMTP scope, schedule, D1, Queue, and DLQ checks pass without initiating mail.
 - Migration `0007_mailbox_scheduler_recovery.sql` is applied before deploying code that reads scheduler or delivery-attempt tables.
+- Migration `0008_campaign_create_safeguards.sql` is applied before deploying code that writes campaign request fingerprints or bulk recipient chunks.
 - The deployed Worker version corresponds to the recorded exact candidate commit.
 
