@@ -34,6 +34,11 @@
 .accepted-note { margin-top: 1rem; padding: .75rem; border-radius: 8px; background: #f0eee7; color: var(--muted); display: flex; gap: .5rem; font-size: .68rem; line-height: 1.4; }
 .accepted-note svg { flex: 0 0 auto; }
 .test-status { min-height: 1.2rem; color: var(--moss-dark); font-size: .72rem; font-weight: 700; display: flex; align-items: center; gap: .4rem; }
+.review-action { white-space: nowrap; }
+.review-action--test { min-inline-size: 10.25rem; }
+.review-action--start { min-inline-size: 11rem; color: var(--ink); }
+.button--coral.review-action--start:hover:not(:disabled) { background: var(--coral); }
+.review-action--complete:disabled { border-color: var(--token-border); background: var(--token-bg); color: var(--token-text); cursor: default; opacity: 1; }
 .review-blockers { margin-top: 1rem; padding: .8rem; border: 1px solid #edb2a6; border-radius: 8px; background: #fff2ee; }
 .review-blockers > div { display: flex; align-items: center; gap: .45rem; color: #a43726; }
 .review-blockers h3 { margin: 0; font-size: .78rem; }

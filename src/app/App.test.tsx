@@ -722,7 +722,7 @@ describe("campaign attachments", () => {
     expect(payload?.attachmentSetId).toBe("set-1");
     expect(payload).not.toHaveProperty("attachments");
     expect(Object.values(payload || {}).some((value) => value instanceof File)).toBe(false);
-    expect(await screen.findByText("Test accepted by Microsoft")).toBeInTheDocument();
+    expect(await screen.findByText("Microsoft accepted the test request for your mailbox.")).toBeInTheDocument();
     expect(mockedSendCampaignTest).toHaveBeenCalledWith(
       "campaign-1",
       expect.objectContaining({ idempotencyKey: expect.stringMatching(/^test-campaign-/u), sourceRow: 2 }),
