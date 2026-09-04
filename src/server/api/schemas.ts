@@ -1,10 +1,14 @@
 import { z } from "zod";
+import { MAX_RECIPIENT_SNAPSHOT_BYTES } from "../../domain/campaign-limits";
 
 const nonEmpty = (max: number) => z.string().trim().min(1).max(max);
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
 const optionalRecipientField = (max: number) => z.string().trim().max(max).nullable().optional().default(null);
 const optionalAddressText = (max: number) => z.string().trim().max(max).nullable().optional().default(null);
-const placeholderMappings = z.record(nonEmpty(160), nonEmpty(160)).optional().default({});
+const boundedMappings = z.record(nonEmpty(160), nonEmpty(160)).superRefine((value, context) => {
+  if (Object.keys(value).length > 100) context.addIssue({ code: "custom", message: "Too many spreadsheet field mappings were provided." });
+});
+const placeholderMappings = boundedMappings.optional().default({});
 
 export const recipientConfigurationSchema = z.object({
   toField: nonEmpty(160),
@@ -32,7 +36,24 @@ export const campaignRecipientSchema = z.object({
   mergeData: mergeDataSchema.default({}),
   renderedSubject: nonEmpty(998),
   renderedBodyHtml: nonEmpty(200_000),
-}).strict();
+}).strict().superRefine((value, context) => {
+  // D1 bulk insertion wraps the JSON columns as strings inside a bound JSON
+  // tuple. Measure that representation and retain headroom for generated IDs,
+  // state fields, and timestamps that the Worker adds after validation.
+  const persistenceBytes = new TextEncoder().encode(JSON.stringify([
+    value.sourceRow,
+    value.to,
+    JSON.stringify(value.cc),
+    JSON.stringify(value.bcc),
+    JSON.stringify(value.replyTo),
+    JSON.stringify(value.mergeData),
+    value.renderedSubject,
+    value.renderedBodyHtml,
+  ])).byteLength;
+  if (persistenceBytes > MAX_RECIPIENT_SNAPSHOT_BYTES - 2_048) {
+    context.addIssue({ code: "custom", message: "A recipient snapshot is too large to store safely." });
+  }
+});
 
 export const campaignCreateSchema = z.object({
   flowId: nonEmpty(128),
@@ -42,7 +63,7 @@ export const campaignCreateSchema = z.object({
   subjectTemplate: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
   placeholderManifest: z.array(nonEmpty(160)).max(100).default([]),
-  placeholderMappings: z.record(nonEmpty(160), nonEmpty(160)).optional(),
+  placeholderMappings: boundedMappings.optional(),
   recipientConfiguration: recipientConfigurationSchema,
   pacePerMinute: z.number().int().min(1).max(600).optional(),
   totalRecipients: z.number().int().min(0).max(300),

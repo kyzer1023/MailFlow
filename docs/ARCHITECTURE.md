@@ -91,7 +91,9 @@ Flow reference, version number, subject template, sanitized body HTML, recipient
 
 Flow and template references, owner, sender address, source filename, recipient totals, pace, state, pause reason, timestamps, and idempotency key.
 
-The campaign-create API requires the idempotency key. D1 enforces uniqueness per owner, and both an ordinary replay and a concurrent insert race resolve to the existing campaign response.
+The campaign-create API requires the idempotency key and stores a server-calculated fingerprint of the normalized, effective campaign snapshot. D1 enforces key uniqueness per owner. An exact ordinary replay or concurrent insert race resolves to the existing campaign response, while reuse of the key for different content fails with a stable conflict instead of silently returning the earlier campaign. Legacy campaigns created before fingerprints remain replay-compatible through their existing attachment-set check.
+
+Campaign-create JSON is limited to 8 MiB at the Worker boundary before it is buffered or parsed. This application limit is deliberately below Cloudflare's plan-level request-body allowance because Workers have a fixed [128 MB isolate memory limit](https://developers.cloudflare.com/workers/platform/limits/) and Cloudflare recommends enforcing a maximum before consuming JSON bodies. Individual persisted recipient snapshots are also bounded below D1's [2 MB maximum string or row size](https://developers.cloudflare.com/d1/platform/limits/).
 
 ### attachment_sets and attachment_files
 
@@ -102,6 +104,8 @@ The product limit is five files and 20 MiB combined raw bytes. Open sets may be 
 ### recipient_jobs
 
 Campaign reference, source row, resolved recipient metadata, message importance, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
+
+Campaign creation inserts the campaign, optional owner-matching attachment association, every recipient snapshot, and the creation audit events in one D1 batch transaction. Recipient snapshots are encoded into bounded JSON chunks and expanded with SQLite JSON functions so the 300-recipient product limit does not require one query per row. Each bound chunk remains below D1's 2 MB string limit, and the full batch remains far below D1's per-invocation query limits. Database triggers independently enforce campaign ownership, sender, template, total, fingerprint, and recipient snapshot invariants if a repository caller bypasses the HTTP schema.
 
 ### audit_events
 

@@ -105,6 +105,8 @@ export interface CampaignRecord {
   state: CampaignState;
   pauseReason: string | null;
   idempotencyKey: string;
+  /** Server hash of the normalized create request. Null only for legacy rows. */
+  requestFingerprint?: string | null;
   createdAt: string;
   queuedAt: string | null;
   startedAt: string | null;

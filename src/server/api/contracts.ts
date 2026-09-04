@@ -48,6 +48,7 @@ export interface QueueBatch<T> {
 
 export function isCampaignTickMessage(value: unknown): value is CampaignTickMessage {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (Object.keys(value).length !== 3) return false;
   const candidate = value as Partial<CampaignTickMessage>;
   return candidate.type === "campaign.tick"
     && typeof candidate.campaignId === "string"

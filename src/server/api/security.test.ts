@@ -30,6 +30,7 @@ describe("Worker API security boundaries", () => {
 
   it("validates queue messages at runtime before campaignId is used", () => {
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123", wakeToken: "wake_123" })).toBe(true);
+    expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123", wakeToken: "wake_123", rows: [] })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "campaign_123" })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: "" })).toBe(false);
     expect(isCampaignTickMessage({ type: "campaign.tick", campaignId: 123 })).toBe(false);
@@ -93,6 +94,10 @@ describe("Worker API security boundaries", () => {
     }
 
     expect(recipientConfigurationSchema.safeParse({ toField: "email", unknownSetting: true }).success).toBe(false);
+    expect(recipientConfigurationSchema.safeParse({
+      toField: "email",
+      placeholderMappings: Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`field_${index}`, `column_${index}`])),
+    }).success).toBe(false);
   });
 
   it("requires a stable idempotency key for campaign creation", () => {
