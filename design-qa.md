@@ -113,3 +113,10 @@ Final captures in `artifacts/local/results/`: `completed-desktop-final.png` (144
 The in-app browser was used with synthetic browser-only API interception; fixture source lives in ignored `tmp/` and `.local-preview.html` and is absent from production imports. No provider-bound action ran. No new raster assets or redesign were needed. Earlier workflow QA above remains unchanged.
 
 final result: passed
+
+### 2026-09-06 - Campaign result feedback
+- Source: user attachment codex-clipboard-74fe6967-2ee3-489c-9350-3243760074d2.png (1682x868). Implementation: artifacts/local/results/ui-fix-desktop.png (1682x868 CSS viewport), ui-fix-mobile.png (390x844). Browser captures use normal density. Source omits app navigation/header; comparison targets the shared identity, counts and recipient-note regions using synthetic identities and mixed terminal outcomes.
+- Compared source and loaded implementation together. Fixed P2 inline verification button colliding with prose using a spaced grid; fixed misleading green Completed presentation using derived result wording and existing semantic tokens; removed finished Sending highlight.
+- Typography and assets retain the existing fonts, logo and Phosphor icons. Paper/Moss colors and panel rhythm retained. Note wrapping, separate action alignment and explicit outcome copy inspected; mobile has no document overflow. Existing horizontally scrollable recipient table is retained. No new image assets are needed.
+- Confirmation remains disabled until checked; saving preserves Unknown and changes the summary to recipient failures when failures remain. Browser warning/error logs empty. No remaining actionable P0/P1/P2 findings for this scoped correction.
+- final result: passed

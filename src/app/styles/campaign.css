@@ -309,4 +309,9 @@
 .campaign-page .campaign-lower, .campaign-aside { align-items: start; }
 .delivery-evidence { margin-top: var(--send-space-sm); white-space: normal; overflow-wrap: anywhere; }
 .delivery-evidence strong { color: var(--moss); }
-.jobs-panel td:last-child > .button { margin-top: var(--send-space-sm); }
+.recipient-outcome-note { display: grid; justify-items: start; gap: var(--send-space-sm); white-space: normal; }
+.recipient-outcome-note p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.recipient-outcome-note .delivery-evidence { margin-top: 0; }
+.route-summary--finished .count--sending > span { background: var(--paper); color: var(--muted); box-shadow: none; }
+.progress-meta { gap: var(--send-space-sm); align-items: flex-start; }
+.progress-meta > strong { flex-shrink: 0; }

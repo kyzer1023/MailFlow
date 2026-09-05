@@ -105,8 +105,12 @@ describe("campaign outcome reporting", () => {
       expect(
         screen.getAllByText("05 Sept 2026, 08:02:00 MYT (UTC+8)").length,
       ).toBeGreaterThan(0);
-      if (state === "completed")
+      if (state === "completed") {
+        expect(screen.getByText("Finished, receipt unverified")).toBeInTheDocument();
+        expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+        expect(screen.getByText(/Processing finished: 1 accepted by Microsoft, 1 failed, 1 unknown, 0 skipped/)).toBeInTheDocument();
         expect(screen.queryByText(/minutes remaining/)).not.toBeInTheDocument();
+      }
     },
   );
   it("requires explicit receipt confirmation and shows a separate saved result", async () => {

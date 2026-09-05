@@ -31,6 +31,7 @@ import { StatusChip } from "../../components/common/StatusChip";
 import { AppShell } from "../../components/shell/AppShell";
 import { formatTimestamp, formatSchedulerNotice } from "../../lib/format";
 import { campaignTiming, processingDuration } from "../../lib/campaign-timing";
+import { completedResult } from "../../lib/campaign-result";
 import { DeliveryVerification } from "../../components/common/DeliveryVerification";
 import { useApi } from "../../state/api-context";
 
@@ -132,6 +133,8 @@ export function CampaignPage() {
   const displayJobs = jobs || [];
   const verifiedCount = displayJobs.filter(job => job.status === "unknown" && job.deliveryVerifiedAt).length;
   const unverifiedCount = Math.max(0, activeCounts.unknown - verifiedCount);
+  const result = completedResult(activeCounts.unknown, activeCounts.failed, activeCounts.skipped, verifiedCount);
+  const resultSummary = `${activeCounts.accepted} accepted by Microsoft, ${activeCounts.failed} failed, ${activeCounts.unknown} unknown, ${activeCounts.skipped} skipped`;
   const timing = campaignState ? campaignTiming(campaignState, displayJobs) : null;
   const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
   const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
@@ -147,7 +150,7 @@ export function CampaignPage() {
   const statusLabel = statusKind === "paused"
     ? "Paused safely"
     : statusKind === "completed"
-      ? "Completed"
+      ? result.label
       : statusKind === "failed"
         ? "Campaign failed"
         : waiting
@@ -243,10 +246,10 @@ export function CampaignPage() {
             <h2>{campaignState?.sourceFilename || "Campaign details"}</h2>
             <code>{sender}</code>
           </div>
-          <StatusChip status={statusKind}>{statusLabel}</StatusChip>
+          <StatusChip status={completedCampaign ? result.tone : statusKind}>{statusLabel}</StatusChip>
         </div>
 
-        <section className="panel route-summary" aria-live="polite">
+        <section className={`panel route-summary${completedCampaign ? " route-summary--finished" : ""}`} aria-live="polite">
           <div className="route-counts">
             {routeCounts.map(([label, count, IconComponent]) => (
               <div className={`count count--${label.toLowerCase().replace(/\s+/gu, "-")}`} key={label}>
@@ -261,7 +264,7 @@ export function CampaignPage() {
               {failedCampaign
                 ? `${notSent} ${notSent === 1 ? "row was" : "rows were"} not sent after the campaign stopped`
                 : completedCampaign
-                  ? "Campaign complete, all recipient outcomes are recorded"
+                  ? `Processing finished: ${resultSummary}`
                   : paused
                     ? "Paused, accepted and unknown rows remain protected"
                     : waiting ? "Waiting safely; remaining time is not estimated"
@@ -324,7 +327,7 @@ export function CampaignPage() {
                             </td>
                             <td>{job.attemptCount}</td>
                             <td>{formatTimestamp(job.updatedAt)}</td>
-                            <td>{note}{status === "unknown" && <DeliveryVerification job={job} csrfToken={csrfToken} onVerified={() => { void load(); void refreshDashboard(); }} />}</td>
+                            <td><div className="recipient-outcome-note"><p>{note}</p>{status === "unknown" && <DeliveryVerification job={job} csrfToken={csrfToken} onVerified={() => { void load(); void refreshDashboard(); }} />}</div></td>
                           </tr>
                         );
                       })}

@@ -2,6 +2,7 @@ import { CaretRight } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import type { CampaignViewModel } from "../../state/types";
 import { StatusChip } from "../common/StatusChip";
+import { completedResult } from "../../lib/campaign-result";
 
 export interface CampaignTableProps {
   readonly campaigns: readonly CampaignViewModel[];
@@ -31,8 +32,8 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
               </td>
               <td>{campaign.updated}</td>
               <td>
-                <StatusChip status={campaign.status}>
-                  {campaign.status === "failed"
+                <StatusChip status={campaign.status === "completed" ? completedResult(campaign.unknown, campaign.recipientFailed, campaign.skipped ?? 0, campaign.deliveryVerifiedCount ?? 0).tone : campaign.status}>
+                  {campaign.status === "completed" ? completedResult(campaign.unknown, campaign.recipientFailed, campaign.skipped ?? 0, campaign.deliveryVerifiedCount ?? 0).label : campaign.status === "failed"
                     ? "Campaign failed"
                     : campaign.status[0].toUpperCase() +
                       campaign.status.slice(1)}
