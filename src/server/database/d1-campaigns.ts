@@ -1,10 +1,10 @@
-import type { AuditEventRecord, CampaignRecord, RecipientJobRecord } from "../../domain/types";
+import { emptyCampaignCounts, type AuditEventRecord, type CampaignCounts, type CampaignRecord, type RecipientJobRecord } from "../../domain/types";
 import type {
   CampaignRepository,
   D1Database,
   D1PreparedStatement,
 } from "./contracts";
-import { bind, changes } from "./d1-helpers";
+import { bind, changes, parseJson } from "./d1-helpers";
 import { buildAuditEventInsert } from "./d1-audit";
 import { buildRecipientJobInserts } from "./d1-recipient-jobs";
 
@@ -87,13 +87,22 @@ export class D1CampaignRepository implements CampaignRepository {
     return row ? toCampaign(row) : null;
   }
 
-  async listByOwner(ownerUserId: string, limit = 50): Promise<CampaignRecord[]> {
+  async listByOwner(ownerUserId: string, limit = 50): Promise<(CampaignRecord & { counts: CampaignCounts })[]> {
     const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
     const result = await bind(
-      this.db.prepare("SELECT * FROM campaigns WHERE owner_user_id = ?1 ORDER BY created_at DESC LIMIT ?2"),
+      this.db.prepare(`SELECT campaigns.*, (
+        SELECT json_group_object(status, total) FROM (
+          SELECT status, COUNT(*) AS total FROM recipient_jobs
+          WHERE campaign_id = campaigns.id GROUP BY status
+        )
+      ) AS counts_json
+      FROM campaigns WHERE owner_user_id = ?1 ORDER BY created_at DESC LIMIT ?2`),
       [ownerUserId, safeLimit],
-    ).all<CampaignRow>();
-    return result.results.map(toCampaign);
+    ).all<CampaignRow & { counts_json: string }>();
+    return result.results.map((row) => ({
+      ...toCampaign(row),
+      counts: { ...emptyCampaignCounts(), ...parseJson<Partial<CampaignCounts>>(row.counts_json, {}) },
+    }));
   }
 
   async create(

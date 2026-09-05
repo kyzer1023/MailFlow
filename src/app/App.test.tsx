@@ -525,13 +525,13 @@ describe("authenticated information architecture", () => {
         updatedAt: "2026-09-01T00:30:00.000Z",
       }],
     });
-    mockedGetCampaigns.mockResolvedValue({ campaigns: [campaign] });
-    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaigns.mockResolvedValue({ campaigns: [{ ...campaign, counts }] });
 
     render(<App />);
 
     expect(await screen.findByText("Y2 Talent Recruitment")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
+    expect(mockedGetCampaign).not.toHaveBeenCalled();
     expect(screen.queryByText(/Campaign campaign_/)).not.toBeInTheDocument();
   });
 
@@ -596,8 +596,7 @@ describe("authenticated information architecture", () => {
     };
     const counts = { pending: 2, claimed: 0, sending: 0, accepted: 1, failed: 1, skipped: 0, unknown: 1 };
     mockedGetFlows.mockResolvedValue({ flows: [] });
-    mockedGetCampaigns.mockResolvedValue({ campaigns: [campaign] });
-    mockedGetCampaign.mockResolvedValue({ campaign, counts });
+    mockedGetCampaigns.mockResolvedValue({ campaigns: [{ ...campaign, counts }] });
 
     render(<App />);
 

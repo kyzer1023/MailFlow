@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import {
   ApiRequestError,
-  getCampaign,
   getCampaigns,
   getFlows,
   getMe,
@@ -51,12 +50,8 @@ export function AppDataProvider({ children }: { readonly children: ReactNode }) 
     try {
       const [flowsResponse, campaignsResponse] = await Promise.all([getFlows(), getCampaigns()]);
       const flowNames = new Map(flowsResponse.flows.map((flow) => [flow.id, flow.name]));
-      // The list endpoint intentionally returns only campaign records. Fetch
-      // each owner-scoped detail to obtain authoritative result counts for the
-      // dashboard rather than displaying guessed or fixture totals.
-      const campaigns = await Promise.all(campaignsResponse.campaigns.map(async (campaign) => {
-        const detail = await getCampaign(campaign.id);
-        return { campaign, counts: detail.counts, flowName: flowNames.get(campaign.flowId) || "" };
+      const campaigns = campaignsResponse.campaigns.map(({ counts, ...campaign }) => ({
+        campaign, counts, flowName: flowNames.get(campaign.flowId) || "",
       }));
       if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
       setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, error: "" });

@@ -208,8 +208,8 @@ export function updateFlow(
   });
 }
 
-export function getCampaigns(): Promise<{ campaigns: readonly PublicCampaignRecord[] }> {
-  return apiRequest<{ campaigns: readonly PublicCampaignRecord[] }>("/api/campaigns");
+export function getCampaigns(): Promise<{ campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[] }> {
+  return apiRequest<{ campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[] }>("/api/campaigns");
 }
 
 export function createCampaign(payload: CampaignCreatePayload, csrfToken: string): Promise<CampaignResponse> {

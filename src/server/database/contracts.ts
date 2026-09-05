@@ -74,7 +74,7 @@ export interface CampaignRepository {
   getById(id: string): Promise<CampaignRecord | null>;
   getByIdForOwner(id: string, ownerUserId: string): Promise<CampaignRecord | null>;
   getByIdempotencyKey(ownerUserId: string, idempotencyKey: string): Promise<CampaignRecord | null>;
-  listByOwner(ownerUserId: string, limit?: number): Promise<CampaignRecord[]>;
+  listByOwner(ownerUserId: string, limit?: number): Promise<(CampaignRecord & { counts: CampaignCounts })[]>;
   /**
    * Creates and validates the campaign snapshot, recipient jobs, creation
    * audits, and optional owner-matching attachment association in one batch.

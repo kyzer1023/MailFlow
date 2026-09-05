@@ -144,20 +144,6 @@ export interface DashboardState {
   readonly error: string;
 }
 
-export interface DraftSnapshot {
-  readonly draft: DraftState;
-  readonly workbook: ParsedSpreadsheet | null;
-  readonly table: SpreadsheetTable | null;
-  readonly mapping: ClientMapping;
-  readonly mappedRows: readonly MappedRecipientRow[];
-  readonly validation: ClientValidationSummary | null;
-  readonly campaignValidation: ClientValidationSummary | null;
-  readonly attachments: readonly CampaignAttachment[];
-  readonly campaignRequestKey: string;
-  readonly testSendRequestKey: string;
-  readonly skipInvalidRows: boolean;
-}
-
 export interface ValidationIssueAction {
   readonly label: string;
   readonly to: string;
