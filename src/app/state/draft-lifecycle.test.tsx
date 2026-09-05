@@ -132,7 +132,7 @@ afterEach(() => {
 });
 
 describe("reviewed campaign lifecycle", () => {
-  it("detects mixed address lists and uses configured pacing instead of stale draft controls", async () => {
+  it("detects mixed address lists and uses deployment-configured pacing", async () => {
     const configuredApi = {
       ...api,
       config: { ...api.config, defaultPacePerMinute: 8 },
@@ -155,8 +155,6 @@ describe("reviewed campaign lifecycle", () => {
         subject: "Hello",
         body: "<p>Hello</p>",
         cc: "one@example.test,two@example.test;three@example.test\nfour@example.test",
-        separator: "semicolon",
-        pace: 20,
       }));
       result.current.state.setFlowId(flow.id);
     });
@@ -212,7 +210,7 @@ describe("reviewed campaign lifecycle", () => {
       );
     });
     expect(createCampaign).toHaveBeenCalledTimes(1);
-    act(() => result.current.state.restartFromMessage?.());
+    act(() => result.current.state.restartFromMessage());
     await act(async () => {
       await result.current.ensure();
     });

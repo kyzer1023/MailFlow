@@ -2,23 +2,11 @@ import { AddressRuleField } from "./AddressRuleField";
 import { Field } from "../common/Field";
 import { columnOptions } from "../../lib/view-models";
 import { useDraft } from "../../state/draft-context";
-import type { DraftState } from "../../state/types";
+import type { MailImportance } from "../../../domain/types";
 
 export function SendingOptions() {
-  const { draft, setDraft, updateDraft, table } = useDraft();
+  const { draft, updateDraft, table } = useDraft();
   const options = columnOptions(table);
-  const rule = (
-    key: "cc" | "bcc" | "replyTo",
-    property: string,
-    value: string,
-  ) =>
-    setDraft(
-      (current) =>
-        ({
-          ...current,
-          [property ? `${key}${property}` : key]: value,
-        }) as DraftState,
-    );
   return (
     <div className="sending-options-fields">
       {(["cc", "bcc", "replyTo"] as const).map((key) => (
@@ -30,15 +18,17 @@ export function SendingOptions() {
           mode={draft[`${key}Mode`]}
           column={draft[`${key}Column`]}
           options={options}
-          onValue={(value) => rule(key, "", value)}
-          onMode={(value) => rule(key, "Mode", value)}
-          onColumn={(value) => rule(key, "Column", value)}
+          onValue={(value) => updateDraft(key, value)}
+          onMode={(value) => updateDraft(`${key}Mode`, value)}
+          onColumn={(value) => updateDraft(`${key}Column`, value)}
         />
       ))}
       <Field label="Importance">
         <select
           value={draft.importance}
-          onChange={(event) => updateDraft("importance", event.target.value)}
+          onChange={(event) =>
+            updateDraft("importance", event.target.value as MailImportance)
+          }
         >
           <option value="normal">Normal</option>
           <option value="high">High</option>

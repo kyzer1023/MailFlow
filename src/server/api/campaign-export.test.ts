@@ -42,7 +42,7 @@ function job(sourceRow: number): RecipientJobRecord {
     acceptedAt: null,
     nextAttemptAt: null,
     lastErrorCategory: "invalid_message",
-    lastErrorMessage: "line 1, \"line 2\"\nline 3",
+    lastErrorMessage: 'line 1, "line 2"\nline 3',
     providerMessageId: null,
     providerRequestId: null,
     createdAt: "2026-09-05T00:00:00.000Z",
@@ -53,7 +53,11 @@ function job(sourceRow: number): RecipientJobRecord {
 function exportRequest() {
   const app = new Hono<MailFlowAppEnv>();
   registerCampaignDetailRoutes(app);
-  return app.request("https://example.test/api/campaigns/campaign-export/export.csv", {}, {});
+  return app.request(
+    "https://example.test/api/campaigns/campaign-export/export.csv",
+    {},
+    {},
+  );
 }
 
 beforeEach(() => {
@@ -64,22 +68,36 @@ describe("campaign CSV export", () => {
   it("exports every owner-scoped page with quoting and formula protection", async () => {
     store.getByIdForOwner.mockResolvedValue({ id: "campaign-export" });
     const jobs = Array.from({ length: 500 }, (_, index) => job(index + 2));
-    const last = { ...job(502), lastErrorMessage: '=HYPERLINK("https://example.test")' };
-    store.listByCampaign.mockResolvedValueOnce(jobs).mockResolvedValueOnce([last]);
+    const last = {
+      ...job(502),
+      lastErrorMessage: '=HYPERLINK("https://example.test")',
+    };
+    store.listByCampaign
+      .mockResolvedValueOnce(jobs)
+      .mockResolvedValueOnce([last]);
 
     const response = await exportRequest();
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
-    expect(response.headers.get("Content-Disposition")).toContain('filename="campaign-export-results.csv"');
-    expect(store.getByIdForOwner).toHaveBeenCalledWith("campaign-export", "owner");
+    expect(response.headers.get("Content-Type")).toBe(
+      "text/csv; charset=utf-8",
+    );
+    expect(response.headers.get("Content-Disposition")).toContain(
+      'filename="campaign-export-results.csv"',
+    );
+    expect(store.getByIdForOwner).toHaveBeenCalledWith(
+      "campaign-export",
+      "owner",
+    );
     expect(store.listByCampaign.mock.calls).toEqual([
       ["campaign-export", 500, 0],
       ["campaign-export", 500, 500],
     ]);
     const csv = await response.text();
-    expect(csv.split("\r\n")[0]).toBe("row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message");
+    expect(csv.split("\r\n")[0]).toBe(
+      "row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message",
+    );
     expect(csv).toContain('"line 1, ""line 2""\nline 3"');
-    expect(csv).toContain('502,member502@example.test,failed,1,');
+    expect(csv).toContain("502,member502@example.test,failed,1,");
     expect(csv).toContain('"\'=HYPERLINK(""https://example.test"")"');
     expect(csv).not.toMatch(/Private subject|Private message|private-send-/u);
   });
@@ -88,8 +106,13 @@ describe("campaign CSV export", () => {
     store.getByIdForOwner.mockResolvedValue(null);
     const response = await exportRequest();
     expect(response.status).toBe(404);
-    expect(store.getByIdForOwner).toHaveBeenCalledWith("campaign-export", "owner");
+    expect(store.getByIdForOwner).toHaveBeenCalledWith(
+      "campaign-export",
+      "owner",
+    );
     expect(store.listByCampaign).not.toHaveBeenCalled();
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "campaign_not_found" } });
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "campaign_not_found" },
+    });
   });
 });

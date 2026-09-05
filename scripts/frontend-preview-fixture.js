@@ -44,7 +44,7 @@
     }
     if (/^\/api\/attachment-sets\/[^/]+\/files$/.test(path) && method === "POST") {
       const source = options.body.get("file");
-      return json({ file: { id: crypto.randomUUID(), originalFilename: source.name, contentType: source.type, byteSize: source.size, sha256: "synthetic", status: "ready" } });
+      return json({ file: { id: crypto.randomUUID(), originalFilename: source.name, mediaType: source.type, byteSize: source.size, sha256: "synthetic", status: "ready" } });
     }
     if (path.startsWith("/api/attachment-sets/") && method === "DELETE") return new Response(null, { status: 204 });
     if (path === "/api/campaigns" && method === "GET") return json({ campaigns });

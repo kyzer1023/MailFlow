@@ -229,4 +229,3 @@ export interface CampaignCreatePayload {
   readonly skippedRecipients: number;
   readonly rows: readonly CampaignRecipientPayload[];
 }
-

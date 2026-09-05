@@ -6,7 +6,11 @@ import type {
   RecipientJobRecord,
   TemplateVersionRecord,
 } from "../domain/types";
-import type { AttachmentFileRecord, AttachmentSetRecord, CampaignCreatePayload } from "../client/types";
+import type {
+  AttachmentFileRecord,
+  AttachmentSetRecord,
+  CampaignCreatePayload,
+} from "../client/types";
 
 export interface ApiUser {
   readonly id: string;
@@ -38,7 +42,10 @@ export interface FlowResponse {
   readonly templateVersion: TemplateVersionRecord | null;
 }
 
-export type PublicCampaignRecord = Omit<CampaignRecord, "idempotencyKey" | "wakeToken" | "wakeDueAt">;
+export type PublicCampaignRecord = Omit<
+  CampaignRecord,
+  "idempotencyKey" | "wakeToken" | "wakeDueAt"
+>;
 
 export interface CampaignResponse {
   readonly campaign: PublicCampaignRecord;
@@ -69,16 +76,30 @@ export interface ApiErrorBody {
   readonly error?: {
     readonly code?: string;
     readonly message?: string;
-    readonly issues?: readonly { code?: string; field?: string; row?: number; message?: string }[];
+    readonly issues?: readonly {
+      code?: string;
+      field?: string;
+      row?: number;
+      message?: string;
+    }[];
   };
 }
 
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly issues: readonly { code?: string; field?: string; row?: number; message?: string }[];
+  readonly issues: readonly {
+    code?: string;
+    field?: string;
+    row?: number;
+    message?: string;
+  }[];
 
-  constructor(status: number, body: ApiErrorBody | null, fallback = "Mail Flow could not complete that request.") {
+  constructor(
+    status: number,
+    body: ApiErrorBody | null,
+    fallback = "Mail Flow could not complete that request.",
+  ) {
     super(body?.error?.message || fallback);
     this.name = "ApiRequestError";
     this.status = status;
@@ -92,24 +113,25 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   readonly csrfToken?: string | null;
 };
 
-type FormDataRequestOptions = Omit<RequestInit, "body" | "method"> & {
-  readonly csrfToken?: string | null;
-};
-
 async function readError(response: Response): Promise<ApiErrorBody | null> {
   try {
-    const value = await response.json() as unknown;
-    return value && typeof value === "object" ? value as ApiErrorBody : null;
+    const value = (await response.json()) as unknown;
+    return value && typeof value === "object" ? (value as ApiErrorBody) : null;
   } catch {
     return null;
   }
 }
 
 /** Same-origin API client. Credentials stay in cookies and never enter JSON. */
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const headers = new Headers(options.headers);
-  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (options.body !== undefined && !isFormData) headers.set("Content-Type", "application/json");
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body !== undefined && !isFormData)
+    headers.set("Content-Type", "application/json");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
   const method = options.method?.toUpperCase() ?? "GET";
   const response = await fetch(path, {
@@ -117,32 +139,24 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     credentials: "same-origin",
     cache: options.cache ?? (method === "GET" ? "no-store" : undefined),
     headers,
-    body: options.body === undefined ? undefined : isFormData ? options.body as FormData : JSON.stringify(options.body),
+    body:
+      options.body === undefined
+        ? undefined
+        : isFormData
+          ? (options.body as FormData)
+          : JSON.stringify(options.body),
   });
-  if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
+  if (!response.ok)
+    throw new ApiRequestError(
+      response.status,
+      await readError(response),
+      `Request failed with status ${response.status}.`,
+    );
   if (response.status === 204) return undefined as T;
   const contentType = response.headers.get("Content-Type") || "";
-  if (contentType.toLowerCase().includes("json")) return await response.json() as T;
-  return await response.text() as T;
-}
-
-/** Submit multipart data without setting Content-Type, preserving the browser boundary. */
-export async function apiRequestFormData<T>(path: string, body: FormData, csrfToken?: string | null, options: FormDataRequestOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
-  const response = await fetch(path, {
-    ...options,
-    method: "POST",
-    credentials: "same-origin",
-    cache: options.cache ?? "no-store",
-    headers,
-    body,
-  });
-  if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
-  if (response.status === 204) return undefined as T;
-  const contentType = response.headers.get("Content-Type") || "";
-  if (contentType.toLowerCase().includes("json")) return await response.json() as T;
-  return await response.text() as T;
+  if (contentType.toLowerCase().includes("json"))
+    return (await response.json()) as T;
+  return (await response.text()) as T;
 }
 
 export function getMe(): Promise<MeResponse> {
@@ -168,7 +182,11 @@ export function createFlow(
   },
   csrfToken: string,
 ): Promise<FlowResponse> {
-  return apiRequest<FlowResponse>("/api/flows", { method: "POST", body: payload, csrfToken });
+  return apiRequest<FlowResponse>("/api/flows", {
+    method: "POST",
+    body: payload,
+    csrfToken,
+  });
 }
 
 export function createTemplateVersion(
@@ -181,19 +199,28 @@ export function createTemplateVersion(
   },
   csrfToken: string,
 ): Promise<{ version: TemplateVersionRecord }> {
-  return apiRequest<{ version: TemplateVersionRecord }>(`/api/flows/${encodeURIComponent(flowId)}/versions`, {
-    method: "POST",
-    body: payload,
-    csrfToken,
-  });
+  return apiRequest<{ version: TemplateVersionRecord }>(
+    `/api/flows/${encodeURIComponent(flowId)}/versions`,
+    {
+      method: "POST",
+      body: payload,
+      csrfToken,
+    },
+  );
 }
 
-export function archiveFlow(flowId: string, csrfToken: string): Promise<{ flow: FlowRecord }> {
-  return apiRequest<{ flow: FlowRecord }>(`/api/flows/${encodeURIComponent(flowId)}`, {
-    method: "PATCH",
-    body: { state: "archived" },
-    csrfToken,
-  });
+export function archiveFlow(
+  flowId: string,
+  csrfToken: string,
+): Promise<{ flow: FlowRecord }> {
+  return apiRequest<{ flow: FlowRecord }>(
+    `/api/flows/${encodeURIComponent(flowId)}`,
+    {
+      method: "PATCH",
+      body: { state: "archived" },
+      csrfToken,
+    },
+  );
 }
 
 export function updateFlow(
@@ -201,19 +228,33 @@ export function updateFlow(
   payload: { readonly name: string },
   csrfToken: string,
 ): Promise<{ flow: FlowRecord }> {
-  return apiRequest<{ flow: FlowRecord }>(`/api/flows/${encodeURIComponent(flowId)}`, {
-    method: "PATCH",
+  return apiRequest<{ flow: FlowRecord }>(
+    `/api/flows/${encodeURIComponent(flowId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+      csrfToken,
+    },
+  );
+}
+
+export function getCampaigns(): Promise<{
+  campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[];
+}> {
+  return apiRequest<{
+    campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[];
+  }>("/api/campaigns");
+}
+
+export function createCampaign(
+  payload: CampaignCreatePayload,
+  csrfToken: string,
+): Promise<CampaignResponse> {
+  return apiRequest<CampaignResponse>("/api/campaigns", {
+    method: "POST",
     body: payload,
     csrfToken,
   });
-}
-
-export function getCampaigns(): Promise<{ campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[] }> {
-  return apiRequest<{ campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[] }>("/api/campaigns");
-}
-
-export function createCampaign(payload: CampaignCreatePayload, csrfToken: string): Promise<CampaignResponse> {
-  return apiRequest<CampaignResponse>("/api/campaigns", { method: "POST", body: payload, csrfToken });
 }
 
 export interface AttachmentSetResponse {
@@ -225,7 +266,10 @@ export interface AttachmentFileResponse {
   readonly attachmentSet?: AttachmentSetRecord;
 }
 
-export function createAttachmentSet(idempotencyKey: string, csrfToken: string): Promise<AttachmentSetResponse> {
+export function createAttachmentSet(
+  idempotencyKey: string,
+  csrfToken: string,
+): Promise<AttachmentSetResponse> {
   return apiRequest<AttachmentSetResponse>("/api/attachment-sets", {
     method: "POST",
     body: { idempotencyKey },
@@ -233,25 +277,52 @@ export function createAttachmentSet(idempotencyKey: string, csrfToken: string): 
   });
 }
 
-export function uploadAttachmentFile(setId: string, file: File, csrfToken: string): Promise<AttachmentFileResponse> {
+export function uploadAttachmentFile(
+  setId: string,
+  file: File,
+  csrfToken: string,
+): Promise<AttachmentFileResponse> {
   const body = new FormData();
   body.append("file", file, file.name);
-  return apiRequestFormData<AttachmentFileResponse>(`/api/attachment-sets/${encodeURIComponent(setId)}/files`, body, csrfToken);
+  return apiRequest<AttachmentFileResponse>(
+    `/api/attachment-sets/${encodeURIComponent(setId)}/files`,
+    {
+      method: "POST",
+      body,
+      csrfToken,
+      cache: "no-store",
+    },
+  );
 }
 
-export function deleteAttachmentFile(setId: string, fileId: string, csrfToken: string): Promise<void> {
-  return apiRequest<void>(`/api/attachment-sets/${encodeURIComponent(setId)}/files/${encodeURIComponent(fileId)}`, {
-    method: "DELETE",
-    csrfToken,
-  });
+export function deleteAttachmentFile(
+  setId: string,
+  fileId: string,
+  csrfToken: string,
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/attachment-sets/${encodeURIComponent(setId)}/files/${encodeURIComponent(fileId)}`,
+    {
+      method: "DELETE",
+      csrfToken,
+    },
+  );
 }
 
 export function getCampaign(campaignId: string): Promise<CampaignResponse> {
-  return apiRequest<CampaignResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}`);
+  return apiRequest<CampaignResponse>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}`,
+  );
 }
 
-export function getCampaignJobs(campaignId: string, limit = 100, offset = 0): Promise<JobsResponse> {
-  return apiRequest<JobsResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}/jobs?limit=${limit}&offset=${offset}`);
+export function getCampaignJobs(
+  campaignId: string,
+  limit = 100,
+  offset = 0,
+): Promise<JobsResponse> {
+  return apiRequest<JobsResponse>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/jobs?limit=${limit}&offset=${offset}`,
+  );
 }
 
 export function sendCampaignTest(
@@ -268,38 +339,72 @@ export function sendCampaignTest(
   },
   csrfToken: string,
 ): Promise<TestSendResponse> {
-  return apiRequest<TestSendResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}/test-send`, { method: "POST", body: payload, csrfToken });
+  return apiRequest<TestSendResponse>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/test-send`,
+    { method: "POST", body: payload, csrfToken },
+  );
 }
 
-export function startCampaign(campaignId: string, csrfToken: string): Promise<{ campaign: CampaignResponse["campaign"] }> {
-  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(`/api/campaigns/${encodeURIComponent(campaignId)}/start`, {
-    method: "POST",
-    body: { acknowledged: true },
-    csrfToken,
-  });
+export function startCampaign(
+  campaignId: string,
+  csrfToken: string,
+): Promise<{ campaign: CampaignResponse["campaign"] }> {
+  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/start`,
+    {
+      method: "POST",
+      body: { acknowledged: true },
+      csrfToken,
+    },
+  );
 }
 
-export function pauseCampaign(campaignId: string, csrfToken: string): Promise<{ campaign: CampaignResponse["campaign"] }> {
-  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(`/api/campaigns/${encodeURIComponent(campaignId)}/pause`, {
-    method: "POST",
-    body: { reason: "Paused by member" },
-    csrfToken,
-  });
+export function pauseCampaign(
+  campaignId: string,
+  csrfToken: string,
+): Promise<{ campaign: CampaignResponse["campaign"] }> {
+  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/pause`,
+    {
+      method: "POST",
+      body: { reason: "Paused by member" },
+      csrfToken,
+    },
+  );
 }
 
-export function resumeCampaign(campaignId: string, csrfToken: string): Promise<{ campaign: CampaignResponse["campaign"] }> {
-  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(`/api/campaigns/${encodeURIComponent(campaignId)}/resume`, {
-    method: "POST",
-    csrfToken,
-  });
+export function resumeCampaign(
+  campaignId: string,
+  csrfToken: string,
+): Promise<{ campaign: CampaignResponse["campaign"] }> {
+  return apiRequest<{ campaign: CampaignResponse["campaign"] }>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/resume`,
+    {
+      method: "POST",
+      csrfToken,
+    },
+  );
 }
 
-export async function downloadCampaignExport(campaignId: string): Promise<Blob> {
-  const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/export.csv`, { credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) throw new ApiRequestError(response.status, await readError(response), `Request failed with status ${response.status}.`);
+export async function downloadCampaignExport(
+  campaignId: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/export.csv`,
+    { credentials: "same-origin", cache: "no-store" },
+  );
+  if (!response.ok)
+    throw new ApiRequestError(
+      response.status,
+      await readError(response),
+      `Request failed with status ${response.status}.`,
+    );
   return response.blob();
 }
 
 export function logout(csrfToken: string): Promise<{ ok: true }> {
-  return apiRequest<{ ok: true }>("/auth/logout", { method: "POST", csrfToken });
+  return apiRequest<{ ok: true }>("/auth/logout", {
+    method: "POST",
+    csrfToken,
+  });
 }

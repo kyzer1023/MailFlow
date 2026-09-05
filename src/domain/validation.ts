@@ -155,4 +155,3 @@ export function validateRecipientRows(
     duplicateRecipients: [...duplicateRecipients].sort(),
   };
 }
-

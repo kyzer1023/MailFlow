@@ -235,4 +235,3 @@ export function createCampaignPayload(input: CreateCampaignPayloadInput): Campai
     rows,
   };
 }
-

@@ -43,10 +43,7 @@ export function ReviewPage() {
   const [startState, setStartState] = useState<StartState>("idle");
   const [actionError, setActionError] = useState("");
   const actionInFlightRef = useRef<"test" | "start" | null>(null);
-  const fallbackTestRequest = useRef<
-    Parameters<typeof sendCampaignTest>[1] | null
-  >(null);
-  const testRequest = state.testRequest || fallbackTestRequest;
+  const { testRequest } = state;
   const ensureCampaign = useEnsureCampaign();
   const sender =
     user?.mailboxAddress || user?.principalName || "Sender not available";

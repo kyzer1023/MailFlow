@@ -48,8 +48,6 @@ export function displayCampaign(
     notSent: resolvedStatus === "failed"
       ? counts?.pending ?? 0
       : 0,
-    failed: (counts?.failed ?? 0) + (counts?.unknown ?? 0),
-    sent: (counts?.accepted ?? 0) + (counts?.failed ?? 0) + (counts?.unknown ?? 0),
     total: campaign.totalRecipients,
   };
 }

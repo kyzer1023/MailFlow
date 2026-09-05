@@ -57,7 +57,7 @@ export function WizardShell({
                   className="button button--outline"
                   disabled={busy}
                   onClick={() => {
-                    state.restartFromMessage?.();
+                    state.restartFromMessage();
                     navigate("/flows/new/template");
                   }}
                 >

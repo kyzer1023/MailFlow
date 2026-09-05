@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import {
   ApiRequestError,
   createCampaign,
@@ -9,14 +9,11 @@ import {
 import { createCampaignPayload } from "../../client";
 import { useApi } from "../state/api-context";
 import { useDraft } from "../state/draft-context";
-import type { DraftContextValue } from "../state/types";
 
 export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
   const api = useApi();
   const state = useDraft();
-  const fallback =
-    useRef<NonNullable<DraftContextValue["preparation"]>["current"]>(null);
-  const preparation = state.preparation || fallback;
+  const { preparation } = state;
   return useCallback(async () => {
     if (!api.isLive) return null;
     const signature = JSON.stringify([
@@ -58,7 +55,7 @@ export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
     const prepared = preparation.current;
     if (prepared.response) return prepared.response;
     if (prepared.pending) return prepared.pending;
-    state.lockSnapshot?.();
+    state.lockSnapshot();
     prepared.pending = (async () => {
       if (!prepared.flowId) {
         const name = `${(state.draft.name || state.draft.subject).trim().slice(0, 90)} (${state.campaignRequestKey.slice(-12)})`;

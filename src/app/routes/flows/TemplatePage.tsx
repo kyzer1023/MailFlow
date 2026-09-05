@@ -50,16 +50,8 @@ export function TemplatePage({
   readonly standalone?: boolean;
 }) {
   const state = useDraft();
-  const {
-    draft,
-    updateDraft,
-    flowId,
-    mapping,
-    setFlowId,
-    setTemplateVersionId,
-    table,
-    setDraft,
-  } = state;
+  const { draft, updateDraft, flowId, mapping, setFlowId, table, setDraft } =
+    state;
   const { csrfToken, refreshDashboard, config } = useApi();
   const navigate = useNavigate();
   const { flowId: editingFlowId } = useParams();
@@ -118,16 +110,10 @@ export function TemplatePage({
           await updateFlow(flowId, { name }, csrfToken);
           renamed = true;
         }
-        const response = await createTemplateVersion(
-          flowId,
-          payload,
-          csrfToken,
-        );
-        setTemplateVersionId(response.version.id);
+        await createTemplateVersion(flowId, payload, csrfToken);
       } else {
         const response = await createFlow({ name, ...payload }, csrfToken);
         setFlowId(response.flow.id);
-        setTemplateVersionId(response.templateVersion?.id || null);
       }
       updateDraft("name", name);
       setSavedSignature(templateSignature(name));
@@ -147,7 +133,7 @@ export function TemplatePage({
   const useTemplate = (flow: FlowRecord, version: TemplateVersionRecord) => {
     setDraft((current) => applyTemplate(current, flow, version, table));
     setFlowId(flow.id);
-    setTemplateVersionId(version.id);
+
     setSavedNotice("");
     setDialog(null);
   };
@@ -171,7 +157,7 @@ export function TemplatePage({
       importance: "normal",
     }));
     setFlowId(null);
-    setTemplateVersionId(null);
+
     setSavedNotice("");
     setDialog(null);
   };

@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import type { AttachmentFileResponse } from "./api";
 import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaignJobs, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
@@ -297,7 +298,7 @@ describe("authenticated information architecture", () => {
   });
 
   it("persists a renamed flow before returning to the flow library", async () => {
-    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    window.history.replaceState({}, "", "/flows");
     const originalFlow = {
       id: "flow-rename",
       ownerUserId: "user-1",
@@ -327,7 +328,9 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save as template" }));
+    expect(mockedGetFlow).toHaveBeenCalledExactlyOnceWith("flow-rename");
     fireEvent.click(screen.getByRole("radio", { name: /Update Original flow/ }));
     const nameInput = screen.getByLabelText("Template name");
     fireEvent.change(nameInput, { target: { value: "Renamed flow" } });
@@ -850,6 +853,19 @@ describe("campaign attachments", () => {
     expect(await screen.findByText("The file content does not match a supported file format.")).toBeInTheDocument();
     expect(mockedCreateAttachmentSet).not.toHaveBeenCalled();
     expect(mockedUploadAttachmentFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps an incomplete upload response in an error state instead of inventing ready metadata", async () => {
+    mockedUploadAttachmentFile.mockResolvedValueOnce({ file: { originalFilename: "agenda.txt", mediaType: "text/plain", byteSize: 5 } } as AttachmentFileResponse);
+    render(<App />);
+    await openAttachments();
+    await screen.findByRole("button", { name: /Drop files here or choose files/ });
+    const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["hello"], "agenda.txt", { type: "text/plain" })] } });
+    expect(await screen.findByText("The upload response is incomplete. Remove this file and choose it again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry upload agenda.txt" })).toBeEnabled();
+    expect(mockedCreateCampaign).not.toHaveBeenCalled();
   });
 
   it("uploads multiple files, reports invalid files, supports retry, and removes ready files", async () => {

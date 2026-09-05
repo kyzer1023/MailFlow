@@ -71,6 +71,11 @@ const validation = {
 
 function draftValue(): DraftContextValue {
   return {
+    testRequest: { current: null },
+    preparation: { current: null },
+    snapshotLocked: false,
+    lockSnapshot: vi.fn(),
+    restartFromMessage: vi.fn(),
     draft: {
       ...emptyDraft(),
       name: "Review flow",
@@ -102,8 +107,6 @@ function draftValue(): DraftContextValue {
     setTable: vi.fn(),
     flowId: "flow-review",
     setFlowId: vi.fn(),
-    templateVersionId: "template-review",
-    setTemplateVersionId: vi.fn(),
     campaignResponse,
     setCampaignResponse: vi.fn(),
     campaignRequestKey: "campaign-request",
