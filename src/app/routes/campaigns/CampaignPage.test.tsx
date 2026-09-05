@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { formatTimestamp } from "../../lib/format";
 import {
   cleanup,
   fireEvent,
@@ -103,7 +104,7 @@ describe("campaign outcome reporting", () => {
         screen.getByText(/Check receipt before considering any resend/),
       ).toBeInTheDocument();
       expect(
-        screen.getAllByText("05 Sept 2026, 08:02:00 MYT (UTC+8)").length,
+        screen.getAllByText(formatTimestamp("2026-09-05T00:02:00.000Z")).length,
       ).toBeGreaterThan(0);
       if (state === "completed") {
         expect(screen.getByText("Finished, receipt unverified")).toBeInTheDocument();

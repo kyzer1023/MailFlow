@@ -1,3 +1,4 @@
+import { formatSchedulerNotice } from "./lib/format";
 import type {
   CampaignCounts,
   CampaignRecord,
@@ -100,7 +101,7 @@ export class ApiRequestError extends Error {
     body: ApiErrorBody | null,
     fallback = "Mail Flow could not complete that request.",
   ) {
-    super(body?.error?.message || fallback);
+    super(formatSchedulerNotice(body?.error?.message || fallback));
     this.name = "ApiRequestError";
     this.status = status;
     this.code = body?.error?.code || "request_failed";

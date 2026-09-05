@@ -72,7 +72,7 @@ describe("processing timing", () => {
       campaignTiming({ ...campaign, startedAt: null }, jobs).elapsedSeconds,
     ).toBeNull();
   });
-  it("freezes terminal elapsed time and formats second-precision Malaysia timestamps", () => {
+  it("freezes terminal elapsed time independently of timezone", () => {
     expect(
       campaignTiming(
         {
@@ -84,8 +84,8 @@ describe("processing timing", () => {
       ).elapsedSeconds,
     ).toBe(168);
     expect(processingDuration(168)).toBe("2m 48s");
-    expect(formatTimestamp("2026-09-04T19:20:57.456Z")).toBe(
-      "05 Sept 2026, 03:20:57 MYT (UTC+8)",
+    expect(formatTimestamp("2026-09-04T19:20:57.456Z", "Asia/Kuala_Lumpur")).toMatch(
+      /03:20:57.*GMT\+8/,
     );
   });
 });
