@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, apiRequestFormData, archiveFlow, createAttachmentSet, createCampaign, deleteAttachmentFile, pauseCampaign, sendCampaignTest, startCampaign, updateFlow, uploadAttachmentFile } from "./api";
+import { apiRequest, archiveFlow, createAttachmentSet, createCampaign, deleteAttachmentFile, pauseCampaign, sendCampaignTest, startCampaign, updateFlow, uploadAttachmentFile } from "./api";
 import type { CampaignCreatePayload } from "../client/types";
 
 afterEach(() => {
@@ -67,6 +67,7 @@ describe("same-origin API client", () => {
     expect(JSON.parse(String(createOptions?.body))).toEqual({ idempotencyKey: "attachment-request-1" });
     expect((createOptions?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-attachment");
     const uploadOptions = fetchMock.mock.calls[1][1];
+    expect(uploadOptions).toMatchObject({ method: "POST", credentials: "same-origin", cache: "no-store" });
     expect(uploadOptions?.body).toBeInstanceOf(FormData);
     expect((uploadOptions?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-attachment");
     expect((uploadOptions?.headers as Headers).get("Content-Type")).toBeNull();
@@ -74,14 +75,9 @@ describe("same-origin API client", () => {
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "DELETE" });
   });
 
-  it("supports the standalone multipart helper without a JSON content type", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }));
-    vi.stubGlobal("fetch", fetchMock);
-    const form = new FormData();
-    form.append("file", new File(["data"], "note.txt", { type: "text/plain" }));
-    await apiRequestFormData("/api/example", form, "csrf-form");
-    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("Content-Type")).toBeNull();
-    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("X-CSRF-Token")).toBe("csrf-form");
+  it("handles an empty deletion response without trying to parse JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(deleteAttachmentFile("set-1", "file-1", "csrf-delete")).resolves.toBeUndefined();
   });
 
   it("aligns acknowledgement and pause bodies with the Worker routes", async () => {
@@ -152,6 +148,12 @@ describe("same-origin API client", () => {
       code: "invalid_input",
       message: "Review the form.",
       issues: [{ field: "name", message: "Required" }],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Private upstream failure details", { status: 502 })));
+    await expect(uploadAttachmentFile("set-1", new File(["note"], "note.txt"), "csrf-upload")).rejects.toMatchObject({
+      status: 502,
+      code: "request_failed",
+      message: "Request failed with status 502.",
     });
   });
 });

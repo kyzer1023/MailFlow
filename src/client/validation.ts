@@ -1,7 +1,8 @@
-import { isValidEmail } from "../domain/validation";
-export { isValidEmail } from "../domain/validation";
+import { extractPlaceholders, isValidEmail, normalizeEmail } from "../domain/validation";
+export { extractPlaceholders, isValidEmail, normalizeEmail } from "../domain/validation";
 import {
   DEFAULT_PACE_PER_MINUTE,
+  addressSeparatorPattern,
   estimateCampaignDurationSeconds,
   validatePacePerMinute,
 } from "../domain/pacing";
@@ -16,8 +17,6 @@ import type {
 } from "./types";
 
 export const DEFAULT_CLIENT_CAMPAIGN_LIMIT = 300;
-
-const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
 
 export type AddressValue = string | readonly string[] | null | undefined;
 
@@ -43,31 +42,11 @@ export interface ClientCampaignValidationInput {
   readonly mappingIssues?: readonly MappingIssue[];
 }
 
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-
-
-function splitPattern(separator: AddressSeparator): RegExp {
-  switch (separator) {
-    case "semicolon":
-      return /;/u;
-    case "newline":
-      return /\r?\n/u;
-    case "comma":
-      return /,/u;
-    case "auto":
-    default:
-      return /[,;\r\n]+/u;
-  }
-}
-
 /** Parse a cell containing one or more addresses using the chosen separator. */
 export function parseEmailList(value: AddressValue, separator: AddressSeparator = "auto"): ParsedAddressList {
   if (value === null || value === undefined) return { addresses: [], invalidParts: [] };
   const values = Array.isArray(value) ? value : [value];
-  const parts = values.flatMap((part) => String(part).split(splitPattern(separator)));
+  const parts = values.flatMap((part) => String(part).split(addressSeparatorPattern(separator)));
   const addresses: string[] = [];
   const invalidParts: string[] = [];
   for (const part of parts) {
@@ -95,23 +74,10 @@ export function validateAddressList(
   if (supplied && parsed.addresses.length === 0 && parsed.invalidParts.length === 0) {
     issues.push({ code: "malformed_address", field, row, message: `${field} contains no valid email address.` });
   }
-  for (const invalidPart of parsed.invalidParts) {
+  for (let index = 0; index < parsed.invalidParts.length; index += 1) {
     issues.push({ code: "malformed_address", field, row, message: `${field} contains an invalid email address.` });
-    // One issue per cell is enough for the UI. Keep the parsed part only in
-    // the internal result to avoid exposing potentially sensitive content.
-    void invalidPart;
   }
   return { addresses: parsed.addresses, issues };
-}
-
-/** Extract unique, valid placeholders from subject and body templates. */
-export function extractPlaceholders(subjectTemplate: string, bodyHtml: string): readonly string[] {
-  const placeholders = new Set<string>();
-  for (const source of [subjectTemplate, bodyHtml]) {
-    PLACEHOLDER_PATTERN.lastIndex = 0;
-    for (const match of source.matchAll(PLACEHOLDER_PATTERN)) placeholders.add(match[1]);
-  }
-  return [...placeholders].sort((left, right) => left.localeCompare(right));
 }
 
 function normalizedMergeData(row: MappedRecipientRow): Readonly<Record<string, string>> {
@@ -288,6 +254,3 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
       : 0,
   };
 }
-
-/** Alias used by UI view-models. */
-export const validateCampaignData = validateClientCampaign;

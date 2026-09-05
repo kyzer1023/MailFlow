@@ -1,0 +1,239 @@
+/* Attachment selection, upload states and review metadata. */
+.attachment-picker {
+  display: grid;
+  gap: 0.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.2rem;
+}
+.attachment-picker__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.attachment-picker__heading h2 {
+  margin: 0.28rem 0 0.25rem;
+  font-size: 1.05rem;
+}
+.attachment-picker__heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.attachment-picker__heading > svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  color: var(--moss);
+}
+.attachment-dropzone {
+  min-height: 100px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 1.1rem;
+  border: 1px dashed #9eaea2;
+  border-radius: 10px;
+  background: #f7f8f3;
+  color: var(--moss-dark);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.attachment-dropzone:hover,
+.attachment-dropzone:focus-visible,
+.attachment-dropzone--dragging {
+  border-color: var(--moss);
+  background: #edf3ee;
+  box-shadow: 0 0 0 3px rgba(81, 106, 89, 0.12);
+}
+.attachment-dropzone--locked {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+.attachment-dropzone--locked:hover,
+.attachment-dropzone--locked:focus-visible {
+  border-color: #9eaea2;
+  background: #f7f8f3;
+  box-shadow: none;
+}
+.attachment-dropzone > svg {
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 auto;
+  color: var(--moss);
+}
+.attachment-dropzone > span {
+  display: grid;
+  gap: 0.25rem;
+}
+.attachment-dropzone strong {
+  font-size: 0.8rem;
+}
+.attachment-dropzone small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+.attachment-picker__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+.attachment-picker__limits {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  color: var(--muted);
+  font: 650 0.66rem/1.3 var(--font-mono);
+}
+.attachment-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+}
+.attachment-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.62rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+}
+.attachment-item--error {
+  border-color: #efb5a9;
+  background: #fff7f4;
+}
+.attachment-item__icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--mist);
+  color: var(--moss-dark);
+}
+.attachment-item--error .attachment-item__icon {
+  background: #f8ddd7;
+  color: var(--danger);
+}
+.attachment-item__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.attachment-item__body {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.attachment-item__body strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+.attachment-item__body small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+.attachment-item__status {
+  font-weight: 750;
+}
+.attachment-item__status--uploading {
+  color: var(--coral-text);
+}
+.attachment-item__status--ready {
+  color: var(--moss-dark);
+}
+.attachment-item__status--error {
+  color: var(--danger);
+}
+.attachment-item__error {
+  color: var(--danger);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+.attachment-item__actions {
+  min-width: 58px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  color: var(--muted);
+}
+.attachment-item__actions > .spin {
+  width: 1rem;
+  height: 1rem;
+  color: var(--coral-text);
+}
+.attachment-action {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.attachment-action:hover:not(:disabled) {
+  background: #edf0ed;
+  color: var(--ink);
+}
+.attachment-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.attachment-action svg {
+  width: 1rem;
+  height: 1rem;
+}
+.attachment-lock-note,
+.attachment-live-status {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--moss-dark);
+  font-size: 0.69rem;
+  line-height: 1.4;
+}
+.attachment-lock-note svg,
+.attachment-live-status svg {
+  width: 1rem;
+  height: 1rem;
+}
+.attachment-live-status--error {
+  color: var(--danger);
+}
+@media (max-width: 680px) {
+  .attachment-dropzone {
+    justify-content: flex-start;
+    text-align: left;
+  }
+  .attachment-picker__limits {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+}

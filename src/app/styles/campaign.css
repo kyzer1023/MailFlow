@@ -1,231 +1,303 @@
-/* Campaign monitor responsive corrections.
-   The base campaign surface lives in the product stylesheet. These rules keep
-   every status discoverable when the workspace becomes narrower than the
-   desktop reference. */
-
-.campaign-page {
-  min-width: 0;
-  max-width: 100%;
+/* Campaign progress, results and recovery details. */
+.campaign-header {
+  align-items: flex-start;
+  margin-bottom: 18px;
 }
-
-.campaign-page .route-summary,
-.campaign-page .route-counts,
-.campaign-page .jobs-panel,
-.campaign-page .campaign-lower {
-  min-width: 0;
-  max-width: 100%;
+.campaign-header h1 {
+  margin-top: 0.5rem;
+  font-size: clamp(2.15rem, 2.9vw, 3.15rem);
 }
-
-.campaign-page .route-counts {
-  scrollbar-color: var(--moss) var(--paper-deep);
-  scrollbar-width: thin;
+.campaign-header > div:first-child {
+  max-width: 1120px;
 }
-
-.campaign-page .route-counts:focus-visible {
-  outline: 3px solid var(--coral);
-  outline-offset: 3px;
+.campaign-identity {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: var(--space-campaign-identity-gap);
+  align-items: center;
+  margin-bottom: var(--space-campaign-identity-bottom);
 }
-
-.campaign-page .jobs-panel .table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  overscroll-behavior-inline: contain;
-  scrollbar-color: var(--moss) var(--paper-deep);
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+.campaign-identity h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1.08rem;
 }
-
-.campaign-page .jobs-panel table {
-  min-width: 820px;
+.campaign-identity code {
+  color: var(--muted);
+  font: 0.74rem var(--font-mono);
 }
-
-.campaign-page .jobs-panel th:first-child,
-.campaign-page .jobs-panel td:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 2;
+.route-summary {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.route-counts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  padding: 16px 24px;
   background: var(--paper-bright);
-  box-shadow: 7px 0 0 -6px var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
 }
-
-.campaign-page .jobs-panel thead th:first-child {
-  z-index: 3;
+.count {
+  text-align: center;
+  position: relative;
 }
-
-.campaign-page .jobs-panel {
-  display: flex;
-  flex-direction: column;
+.count:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: calc(50% + 25px);
+  right: calc(-50% + 25px);
+  border-top: 1px dashed #aab1ab;
 }
-
-.campaign-page .jobs-panel .table-footer {
-  margin-top: auto;
+.count > span {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 0.4rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e9e8e2;
+  color: #66716b;
+  position: relative;
+  z-index: 1;
 }
-
-.campaign-page .table-pagination {
+.count--sending > span {
+  background: var(--coral);
+  color: white;
+  box-shadow: 0 0 0 5px #f8ddd6;
+}
+.count--accepted > span {
+  background: var(--moss);
+  color: white;
+}
+.count--failed > span {
+  background: #f3d9d4;
+  color: var(--danger);
+}
+.count--recipient-failed > span,
+.count--unknown > span,
+.count--not-sent > span {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.count strong,
+.count small {
+  display: block;
+}
+.count strong {
+  font-size: 1.18rem;
+}
+.count small {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.progress-meta {
+  margin-top: 0.7rem;
   display: flex;
   align-items: center;
-  gap: .45rem;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.progress-meta strong {
   color: var(--ink);
 }
-
-.campaign-page .table-pagination > span {
-  min-width: 5.8rem;
-  text-align: center;
-  font: 650 .68rem var(--font-mono);
+.progress-track {
+  height: 7px;
+  margin-top: 0.55rem;
+  border-radius: 99px;
+  background: #deded8;
+  overflow: hidden;
 }
-
-.campaign-page .table-pagination .button {
-  width: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0;
+.progress-track i {
+  display: block;
+  height: 100%;
+  background: var(--moss);
+  border-radius: inherit;
+  transition: width 0.3s ease;
 }
-
-@media (min-width: 1181px) {
-  .campaign-page .campaign-lower {
-    align-items: stretch;
-  }
+.campaign-lower {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(290px, 0.78fr);
+  gap: 20px;
+  align-items: start;
 }
-
-/* The desktop receipt artwork is intentionally removed before the narrow
-   workspace has to stack the monitor columns. Keeping the facts on a solid
-   Paper surface prevents the transparent artwork from obscuring them. */
+.jobs-panel {
+  padding: 19px 0 10px;
+  overflow: hidden;
+}
+.jobs-panel > .section-heading {
+  padding: 0 20px 12px;
+}
+.jobs-panel .table-wrap {
+  overflow-x: auto;
+}
+.jobs-panel table {
+  min-width: 820px;
+}
+.campaign-aside {
+  display: grid;
+  gap: 20px;
+}
+.recovery-card {
+  padding: 14px 18px;
+}
+.recovery-card .route-dot {
+  width: 34px;
+  height: 34px;
+}
+.recovery-card h2 {
+  margin: 0.65rem 0 0.35rem;
+  font-size: 1.04rem;
+}
+.recovery-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.recovery-card > strong {
+  display: block;
+  margin: 0.35rem 0 0.8rem;
+  color: var(--moss-dark);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.recovery-card--failed > strong {
+  color: var(--danger-ink);
+}
+.campaign-reconnect {
+  align-items: center;
+}
+.campaign-reconnect > span {
+  flex: 1 1 320px;
+}
+.campaign-reconnect .button {
+  flex: 0 0 auto;
+}
+.campaign-details {
+  padding: 20px;
+}
+.campaign-details h2 {
+  margin: 0.35rem 0 0;
+  font-size: 1.05rem;
+}
+.campaign-details dl {
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.campaign-details dl > div {
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+.campaign-details dl > div:last-child {
+  border-bottom: 0;
+}
+.campaign-details dt {
+  color: var(--muted);
+  font: 650 0.62rem/1.2 var(--font-mono);
+  text-transform: uppercase;
+}
+.campaign-details dd {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.campaign-details dd:has(.button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.campaign-details dd:has(.button) code {
+  min-width: 0;
+}
+.campaign-details dd:has(.button) .button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 @media (max-width: 1180px) {
-  .campaign-page .audit-card {
-    min-height: 0;
-    overflow: visible;
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    background: var(--paper-bright);
-  }
-
-  .campaign-page .audit-card > img {
-    display: none;
-  }
-
-  .campaign-page .audit-copy {
-    position: static;
-    inset: auto;
-    padding: 20px 22px 22px;
-    transform: none;
-  }
-}
-
-/* At this width the six checkpoints are a readable two-row summary. This is
-   deliberately preferred to clipping the final states behind a scroll edge. */
-@media (max-width: 900px) {
-  .campaign-page .route-counts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 15px 8px;
-    overflow-x: visible;
-    padding: 16px 14px 14px;
-  }
-
-  .campaign-page .route-counts .count {
-    min-width: 0;
-  }
-
-  .campaign-page .route-counts .count::after {
-    display: none;
-  }
-
-  .campaign-page .campaign-aside {
+  .campaign-lower {
     grid-template-columns: 1fr;
   }
-
+  .campaign-aside {
+    grid-template-columns: 1fr 1fr;
+  }
 }
-
+@media (max-width: 900px) {
+  .campaign-aside {
+    grid-template-columns: 1fr;
+  }
+  .route-counts {
+    overflow-x: auto;
+    grid-template-columns: repeat(6, 130px);
+    padding-bottom: 0.5rem;
+  }
+}
 @media (max-width: 680px) {
-  .campaign-page {
-    overflow-x: clip;
+  .campaign-header .header-actions {
+    position: sticky;
+    top: 6px;
+    z-index: 5;
+    background: var(--paper);
+    padding: 6px 0;
   }
-
-  .campaign-page .campaign-header .header-actions {
-    width: 100%;
-    align-items: stretch;
+  .campaign-identity {
+    grid-template-columns: 42px minmax(0, 1fr);
   }
-
-  .campaign-page .campaign-header .header-actions .button {
-    width: 100%;
+  .campaign-identity .status {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
-
-  .campaign-page .route-summary {
-    padding-inline: 0;
+  .route-summary {
+    padding-inline: 12px;
   }
-
-  .campaign-page .route-counts {
-    width: 100%;
-    gap: 13px 4px;
-    padding: 15px 8px 13px;
-  }
-
-  .campaign-page .route-counts .count > span {
-    width: 40px;
-    height: 40px;
-    margin-bottom: .3rem;
-  }
-
-  .campaign-page .route-counts .count strong {
-    font-size: 1.05rem;
-  }
-
-  .campaign-page .route-counts .count small {
-    font-size: .64rem;
-  }
-
-  .campaign-page .progress-meta {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: .25rem .65rem;
-    line-height: 1.35;
-  }
-
-  .campaign-page .progress-meta span {
-    flex: 1 1 240px;
-  }
-
-  .campaign-page .jobs-panel > .section-heading {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: .75rem;
-  }
-
-  .campaign-page .jobs-panel > .section-heading > .button {
-    margin-left: auto;
-  }
-
-  .campaign-page .jobs-panel table {
-    min-width: 760px;
-  }
-
-  .campaign-page .jobs-panel th:first-child,
-  .campaign-page .jobs-panel td:first-child {
-    min-width: 132px;
-  }
-
-  .campaign-page .table-footer {
-    align-items: flex-start;
-    gap: .75rem;
-    flex-wrap: wrap;
-  }
-
-  .campaign-page .table-pagination {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .campaign-page .audit-copy {
-    padding: 18px 18px 20px;
-  }
-
-  .campaign-page .audit-copy dl {
-    gap: .8rem;
+  .campaign-lower {
+    gap: 12px;
   }
 }
+@media (min-width: 1181px) and (max-height: 950px) {
+  .campaign-header {
+    margin-bottom: 10px;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .campaign-page .jobs-panel .table-wrap {
-    scroll-behavior: auto;
+  .campaign-header h1 {
+    margin-top: 0.25rem;
+    font-size: clamp(2rem, 2.45vw, 2.7rem);
+  }
+
+  .campaign-identity {
+    margin-bottom: 10px;
+  }
+
+  .route-counts {
+    padding-block: 10px;
+  }
+
+  .count > span {
+    width: 38px;
+    height: 38px;
+    margin-bottom: 0.25rem;
+  }
+
+  .count:not(:last-child)::after {
+    top: 18px;
+  }
+
+  .campaign-lower {
+    margin-top: 10px;
+    gap: 14px;
+  }
+
+  .jobs-panel {
+    padding-top: 12px;
+  }
+
+  .jobs-panel > .section-heading {
+    padding-bottom: 8px;
   }
 }

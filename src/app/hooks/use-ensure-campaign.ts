@@ -1,62 +1,105 @@
 import { useCallback } from "react";
 import {
-  createCampaign as createCampaignRequest,
-  createFlow as createFlowRequest,
-  createTemplateVersion as createTemplateVersionRequest,
+  ApiRequestError,
+  createCampaign,
+  createFlow,
+  getFlows,
+  type CampaignResponse,
 } from "../api";
-import type { CampaignResponse } from "../api";
-import { createCampaignPayload, mappingToRecipientConfiguration } from "../../client";
+import { createCampaignPayload } from "../../client";
 import { useApi } from "../state/api-context";
 import { useDraft } from "../state/draft-context";
 
 export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
-  const api = useApi(); const draftState = useDraft();
+  const api = useApi();
+  const state = useDraft();
+  const { preparation } = state;
   return useCallback(async () => {
     if (!api.isLive) return null;
-    if (draftState.campaignResponse) return draftState.campaignResponse;
-    if (!draftState.attachmentsReady) throw new Error("Finish uploading attachments or remove attachment errors before continuing.");
-    const attachmentSetId = draftState.attachments.length > 0 ? draftState.attachmentSetId : null;
-    if (draftState.attachments.length > 0 && !attachmentSetId) throw new Error("The attachment set is not ready. Upload the files again before continuing.");
-    if (!draftState.table || !draftState.campaignValidation) throw new Error("Import and validate a recipient file before creating the campaign.");
-    if (!draftState.campaignValidation.ok) throw new Error("Review and fix the flagged rows before starting the campaign.");
-    let currentFlowId = draftState.flowId;
-    if (!currentFlowId) {
-      const flowResponse = await createFlowRequest({ name: draftState.draft.name }, api.csrfToken);
-      currentFlowId = flowResponse.flow.id;
-      draftState.setFlowId(currentFlowId);
+    const signature = JSON.stringify([
+      state.draft,
+      state.table,
+      state.skipInvalidRows,
+      state.attachmentSetId,
+      state.attachments,
+      state.config.defaultPacePerMinute,
+    ]);
+    if (preparation.current && preparation.current.signature !== signature) {
+      throw new Error(
+        "This send changed after preparation. Start a new send from this message and review it again.",
+      );
     }
-    // Save the final mapping and body as a new immutable version at campaign
-    // creation time. A draft saved before the workbook was selected may have
-    // used a placeholder column, so reusing it could make the server reject a
-    // valid campaign as changed.
-    let currentVersionId: string | null = null;
-    const recipientConfiguration = mappingToRecipientConfiguration(draftState.mapping);
-    if (!currentVersionId) {
-      const versionResponse = await createTemplateVersionRequest(currentFlowId, {
-        subjectTemplate: draftState.draft.subject,
-        bodyHtml: draftState.campaignValidation.sanitizedBodyHtml,
-        placeholderManifest: draftState.campaignValidation.placeholders,
-        recipientConfiguration,
-      }, api.csrfToken);
-      currentVersionId = versionResponse.version.id;
-      draftState.setTemplateVersionId(currentVersionId);
-    }
-    const payload = createCampaignPayload({
-      idempotencyKey: draftState.campaignRequestKey,
-      attachmentSetId,
-      flowId: currentFlowId,
-      templateVersionId: currentVersionId,
-      sourceFilename: draftState.draft.fileName,
-      subjectTemplate: draftState.draft.subject,
-      bodyHtml: draftState.bodyHtml,
-      mapping: draftState.mapping,
-      pacePerMinute: draftState.draft.pace,
-      rows: draftState.mappedRows,
-      validation: draftState.campaignValidation,
+    if (state.campaignResponse) return state.campaignResponse;
+    if (!state.attachmentsReady)
+      throw new Error(
+        "Finish uploading attachments or remove attachment errors before continuing.",
+      );
+    if (!state.table || !state.campaignValidation?.ok)
+      throw new Error(
+        "Resolve the message and recipient issues before continuing.",
+      );
+    const attachmentSetId = state.attachments.length
+      ? state.attachmentSetId
+      : null;
+    if (state.attachments.length && !attachmentSetId)
+      throw new Error(
+        "The attachment set is not ready. Choose the files again.",
+      );
+    if (!preparation.current)
+      preparation.current = {
+        signature,
+        flowId: state.flowId,
+        response: null,
+        pending: null,
+      };
+    const prepared = preparation.current;
+    if (prepared.response) return prepared.response;
+    if (prepared.pending) return prepared.pending;
+    state.lockSnapshot();
+    prepared.pending = (async () => {
+      if (!prepared.flowId) {
+        const name = `${(state.draft.name || state.draft.subject).trim().slice(0, 90)} (${state.campaignRequestKey.slice(-12)})`;
+        try {
+          const response = await createFlow({ name }, api.csrfToken);
+          prepared.flowId = response.flow.id;
+        } catch (error) {
+          if (
+            !(error instanceof ApiRequestError) ||
+            error.code !== "flow_name_conflict"
+          )
+            throw error;
+          const existing = (await getFlows()).flows.find(
+            (flow) =>
+              flow.name === name &&
+              flow.state === "active" &&
+              !flow.currentTemplateVersionId,
+          );
+          if (!existing) throw error;
+          prepared.flowId = existing.id;
+        }
+      }
+      // An exact retry must keep its payload, never create a new version ID.
+      const payload = createCampaignPayload({
+        idempotencyKey: state.campaignRequestKey,
+        attachmentSetId,
+        flowId: prepared.flowId,
+        templateVersionId: null,
+        sourceFilename: state.draft.fileName,
+        subjectTemplate: state.draft.subject,
+        bodyHtml: state.bodyHtml,
+        mapping: state.mapping,
+        pacePerMinute: state.config.defaultPacePerMinute,
+        rows: state.mappedRows,
+        validation: state.campaignValidation!,
+      });
+      const response = await createCampaign(payload, api.csrfToken);
+      prepared.response = response;
+      if (preparation.current === prepared) state.setCampaignResponse(response);
+      void api.refreshDashboard();
+      return response;
+    })().finally(() => {
+      prepared.pending = null;
     });
-    const response = await createCampaignRequest(payload, api.csrfToken);
-    draftState.setCampaignResponse(response);
-    void api.refreshDashboard();
-    return response;
-  }, [api, draftState]);
+    return prepared.pending;
+  }, [api, state, preparation]);
 }

@@ -1,8 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import type { AttachmentFileResponse } from "./api";
 import { ApiRequestError, archiveFlow, createAttachmentSet, createCampaign, createFlow, createTemplateVersion, deleteAttachmentFile, getCampaign, getCampaignJobs, getCampaigns, getFlow, getFlows, getMe, logout, sendCampaignTest, updateFlow, uploadAttachmentFile } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
@@ -44,6 +46,19 @@ const mockedLogout = vi.mocked(logout);
 const mockedSendCampaignTest = vi.mocked(sendCampaignTest);
 const mockedUpdateFlow = vi.mocked(updateFlow);
 const mockedUploadAttachmentFile = vi.mocked(uploadAttachmentFile);
+
+async function importRecipients() {
+  const input = await screen.findByLabelText("Recipient spreadsheet");
+  fireEvent.change(input, { target: { files: [new File(["Email\nmember@example.test\n"], "members.csv", { type: "text/csv" })] } });
+  await waitFor(() => expect(screen.getByRole("button", { name: /Continue to message/ })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: /Continue to message/ }));
+  await screen.findByRole("heading", { name: "What would you like to say?" });
+}
+
+async function openAttachments() {
+  await importRecipients();
+  fireEvent.click(screen.getByText("Attachments", { selector: "summary" }));
+}
 
 describe("landing actions", () => {
   beforeEach(() => {
@@ -201,16 +216,16 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Your reusable flows." })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/dashboard");
-    expect(screen.getByRole("link", { name: "Flows" })).toHaveAttribute("href", "/flows");
-    expect(screen.getByRole("link", { name: "Campaigns" })).toHaveAttribute("href", "/campaigns");
+    expect(await screen.findByRole("heading", { name: "Saved templates" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Saved templates" })).toHaveAttribute("href", "/flows");
+    expect(screen.getByRole("link", { name: "Send history" })).toHaveAttribute("href", "/campaigns");
     expect(screen.queryByRole("link", { name: "Recipients" })).not.toBeInTheDocument();
     expect(screen.getByText("For student societies")).toBeInTheDocument();
     expect(screen.queryByText("USM Debate Society")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
     expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
-    expect(screen.getByText("No flows yet")).toBeInTheDocument();
+    expect(screen.getByText("No templates yet")).toBeInTheDocument();
     expect(screen.getByText(/Need help\? Contact us at/)).toBeInTheDocument();
   });
 
@@ -219,11 +234,11 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Bring in the recipient data." })).toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Step 1 of 4" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Data" })).toHaveAttribute("aria-current", "step");
-    expect(screen.getByText(/No sample recipients are preloaded\./)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Continue to template/ })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "Who are you writing to?" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Step 1 of 3" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Recipients" })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText(/Your spreadsheet is read in this browser/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Continue to message/ })).toBeDisabled();
     expect(screen.queryByText("recipients.xlsx")).not.toBeInTheDocument();
     expect(screen.queryByText("Alex Tan")).not.toBeInTheDocument();
   });
@@ -246,7 +261,7 @@ describe("authenticated information architecture", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Old flow" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: /^Flows$/ }));
+    fireEvent.click(screen.getByRole("link", { name: /^Saved templates$/ }));
 
     expect(await screen.findByRole("heading", { name: "Fresh route flow" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Old flow" })).not.toBeInTheDocument();
@@ -274,7 +289,7 @@ describe("authenticated information architecture", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /Good afternoon/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: /^Flows$/ }));
+    fireEvent.click(screen.getByRole("link", { name: /^Saved templates$/ }));
     expect(await screen.findByRole("heading", { name: "Newest flow" })).toBeInTheDocument();
 
     await act(async () => { resolveOlderRequest({ flows: [staleFlow] }); });
@@ -284,7 +299,7 @@ describe("authenticated information architecture", () => {
   });
 
   it("persists a renamed flow before returning to the flow library", async () => {
-    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    window.history.replaceState({}, "", "/flows");
     const originalFlow = {
       id: "flow-rename",
       ownerUserId: "user-1",
@@ -314,12 +329,29 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    const nameInput = await screen.findByLabelText("Flow name");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save as template" }));
+    expect(mockedGetFlow).toHaveBeenCalledExactlyOnceWith("flow-rename");
+    fireEvent.click(screen.getByRole("radio", { name: /Update Original flow/ }));
+    const nameInput = screen.getByLabelText("Template name");
     fireEvent.change(nameInput, { target: { value: "Renamed flow" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update template" }));
 
     await waitFor(() => expect(mockedUpdateFlow).toHaveBeenCalledWith("flow-rename", { name: "Renamed flow" }, "test-csrf-token"));
     expect(mockedCreateTemplateVersion).toHaveBeenCalled();
+    expect(await screen.findByRole("status")).toHaveTextContent("Renamed flow");
+    expect(screen.getByRole("button", { name: "Template saved" })).toBeEnabled();
+    expect(screen.queryByLabelText("Messages per minute")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Separate multiple addresses with")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Sending options", { exact: false }));
+    fireEvent.paste(screen.getByRole("textbox", { name: "CC" }), { clipboardData: { getData: () => "one@example.test,two@example.test;three@example.test\nfour@example.test" } });
+    for (const address of ["one", "two", "three", "four"]) {
+      expect(screen.getByRole("button", { name: `Remove ${address}@example.test` })).toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText("Importance"), { target: { value: "high" } });
+    expect(screen.getByRole("button", { name: "Save as template" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Template saved" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
     expect(await screen.findByRole("heading", { name: "Renamed flow" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Original flow" })).not.toBeInTheDocument();
   });
@@ -354,13 +386,16 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    const nameInput = await screen.findByLabelText("Flow name");
+    fireEvent.click(await screen.findByRole("button", { name: "Save as template" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Update Original flow/ }));
+    const nameInput = screen.getByLabelText("Template name");
     fireEvent.change(nameInput, { target: { value: "Existing flow" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update template" }));
 
     expect(await screen.findByText("Choose a different flow name. Flow names must be unique.")).toBeInTheDocument();
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
     expect(mockedCreateTemplateVersion).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Template saved" })).not.toBeInTheDocument();
     expect(screen.queryByText("Changes were not fully saved.")).not.toBeInTheDocument();
   });
 
@@ -412,7 +447,9 @@ describe("authenticated information architecture", () => {
     expect(cleanedVisualEditor.querySelector("script")).toBeNull();
     expect(cleanedVisualEditor.querySelector("td")?.style.border).toContain("1px solid");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save as template" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Update Invitation flow/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Update template" }));
     await waitFor(() => expect(mockedCreateTemplateVersion).toHaveBeenCalled());
     const savedPayload = mockedCreateTemplateVersion.mock.calls.at(-1)?.[1];
     expect(savedPayload?.bodyHtml).toContain("border:");
@@ -488,7 +525,7 @@ describe("authenticated information architecture", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm remove Annual invitation" }));
 
     await waitFor(() => expect(mockedArchiveFlow).toHaveBeenCalledWith("flow-archive", "test-csrf-token"));
-    expect(await screen.findByText("No flows yet")).toBeInTheDocument();
+    expect(await screen.findByText("No templates yet")).toBeInTheDocument();
   });
 
   it("labels campaign history with the reusable flow name", async () => {
@@ -770,7 +807,7 @@ describe("authenticated information architecture", () => {
 describe("campaign attachments", () => {
   beforeEach(() => {
     vi.stubGlobal("React", React);
-    window.history.replaceState({}, "", "/flows/new/recipients");
+    window.history.replaceState({}, "", "/flows/new/data");
     mockedGetMe.mockResolvedValue({
       user: {
         id: "user-1",
@@ -810,12 +847,26 @@ describe("campaign attachments", () => {
 
   it("rejects signature mismatches before creating an attachment set or uploading", async () => {
     render(<App />);
+    await openAttachments();
     await screen.findByRole("button", { name: /Drop files here or choose files/ });
     const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File(["plain text"], "fake.pdf", { type: "application/pdf" })] } });
     expect(await screen.findByText("The file content does not match a supported file format.")).toBeInTheDocument();
     expect(mockedCreateAttachmentSet).not.toHaveBeenCalled();
     expect(mockedUploadAttachmentFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps an incomplete upload response in an error state instead of inventing ready metadata", async () => {
+    mockedUploadAttachmentFile.mockResolvedValueOnce({ file: { originalFilename: "agenda.txt", mediaType: "text/plain", byteSize: 5 } } as AttachmentFileResponse);
+    render(<App />);
+    await openAttachments();
+    await screen.findByRole("button", { name: /Drop files here or choose files/ });
+    const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["hello"], "agenda.txt", { type: "text/plain" })] } });
+    expect(await screen.findByText("The upload response is incomplete. Remove this file and choose it again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry upload agenda.txt" })).toBeEnabled();
+    expect(mockedCreateCampaign).not.toHaveBeenCalled();
   });
 
   it("uploads multiple files, reports invalid files, supports retry, and removes ready files", async () => {
@@ -834,6 +885,7 @@ describe("campaign attachments", () => {
     });
     render(<App />);
 
+    await openAttachments();
     expect(await screen.findByRole("button", { name: /Drop files here or choose files/ })).toBeInTheDocument();
     const input = document.getElementById("campaign-attachments-input") as HTMLInputElement;
     const agenda = new File(["%PDF-1.7\nagenda"], "agenda.pdf", { type: "application/pdf" });
@@ -889,8 +941,9 @@ describe("campaign attachments", () => {
 
     render(<App />);
 
+    await openAttachments();
     const connect = await screen.findByRole("link", { name: "Connect OneDrive" });
-    expect(connect).toHaveAttribute("href", "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Frecipients");
+    expect(connect).toHaveAttribute("href", "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Ftemplate");
     expect(screen.queryByRole("button", { name: /Drop files here or choose files/ })).not.toBeInTheDocument();
   });
 
@@ -939,17 +992,14 @@ describe("campaign attachments", () => {
     mockedSendCampaignTest.mockResolvedValue({ result: { status: "accepted", userMessage: "Accepted by Microsoft", senderAddress: "amina@student.example", recipientAddress: "amina@student.example", graphStatus: 202 } });
 
     render(<App />);
-    const dataInput = await screen.findByLabelText("Choose file");
-    fireEvent.change(dataInput, { target: { files: [new File(["Email\nmember@example.test\n"], "members.csv", { type: "text/csv" })] } });
-    fireEvent.click(await screen.findByRole("button", { name: /Continue to template/ }));
-    const flowName = await screen.findByLabelText("Flow name");
-    fireEvent.change(flowName, { target: { value: "Attachment flow" } });
-    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Hello" } });
+    await importRecipients();
+    const subject = screen.getByRole("textbox", { name: "Subject" });
+    subject.textContent = "Hello";
+    fireEvent.input(subject);
     const body = screen.getByRole("textbox", { name: "Message body" });
     body.innerHTML = "<p>Hello</p>";
     fireEvent.input(body);
-    fireEvent.click(screen.getByRole("button", { name: /Continue to recipients/ }));
-    expect(await screen.findByRole("heading", { name: "Set the sending rules." })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Attachments", { selector: "summary" }));
     const attachmentInput = document.getElementById("campaign-attachments-input") as HTMLInputElement;
     fireEvent.change(attachmentInput, { target: { files: [new File(["%PDF-1.7\nagenda"], "agenda.pdf", { type: "application/pdf" })] } });
     await waitFor(() => expect(screen.getByText("Ready")).toBeInTheDocument());
@@ -976,5 +1026,79 @@ describe("campaign attachments", () => {
     expect(await screen.findByText("Attachments are locked for this campaign.")).toBeInTheDocument();
     expect(document.getElementById("campaign-attachments-input")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Remove agenda.pdf" })).not.toBeInTheDocument();
+  });
+
+  it("previews only the selected template and resolves missing values without replacing recipients", async () => {
+    const flow = { id: "reusable", ownerUserId: "user-1", societyName: null, name: "Workshop", currentTemplateVersionId: "v1", state: "active" as const, createdAt: "2026-09-05", updatedAt: "2026-09-05" };
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+    mockedGetFlow.mockResolvedValue({ flow, templateVersion: { id: "v1", flowId: flow.id, version: 1, createdAt: "2026-09-05", subjectTemplate: "Welcome {{name}}", bodyHtml: "<p>{{name}}, meet at {{venue}}.</p>", placeholderManifest: ["name", "venue"], recipientConfiguration: { toField: "old_email", ccField: null, bccField: null, replyToField: null, separator: "auto" } } });
+    window.history.replaceState({}, "", "/flows/new/data");
+    render(<App />);
+    const input = await screen.findByLabelText("Recipient spreadsheet");
+    fireEvent.change(input, { target: { files: [new File(["Email,Full name\nmember@example.test,Member\n"], "current-members.csv", { type: "text/csv" })] } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Continue to message/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Continue to message/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose a saved template" }));
+    expect(mockedGetFlow).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: /^Workshop/ }));
+    await screen.findByText("Suggested: Full name");
+    expect(screen.getByText("Not in this file")).toBeInTheDocument();
+    expect(mockedGetFlow).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Use this template" }));
+    expect(await screen.findByText("current-members.csv")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Continue to review/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Use Full name" }));
+    expect(screen.getByLabelText("Column for Name")).toHaveValue("full_name");
+    expect(screen.getByLabelText("Column for Name")).toHaveFocus();
+    expect(within(screen.getByRole("region", { name: "Name connection" })).getByText("Connected")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace with text" }));
+    fireEvent.change(screen.getByLabelText("Text for Venue"), { target: { value: "Room 101" } });
+    fireEvent.click(screen.getByRole("button", { name: "Replace Venue with text" }));
+    expect(screen.getByRole("complementary", { name: "Message values" })).toHaveFocus();
+    expect(screen.getByText("All message values are connected. You can change a column below.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Continue to review/ }));
+    expect(await screen.findByText("member@example.test", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByText("Welcome Member", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByTitle("Email preview for member@example.test")).toHaveAttribute("srcdoc", expect.stringContaining("Member, meet at Room 101."));
+    expect(mockedCreateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("keeps completed column mappings visible and focused, and previews later changes", async () => {
+    const user = userEvent.setup();
+    const flow = { id: "mapped-template", ownerUserId: "user-1", societyName: null, name: "Welcome message", currentTemplateVersionId: "mapped-v1", state: "active" as const, createdAt: "2026-09-05", updatedAt: "2026-09-05" };
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+    mockedGetFlow.mockResolvedValue({ flow, templateVersion: { id: "mapped-v1", flowId: flow.id, version: 1, createdAt: "2026-09-05", subjectTemplate: "Hello {{student_name}}", bodyHtml: "<p>Greetings {{student_name}}.</p>", placeholderManifest: ["student_name"], recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" } } });
+    window.history.replaceState({}, "", "/flows/new/data");
+    render(<App />);
+    await user.upload(await screen.findByLabelText("Recipient spreadsheet"), new File(["Email,Name,Preferred name\nmember@example.test,Amina,Amy\n"], "renamed-columns.csv", { type: "text/csv" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue to message" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue to message" }));
+    await user.click(await screen.findByRole("button", { name: "Choose a saved template" }));
+    await user.click(await screen.findByRole("button", { name: /^Welcome message/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Use this template" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Use this template" }));
+
+    const column = screen.getByRole("combobox", { name: "Column for Student Name" });
+    await user.selectOptions(column, "name");
+    expect(column).toBeInTheDocument();
+    expect(column).toHaveValue("name");
+    expect(column).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Subject" })).not.toHaveFocus();
+    expect(within(screen.getByRole("region", { name: "Student Name connection" })).getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("All message values are connected. You can change a column below.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeEnabled();
+
+    await user.selectOptions(column, "");
+    expect(column).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeDisabled();
+    expect(within(screen.getByRole("region", { name: "Student Name connection" })).getByText("Not connected")).toBeInTheDocument();
+    await user.selectOptions(column, "preferred_name");
+    expect(column).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Continue to review" }));
+    expect(await screen.findByText("Hello Amy", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByTitle("Email preview for member@example.test")).toHaveAttribute("srcdoc", expect.stringContaining("Greetings Amy."));
+    await user.click(screen.getByRole("link", { name: "Message" }));
+    expect(await screen.findByRole("combobox", { name: "Column for Student Name" })).toHaveValue("preferred_name");
+    expect(mockedCreateCampaign).not.toHaveBeenCalled();
   });
 });

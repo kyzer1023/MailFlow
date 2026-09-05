@@ -27,3 +27,5 @@ Thumbs.db
 tmp/
 artifacts/local/
 .qa-*.png
+/.local-preview.html
+/frontend-test-output.txt

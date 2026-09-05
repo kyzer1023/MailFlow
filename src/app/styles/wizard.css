@@ -1,184 +1,444 @@
-/* Responsive wizard refinements. Loaded after the base styles by the app stylesheet entrypoint. */
-
-/* Keep the compact review rail from forcing text into the message preview. */
-.sample-card,
-.sample-card > button,
-.sample-card > button > span,
-.sample-card > button > strong,
-.sample-card > button > small {
-  min-width: 0;
+/* Three-step send shell, progress and actions. */
+.wizard-page {
+  width: 100%;
+  max-width: none;
+  padding-inline: 32px;
 }
-
-.sample-card > button > strong,
-.sample-card > button > small {
+.stepper-wrap {
+  min-height: 86px;
+  padding: 0 clamp(22px, 3.5vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(22px, 3vw, 44px);
+  background: var(--paper-bright);
+  border-bottom: 1px solid var(--line);
+}
+.stepper {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+}
+.stepper li {
+  min-width: 0;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.stepper li:not(:last-child)::after {
+  content: "";
+  height: 1px;
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  right: -50%;
+  top: 18px;
+  background: var(--step-line);
+}
+.stepper li.complete::after {
+  background: var(--moss);
+}
+.stepper a,
+.stepper-future {
+  position: relative;
+  z-index: 1;
+  padding-right: clamp(0.45rem, 1vw, 0.9rem);
+  display: inline-grid;
+  grid-template-columns: 36px auto;
+  align-items: center;
+  gap: 0.62rem;
+  background: var(--paper-bright);
+  color: var(--step-muted);
+  font-size: 0.8rem;
+  font-weight: 720;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.stepper a {
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.stepper a:hover {
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+.stepper-node {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid #aeb5af;
+  background: var(--paper-bright);
+  color: var(--step-muted);
+  font: 700 0.74rem/1 var(--font-mono);
+}
+.stepper-node svg {
+  width: 1rem;
+  height: 1rem;
+}
+.stepper .complete a {
+  color: var(--moss-dark);
+}
+.stepper .complete .stepper-node {
+  background: var(--moss);
+  color: var(--paper-bright);
+  border-color: var(--moss);
+}
+.stepper .current a {
+  color: var(--coral-text);
+  font-weight: 800;
+}
+.stepper .current .stepper-node {
+  background: var(--coral);
+  color: var(--ink);
+  border-color: var(--coral);
+  box-shadow:
+    0 0 0 5px var(--coral-soft),
+    0 3px 10px rgba(112, 62, 50, 0.12);
+}
+.wizard-page {
+  padding-top: 34px;
+}
+.wizard-header {
+  align-items: center;
+}
+.wizard-header h1 {
+  font-size: clamp(2rem, 3vw, 2.85rem);
+}
+@media (max-width: 900px) {
+  .stepper-wrap {
+    padding-inline: 22px;
+    gap: 18px;
+  }
+}
+@media (max-width: 680px) {
+  .wizard-header .header-actions .review-action {
+    flex-basis: 10rem;
+    min-inline-size: 0;
+  }
+  .stepper-wrap {
+    min-height: 74px;
+    padding-inline: 12px;
+    gap: 10px;
+  }
+  .stepper {
+    height: auto;
+  }
+  .stepper li {
+    height: 46px;
+    align-items: start;
+  }
+  .stepper li:not(:last-child)::after {
+    top: 14px;
+  }
+  .stepper a,
+  .stepper-future {
+    width: 100%;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 0.25rem;
+    background: transparent;
+    font-size: 0.62rem;
+  }
+  .stepper-node {
+    width: 28px;
+    height: 28px;
+    background: var(--paper-bright);
+    font-size: 0.64rem;
+  }
+  .stepper .complete .stepper-node {
+    background: var(--moss);
+  }
+  .stepper .current .stepper-node {
+    box-shadow: 0 0 0 4px var(--coral-soft);
+  }
+  .wizard-page {
+    padding-top: 24px;
+  }
+}
+@media (min-width: 641px) and (max-width: 680px) {
+  .stepper li:not(.current) .stepper-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+.app-frame:has(.send-workspace) .support-footer {
+  display: none;
+}
+.app-frame:has(.send-workspace) .workspace {
+  padding-bottom: 0;
+  background: var(--send-surface);
+}
+.send-workspace {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.send-context {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  gap: var(--send-space-md);
+  padding: var(--send-space-md) var(--send-gutter);
+}
+.send-context a {
+  color: var(--ink);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--send-space-sm);
+  padding-right: var(--send-space-lg);
+  border-right: 1px solid var(--line);
+}
+.send-context strong {
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+.send-context > span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.send-workspace .stepper-wrap {
+  min-height: 66px;
+  padding: 0 var(--send-gutter);
+  border: 0;
+  background: transparent;
+  display: block;
+}
+.send-workspace .stepper {
+  max-width: var(--send-content-width);
+}
+.send-workspace .stepper li,
+.send-workspace .stepper li:last-child {
+  justify-content: center;
+}
+.send-workspace .stepper li:not(:last-child)::after {
+  left: 50%;
+  right: -50%;
+}
+.send-workspace .stepper a,
+.send-workspace .stepper-future {
+  background: var(--send-surface);
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding-inline: var(--send-space-sm);
+}
+.send-workspace .stepper .current .stepper-node {
+  box-shadow: none;
+}
+.send-workspace .stepper-label small {
+  display: block;
+  margin-top: var(--send-space-xs);
+  color: var(--warn);
+  font-size: 0.8rem;
+}
+.send-workspace .stepper-label .stepper-skipped {
+  color: var(--muted);
+}
+.send-workspace .wizard-page {
+  padding: var(--send-space-xs) var(--send-gutter) var(--send-space-lg);
+  flex: 1;
+}
+.send-workspace .wizard-header,
+.send-workspace .familiar-layout {
+  width: 100%;
+  max-width: var(--send-content-width);
+  margin-inline: auto;
+}
+.send-workspace .wizard-header {
+  min-height: auto;
+  margin-bottom: var(--send-heading-gap);
+}
+.send-workspace .wizard-header h1 {
+  font-size: clamp(2rem, 3vw, 2.7rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+.send-workspace .wizard-header p {
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+.familiar-layout {
+  grid-template-columns: minmax(0, 2.4fr) minmax(240px, 1fr);
+  gap: var(--send-gap);
+  max-width: var(--send-content-width);
+}
+.familiar-layout .panel {
+  border-radius: var(--send-radius);
+  background: transparent;
+}
+.familiar-layout h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 var(--send-space-sm);
+}
+.familiar-layout .field > span {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.wizard-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--send-z-footer);
+  background: var(--send-surface);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--send-space-md);
+  padding: var(--send-space-lg) var(--send-gutter);
+}
+.send-assurance {
+  color: var(--muted);
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--send-space-sm);
+}
+.send-assurance svg {
+  width: 24px;
+  height: 24px;
+}
+.wizard-actions .button {
+  min-height: 56px;
+  border-radius: var(--send-radius);
+  font-size: 1rem;
+}
+.wizard-actions .button--coral {
+  padding-inline: var(--send-space-lg);
+  color: var(--ink);
+  box-shadow: none;
+  font-weight: 600;
+}
+.send-workspace .snapshot-notice {
+  max-width: var(--send-content-width);
+  margin-inline: auto;
+}
+.snapshot-notice {
+  margin: 0 0 var(--send-space-md);
+}
+.snapshot-notice p {
+  margin-block: var(--send-space-xs) var(--send-space-sm);
+}
 @media (max-width: 1180px) {
-  /* The narrow selector column remains readable at the tablet breakpoint. */
-  .review-layout .sample-card > button {
-    overflow: hidden;
+  .familiar-layout {
+    grid-template-columns: minmax(0, 2.2fr) minmax(220px, 1fr);
   }
-
-  .review-layout .sample-card > button > span,
-  .review-layout .sample-card > button > strong,
-  .review-layout .sample-card > button > small {
-    min-width: 0;
-    max-width: 100%;
+  .wizard-actions {
+    flex-wrap: wrap;
+    padding-block: var(--send-space-md);
+    gap: var(--send-space-sm);
+  }
+  .wizard-actions .header-actions {
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+  }
+  .wizard-actions .header-actions .button {
+    flex: 1;
+    font-size: 0.85rem;
+    padding-inline: var(--send-space-sm);
+  }
+  .send-assurance {
+    flex-basis: 100%;
+    font-size: 0.75rem;
   }
 }
-
 @media (max-width: 900px) {
-  /* The selector is a compact strip above the preview on tablet and mobile. */
-  .review-layout .sample-card {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  .review-layout .sample-card > .section-kicker,
-  .review-layout .sample-card > h2,
-  .review-layout .sample-card > footer {
-    grid-column: 1 / -1;
-  }
-
-  .review-layout .sample-card > button {
-    width: auto;
-    margin: 0;
-    min-width: 0;
+  .familiar-layout {
     grid-template-columns: minmax(0, 1fr);
-    gap: 3px;
-    overflow: hidden;
-  }
-
-  .review-layout .sample-card > button > span {
-    grid-row: auto;
-    min-width: 0;
-  }
-
-  .review-layout .sample-card > button > strong,
-  .review-layout .sample-card > button > small {
-    min-width: 0;
-    max-width: 100%;
+    gap: var(--send-space-lg);
   }
 }
-
-@media (max-width: 680px) {
-  /* On a 390px viewport the review rail shares one compact header row with
-     the wordmark. Only the current step keeps its text label. The other
-     labels stay in the accessibility tree through their links and their
-     numbered or completed nodes remain visible. */
-  .app-frame--review .stepper-wrap {
-    overflow: hidden;
-  }
-
-  .app-frame--review .stepper {
-    width: 100%;
-    min-width: 0;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0;
-    height: 42px;
-    padding-inline: 166px 10px;
-  }
-
-  .app-frame--review .stepper-wrap {
-    padding-top: 20px;
-  }
-
-  .app-frame--review .stepper li {
-    min-width: 0;
-    overflow: visible;
-  }
-
-  .app-frame--review .stepper li:not(:last-child)::after {
-    left: 50%;
-    right: -50%;
-  }
-
-  .app-frame--review .stepper a {
-    width: 100%;
-    min-width: 0;
-    overflow: visible;
-  }
-
-  /* The current implementation keeps each label as a direct text node, so
-     size the link itself rather than relying on a child label selector. */
-  .app-frame--review .stepper li:not(.current) a {
-    font-size: 0;
-  }
-
-  .app-frame--review .stepper li.current a {
-    font-size: .58rem;
-    white-space: nowrap;
-  }
-
-  .app-frame--review .stepper a > span {
-    flex: 0 0 auto;
-  }
-
-  .app-frame--review .wizard-count {
-    right: 11px;
-    top: 5px;
-    transform: none;
-    font-size: .58rem;
-    z-index: 2;
-  }
-
-  .review-layout .sample-card {
-    gap: 7px;
-    padding: 13px;
-  }
-
-  .review-layout .sample-card > .section-kicker {
-    margin-bottom: 1px;
-  }
-
-  .review-layout .sample-card > h2 {
-    margin: .1rem 0 .35rem;
-    font-size: 1rem;
-    line-height: 1.18;
-  }
-
-  .review-layout .sample-card > button {
+@media (max-width: 640px) {
+  .send-context {
     min-height: 68px;
-    padding: .55rem .45rem;
-    border-radius: 8px;
-    text-align: center;
-    justify-items: center;
+    gap: var(--send-space-sm);
+    font-size: 0.85rem;
+    flex-wrap: wrap;
   }
-
-  .review-layout .sample-card > button > span,
-  .review-layout .sample-card > button > strong,
-  .review-layout .sample-card > button > small {
+  .send-context a {
+    padding-right: var(--send-space-sm);
+  }
+  .send-context > strong {
+    max-width: 180px;
+  }
+  .send-context > span {
+    display: none;
+  }
+  .send-workspace .stepper-wrap {
+    min-height: 72px;
+  }
+  .send-workspace .stepper a,
+  .send-workspace .stepper-future {
+    display: flex;
+    flex-direction: column;
+    gap: var(--send-space-xs);
+    padding: 0 var(--send-space-xs);
+    font-size: 0.7rem;
+  }
+  .send-workspace .stepper li .stepper-label {
+    display: block;
+    white-space: normal;
+  }
+  .send-workspace .stepper li,
+  .send-workspace .stepper li:last-child {
+    justify-content: center;
+  }
+  .send-workspace .stepper li:not(:last-child)::after {
+    left: 70%;
+    right: -30%;
+    top: 16px;
+  }
+  .send-workspace .stepper-node {
+    width: 32px;
+    height: 32px;
+  }
+  .send-workspace .wizard-header h1 {
+    font-size: 1.95rem;
+  }
+  .send-workspace .wizard-header p {
+    font-size: 1rem;
+  }
+  .wizard-actions {
+    position: relative;
+    padding: var(--send-space-md) var(--send-gutter);
+  }
+  .wizard-actions .send-assurance,
+  .wizard-actions .header-actions {
+    flex-basis: 100%;
     width: 100%;
-    max-width: 100%;
-    text-align: center;
   }
-
-  .review-layout .sample-card > button > span {
-    font-size: .61rem;
+  .wizard-actions .header-actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
   }
-
-  .review-layout .sample-card > button > strong {
-    font-size: .72rem;
+  .wizard-actions .button {
+    flex: 1;
+    padding-inline: var(--send-space-sm);
+    font-size: 0.8rem;
   }
-
-  .review-layout .sample-card > button > small {
-    font-size: .65rem;
-  }
-
-  .review-layout .sample-card footer {
-    margin-top: .4rem;
-    padding-top: .65rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .review-layout .sample-card > button,
-  .app-frame--review .stepper a {
-    transition: none !important;
+  .wizard-actions .header-actions .button--coral {
+    flex-basis: 100%;
   }
 }

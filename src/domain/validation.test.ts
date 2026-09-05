@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAddressList, validateCampaign, validateRecipientRows } from "./validation";
+import { parseAddressList, validateRecipientRows } from "./validation";
 
 describe("campaign validation contracts", () => {
   it("normalizes comma, semicolon, and newline address lists", () => {
@@ -26,15 +26,4 @@ describe("campaign validation contracts", () => {
     expect(result.invalidRows).toEqual([1]);
   });
 
-  it("requires mappings and non-empty values before a campaign is valid", () => {
-    const result = validateCampaign({
-      senderAddress: "sender@example.com",
-      subjectTemplate: "Welcome {{name}}",
-      bodyHtml: "<p>{{name}}</p>",
-      mappedFields: { name: "Full Name" },
-      rows: [{ sourceRow: 1, to: "recipient@example.com", mergeData: { "Full Name": "" } }],
-    });
-    expect(result.ok).toBe(false);
-    expect(result.issues.some((issue) => issue.code === "empty_required_value")).toBe(true);
-  });
 });

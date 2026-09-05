@@ -11,6 +11,8 @@ export default defineConfig({
     include: ["react", "react-dom/client"],
   },
   server: {
+    // Reference images and captured QA output do not participate in app HMR.
+    watch: { ignored: ["**/mock-images/**", "**/artifacts/**"] },
     host: "0.0.0.0",
     allowedHosts: ["terminal.local"],
     warmup: {

@@ -229,16 +229,3 @@ export interface CampaignCreatePayload {
   readonly skippedRecipients: number;
   readonly rows: readonly CampaignRecipientPayload[];
 }
-
-export interface ResultExportRow {
-  readonly sourceRow: number;
-  readonly recipient: string;
-  readonly status: string;
-  readonly attemptCount: number;
-  readonly createdAt?: string | null;
-  readonly claimedAt?: string | null;
-  readonly sendingAt?: string | null;
-  readonly acceptedAt?: string | null;
-  readonly lastErrorCategory?: string | null;
-  readonly lastErrorMessage?: string | null;
-}
