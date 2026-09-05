@@ -16,6 +16,7 @@ import type {
   SpreadsheetTable,
 } from "../../client/types";
 import type { ApiConfig, ApiUser, CampaignResponse } from "../api";
+import type { sendCampaignTest } from "../api";
 
 export type AddressRuleMode = "fixed" | "column";
 
@@ -98,6 +99,11 @@ export interface ApiContextValue extends SessionState {
 }
 
 export interface DraftContextValue {
+  readonly testRequest?: { current: Parameters<typeof sendCampaignTest>[1] | null };
+  readonly snapshotLocked?: boolean;
+  readonly lockSnapshot?: () => void;
+  readonly restartFromMessage?: () => void;
+  readonly preparation?: { current: { signature: string; flowId: string | null; response: CampaignResponse | null; pending: Promise<CampaignResponse | null> | null } | null };
   readonly draft: DraftState;
   readonly setDraft: (next: DraftState | ((current: DraftState) => DraftState)) => void;
   readonly updateDraft: (key: keyof DraftState, value: DraftState[keyof DraftState]) => void;

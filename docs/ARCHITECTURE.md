@@ -87,6 +87,8 @@ Owner, optional society label, name, current template version, lifecycle state, 
 
 Flow reference, version number, subject template, sanitized body HTML, recipient configuration including message importance, placeholder manifest, and immutable creation metadata.
 
+Campaign preparation may create an immutable version without publishing it as the flow's reusable template. Only explicit template saving advances `currentTemplateVersionId`. The browser submits the complete reviewed content with no selected version ID so exact campaign-create retries keep an identical fingerprint. Once preparation begins, the browser locks that reviewed snapshot, including after a lost response. Starting another send from the message preserves its content and recipients but requires attachment files to be selected again because a prepared attachment set belongs to its original campaign.
+
 ### campaigns
 
 Flow and template references, owner, sender address, source filename, recipient totals, pace, state, pause reason, timestamps, and idempotency key.

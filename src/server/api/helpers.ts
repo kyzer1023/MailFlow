@@ -308,6 +308,7 @@ export async function createTemplateVersion(
   repo: Repositories,
   flow: FlowRecord,
   input: { subjectTemplate: string; bodyHtml: string; placeholderManifest?: readonly string[]; recipientConfiguration: TemplateVersionRecord["recipientConfiguration"] },
+  publish = true,
 ): Promise<TemplateVersionRecord> {
   const subject = validateTemplateSubject(input.subjectTemplate);
   if (!subject.ok) throw new Error(subject.message);
@@ -326,7 +327,7 @@ export async function createTemplateVersion(
   };
   await repo.templateVersions.create(version);
   const updatedFlow: FlowRecord = { ...flow, currentTemplateVersionId: version.id, updatedAt: version.createdAt };
-  await repo.flows.update(updatedFlow);
+  if (publish) await repo.flows.update(updatedFlow);
   return version;
 }
 

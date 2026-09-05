@@ -6,6 +6,8 @@ The PNG files in `mock-images/` are the approved visual targets. Match their lay
 
 ## Reference inventory
 
+The 2026-09-05 approved Familiar Paper references in `mock-images/refinement/` supersede the original import and message screens: `01-recipients-familiar-paper.png`, `02-message-familiar-paper.png`, `03-save-template.png`, `04-template-picker.png`, and `05-missing-fields.png`. New send has three steps: Recipients, Message, Review & send. The saved-template library remains independently editable without importing a file. Missing message values resolve in the sidebar beside the editor. These screens use flatter surfaces and the centralized 5px `--send-radius`; their approved component shapes supersede the older radius guidance below.
+
 - `brandkit.png`: logo system, palette, typography direction, status language, and material references.
 - `01-landing.png`: public landing page and Microsoft sign-in entry.
 - `02-dashboard.png`: authenticated overview, sidebar, flows, campaigns, and route summary.
@@ -66,7 +68,7 @@ For the main path, implement:
 ## Responsive behavior
 
 - At narrow widths, the sidebar becomes a compact header or drawer.
-- Wizard steps collapse to current-step context plus a progress indicator.
+- The three New send labels remain visible at narrow widths, with smaller progress nodes.
 - Mapping panels stack below the data preview.
 - Review metadata stacks above or below the email preview without shrinking the preview to illegibility.
 - Wide result tables become horizontally scrollable with sticky identity columns or transform into concise job rows.

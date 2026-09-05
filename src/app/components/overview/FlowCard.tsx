@@ -35,10 +35,10 @@ export function FlowCard({
     <div className="field-list">{flow.fields.map((field) => <code key={field}>{field}</code>)}</div>
     <footer><span><Clock /> {flow.metaLabel}</span><StatusChip status={flow.status}>{flow.status === "ready" ? "Ready" : "Draft"}</StatusChip></footer>
     <div className="flow-card-actions">
-      <button type="button" className="button button--coral button--small" onClick={onUse} disabled={busy}>Use flow <ArrowRight /></button>
+      <button type="button" className="button button--coral button--small" onClick={onUse} disabled={busy}>Use template <ArrowRight /></button>
       {onEdit && <button type="button" className="button button--outline button--small" onClick={onEdit} disabled={busy}>Edit</button>}
       {onBeginRemove && !confirmingRemove && <button type="button" className="button button--outline button--small" onClick={onBeginRemove} disabled={busy} aria-label={`Remove ${flow.name}`}><Trash /> Remove</button>}
-      {confirmingRemove && <><span className="flow-remove-note">Campaign history stays available.</span><button type="button" className="button button--outline button--small" onClick={onCancelRemove} disabled={busy}>Keep flow</button><button type="button" className="button button--danger button--small" onClick={onConfirmRemove} disabled={busy} aria-label={`Confirm remove ${flow.name}`}>{removing ? <SpinnerGap className="spin" /> : <Trash />} {removing ? "Removing" : "Confirm remove"}</button></>}
+      {confirmingRemove && <><span className="flow-remove-note">Campaign history stays available.</span><button type="button" className="button button--outline button--small" onClick={onCancelRemove} disabled={busy}>Keep template</button><button type="button" className="button button--danger button--small" onClick={onConfirmRemove} disabled={busy} aria-label={`Confirm remove ${flow.name}`}>{removing ? <SpinnerGap className="spin" /> : <Trash />} {removing ? "Removing" : "Confirm remove"}</button></>}
     </div>
   </article>;
 }

@@ -159,11 +159,11 @@ function apiValue(): ApiContextValue {
   };
 }
 
-function renderReview() {
+function renderReview(draft = draftValue()) {
   return render(
     <MemoryRouter initialEntries={["/flows/new/review"]}>
       <ApiContext.Provider value={apiValue()}>
-        <DraftContext.Provider value={draftValue()}>
+        <DraftContext.Provider value={draft}>
           <Routes>
             <Route path="/flows/new/review" element={<ReviewPage />} />
             <Route path="/campaigns/:campaignId" element={<p>Campaign route</p>} />
@@ -253,6 +253,24 @@ describe("Review action feedback", () => {
     fireEvent.click(retryButton);
     expect(await screen.findByRole("button", { name: "Test accepted" })).toBeDisabled();
     expect(mockedSendCampaignTest).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries the same test sample after navigating previews and remounting Review", async () => {
+    const draft = draftValue();
+    const first = validation.validRows[0];
+    const rows = [first, { ...first, sourceRow: 3, to: "second@example.test" }];
+    const state = { ...draft, testRequest: { current: null }, validation: { ...validation, validRows: rows }, campaignValidation: { ...validation, validRows: rows } };
+    mockedSendCampaignTest.mockRejectedValueOnce(new Error("Lost response")).mockResolvedValueOnce(acceptedResult);
+    const view = renderReview(state);
+    fireEvent.click(screen.getByRole("button", { name: "Send test to me" }));
+    await screen.findByText("Lost response");
+    const originalPayload = mockedSendCampaignTest.mock.calls[0][1];
+    view.unmount();
+    renderReview(state);
+    fireEvent.click(screen.getByRole("button", { name: "Next sample" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send test to me" }));
+    await screen.findByRole("button", { name: "Test accepted" });
+    expect(mockedSendCampaignTest.mock.calls[1][1]).toEqual(originalPayload);
   });
 
   it("shows the start pending label, locks both actions, and restores retry after failure", async () => {

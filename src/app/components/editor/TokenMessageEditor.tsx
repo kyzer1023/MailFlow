@@ -45,11 +45,12 @@ export interface TokenMessageEditorProps {
   readonly options?: readonly DynamicFieldOption[];
   readonly placeholder?: string;
   readonly onFocus?: (event: FocusEvent<HTMLDivElement>) => void;
+  readonly missingFields?: readonly string[];
 }
 
 type EditorMode = "visual" | "html";
 
-export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMessageEditorProps>(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus }, forwardedRef) {
+export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMessageEditorProps>(function TokenMessageEditor({ value, onChange, options, placeholder, onFocus, missingFields }, forwardedRef) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
@@ -76,6 +77,14 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
     }
     if (serializeTokenEditor(root) !== sanitizedSourceHtml) appendTokenEditorContent(root, sanitizedSourceHtml, options);
   }, [value, options, mode, sanitizedSourceHtml]);
+
+  useEffect(() => {
+    rootRef.current?.querySelectorAll<HTMLElement>("[data-dynamic-field]").forEach((token) => {
+      const missing = Boolean(missingFields?.includes(token.dataset.dynamicField || ""));
+      token.dataset.unconnected = String(missing);
+      token.title = missing ? "Connect this value in the panel beside the message" : "";
+    });
+  }, [value, missingFields, mode]);
 
   const emitVisualChange = useCallback(() => {
     const html = serializeTokenEditor(rootRef.current);

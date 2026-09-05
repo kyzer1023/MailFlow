@@ -185,7 +185,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
           bodyHtml: body.html,
           placeholderManifest: placeholders,
           recipientConfiguration,
-        });
+        }, false);
       } catch (errorValue) {
         const concurrentVersion = (await repo.templateVersions.listByFlow(flow.id)).find((version) => (
           templateMatches(version, subject.subject, body.html, recipientConfiguration)

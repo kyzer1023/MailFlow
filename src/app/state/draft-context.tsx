@@ -8,6 +8,7 @@ import {
 import type { CampaignResponse } from "../api";
 import {
   mapSpreadsheetRows,
+  extractPlaceholders,
   recipientConfigurationToClientMapping,
   validateClientCampaign,
 } from "../../client";
@@ -22,6 +23,7 @@ import type {
 import type { FlowRecord, TemplateVersionRecord } from "../../domain/types";
 import { attachmentFileFromResponse } from "../lib/attachments";
 import { bodyHtmlFromDraft } from "../lib/editor-dom";
+import { matchColumn } from "../lib/template-reuse";
 import { requestKey } from "../lib/ids";
 import { fallbackConfig, useApi } from "./api-context";
 import type {
@@ -65,6 +67,10 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [templateVersionId, setTemplateVersionId] = useState<string | null>(null);
   const [campaignResponse, setCampaignResponse] = useState<CampaignResponse | null>(null);
+  const [snapshotLocked, setSnapshotLocked] = useState(false);
+  const testRequest = useRef<NonNullable<DraftContextValue["testRequest"]>["current"]>(null);
+  const preparation = useRef<NonNullable<DraftContextValue["preparation"]>["current"]>(null);
+  const lockSnapshot = useCallback(() => setSnapshotLocked(true), []);
   // Attachment bytes are held by the upload request and this ref only while
   // retry is possible. They are deliberately not part of draft state or any
   // campaign payload.
@@ -94,9 +100,9 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       replyTo: source("replyTo"),
       importance: draft.importance || "normal",
       separator: draft.separator || "auto",
-      placeholders: draft.mappings,
+      placeholders: Object.fromEntries(extractPlaceholders(draft.subject, bodyHtml).map((key) => [key, Object.hasOwn(draft.mappings, key) ? draft.mappings[key] : matchColumn(key, table)])),
     };
-  }, [draft]);
+  }, [draft, bodyHtml, table]);
   const mappedRows = useMemo<readonly MappedRecipientRow[]>(() => table ? mapSpreadsheetRows(table, mapping).rows : [], [table, mapping]);
   const mappingIssues = useMemo(() => table ? mapSpreadsheetRows(table, mapping).issues : [], [table, mapping]);
   const validation = useMemo<ClientValidationSummary | null>(() => table ? validateClientCampaign({
@@ -104,12 +110,12 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     subjectTemplate: draft.subject,
     bodyHtml,
     rows: mappedRows,
-    mappedFields: draft.mappings,
+    mappedFields: mapping.placeholders,
     separator: draft.separator || "auto",
     maxRecipients: config.maxCampaignRecipients,
     pacePerMinute: draft.pace,
     mappingIssues,
-  }) : null, [table, user, draft, bodyHtml, mappedRows, mappingIssues, config]);
+  }) : null, [table, user, draft, bodyHtml, mapping, mappedRows, mappingIssues, config]);
   const campaignValidation = useMemo<ClientValidationSummary | null>(() => {
     if (!validation || !skipInvalidRows || validation.ok) return validation;
     const rowOnly = validation.issues.length > 0 && validation.issues.every((issue) => issue.row !== undefined);
@@ -198,6 +204,9 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
   const attachmentsHaveErrors = attachments.some((attachment) => attachment.status === "error");
   const attachmentsReady = !attachmentsUploading && !attachmentsHaveErrors && attachments.every((attachment) => attachment.status === "ready");
   const resetWizardState = useCallback(() => {
+    testRequest.current = null;
+    preparation.current = null;
+    setSnapshotLocked(false);
     setDraft(emptyDraft());
     setWorkbook(null);
     setTable(null);
@@ -209,7 +218,20 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     setCampaignRequestKey(requestKey());
     setTestSendRequestKey(`test-${requestKey()}`);
   }, [resetAttachmentState]);
+  const restartFromMessage = useCallback(() => {
+    testRequest.current = null;
+    preparation.current = null;
+    setSnapshotLocked(false);
+    setCampaignResponse(null);
+    setTemplateVersionId(null);
+    resetAttachmentState();
+    setCampaignRequestKey(requestKey());
+    setTestSendRequestKey(`test-${requestKey()}`);
+  }, [resetAttachmentState]);
   const hydrateSavedFlow = useCallback((flow: FlowRecord, templateVersion: TemplateVersionRecord | null) => {
+    testRequest.current = null;
+    preparation.current = null;
+    setSnapshotLocked(false);
     const savedMapping = templateVersion
       ? recipientConfigurationToClientMapping(templateVersion.recipientConfiguration)
       : { toField: "", cc: null, bcc: null, replyTo: null, separator: "auto" as const, placeholders: {} };
@@ -255,7 +277,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     setCampaignRequestKey(requestKey());
     setTestSendRequestKey(`test-${requestKey()}`);
   }, [resetAttachmentState]);
-  const value = useMemo<DraftContextValue>(() => ({ draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
+  const value = useMemo<DraftContextValue>(() => ({ testRequest, snapshotLocked, lockSnapshot, restartFromMessage, preparation, draft, setDraft, updateDraft, workbook, setWorkbook, table, setTable, flowId, setFlowId, templateVersionId, setTemplateVersionId, campaignResponse, setCampaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, setSkipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, setAttachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment }), [snapshotLocked, lockSnapshot, restartFromMessage, draft, updateDraft, workbook, table, flowId, templateVersionId, campaignResponse, campaignRequestKey, testSendRequestKey, bodyHtml, mapping, mappedRows, validation, campaignValidation, skipInvalidRows, config, hydrateSavedFlow, resetWizardState, attachments, attachmentSetId, attachmentSetRequestKey, attachmentsUploading, attachmentsHaveErrors, attachmentsReady, uploadAttachment, retryAttachment, removeAttachment]);
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
 }
 
