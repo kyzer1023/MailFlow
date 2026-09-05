@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import type { CampaignRecord, RecipientJobRecord } from "../../domain/types";
 import type { D1Database, D1PreparedStatement, D1RunResult, D1Value } from "./contracts";
 import { D1CampaignRepository } from "./d1-campaigns";
+import { D1RecipientJobRepository } from "./d1-recipient-jobs";
+import { publicCampaign } from "../api/helpers";
 
 type SqliteValue = string | number | bigint | null | Uint8Array;
 
@@ -170,6 +172,44 @@ describe("D1 campaign creation safeguards", () => {
       owner.flowId, owner.templateId, owner.userId, NOW, NOW);
       db.database.exec(readFileSync(resolve(process.cwd(), "migrations", migrationFiles[7]), "utf8"));
       expect(db.database.prepare("SELECT request_fingerprint FROM campaigns WHERE id = 'legacy'").get()).toEqual({ request_fingerprint: null });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("lists owner-scoped campaigns with current counts, newest first, including empty legacy jobs", async () => {
+    const db = new SqliteD1();
+    try {
+      db.migrate();
+      const owner = seedOwnerFlowTemplate(db);
+      const otherOwner = seedOwnerFlowTemplate(db, "2");
+      const repository = new D1CampaignRepository(db);
+      const value = campaign(owner, 7);
+      await repository.create(value, jobs(value.id, 7));
+      const statuses = ["pending", "claimed", "sending", "accepted", "failed", "skipped", "unknown"] as const;
+      statuses.forEach((status, index) => run(db, "UPDATE recipient_jobs SET status = ? WHERE id = ?", status, `job-${index + 1}`));
+
+      const other = campaign(otherOwner, 1, "other");
+      await repository.create(other, jobs(other.id, 1).map((job) => ({ ...job, id: "other-job", sendKey: "other-send" })));
+      const empty = { ...campaign(owner, 1, "empty"), createdAt: "2026-09-05T01:00:00.000Z" };
+      await repository.create(empty, jobs(empty.id, 1).map((job) => ({ ...job, id: "empty-job", sendKey: "empty-send" })));
+      run(db, "DELETE FROM recipient_jobs WHERE campaign_id = ?", empty.id);
+
+      const listed = await repository.listByOwner(owner.userId);
+      expect(listed.map((entry) => entry.id)).toEqual([empty.id, value.id]);
+      expect(listed[0].counts).toEqual({ pending: 0, claimed: 0, sending: 0, accepted: 0, failed: 0, skipped: 0, unknown: 0 });
+      expect(listed[1].counts).toEqual({ pending: 1, claimed: 1, sending: 1, accepted: 1, failed: 1, skipped: 1, unknown: 1 });
+      expect(listed[1].counts).toEqual(await new D1RecipientJobRepository(db).counts(value.id));
+      expect((await repository.listByOwner(owner.userId, 1)).map((entry) => entry.id)).toEqual([empty.id]);
+      expect(await repository.listByOwner("unknown-owner")).toEqual([]);
+
+      const serialized = publicCampaign({ ...listed[1], wakeToken: "private-wake", wakeDueAt: NOW });
+      expect(serialized.counts).toEqual(listed[1].counts);
+      for (const key of ["idempotencyKey", "requestFingerprint", "wakeToken", "wakeDueAt", "counts_json"]) {
+        expect(serialized).not.toHaveProperty(key);
+      }
+      run(db, "UPDATE recipient_jobs SET status = 'accepted' WHERE id = 'job-1'");
+      expect((await repository.listByOwner(owner.userId))[1].counts).toMatchObject({ pending: 0, accepted: 2 });
     } finally {
       db.close();
     }

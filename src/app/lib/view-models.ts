@@ -31,13 +31,7 @@ export function displayCampaign(
   counts: CampaignCounts | null | undefined,
   flowName = "",
 ): CampaignViewModel {
-  const status = campaign.state === "completed"
-    ? "completed"
-    : campaign.state === "paused"
-      ? "paused"
-      : campaign.state === "failed"
-        ? "failed"
-        : campaign.state;
+  const status = campaign.state;
   const visibleStatuses: readonly CampaignViewStatus[] = ["completed", "paused", "running", "queued", "failed"];
   const resolvedStatus: CampaignViewStatus = visibleStatuses.includes(status as CampaignViewStatus)
     ? status as CampaignViewStatus

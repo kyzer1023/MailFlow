@@ -220,6 +220,8 @@ Expected route groups:
 
 All mutating routes require an authenticated session, CSRF protection, same-origin checks, Zod validation, and ownership checks.
 
+The campaign list includes current recipient status counts with each public campaign record. The owner-scoped repository query calculates these counts from recipient jobs in the same read as the bounded campaign list. Dashboard and history screens consume that response directly instead of requesting every campaign detail; no duplicated count storage or background synchronization is needed.
+
 The test-send route is additionally server-authoritative at the final mail-provider boundary: `To` is always the authenticated mailbox, and campaign CC, BCC, and Reply-To are always empty even if those fields are present in the request. The validated subject, sanitized HTML body, message importance, and immutable campaign attachment set remain unchanged. A bounded per-user limit and stable idempotency key apply before provider submission.
 
 `/auth/microsoft/start` is intentionally public, but each anonymous client hash is rate-limited before a new OAuth state record is created. The existing scheduled handler removes expired OAuth-state rows, expired or revoked session rows, expired rate-limit counters, and stale test-send claim records in addition to OneDrive orphan cleanup.
