@@ -81,6 +81,8 @@ In Sending rules, CC, BCC, Reply-to, and Importance each occupy their own full-w
 
 The user also accepted the Message-screen continuation at `mock-images/refinement/02-message-familiar-paper.png` and the save, reuse, and missing-field interactions at `03-save-template.png`, `04-template-picker.png`, and `05-missing-fields.png` in that directory. Missing-field resolution belongs beside the editor. Template selection preserves the imported recipient file, primary email column, and attachments. Template publication is explicit. Preparing a test or send locks the reviewed snapshot; changing it requires a new send, with attachment files selected again.
 
+2026-09-05 mapping feedback: keep message-value connections visible after resolution, including a green Connected state and the selected spreadsheet column. Members must be able to inspect and change a connection. Selecting a column must retain focus on that control and must never automatically focus the subject. Preserve readable template-value names in the editor; the connection panel explains their source columns.
+
 ## Secret handling
 
 - Do not print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, or source files.

@@ -58,6 +58,7 @@ export function TemplatePage({
   const editing = Boolean(editingFlowId) || standalone;
   const bodyRef = useRef<TokenMessageEditorHandle>(null);
   const subjectRef = useRef<TokenMessageEditorHandle>(null);
+  const valuesRef = useRef<HTMLElement>(null);
   const targetRef = useRef<"subject" | "body">("body");
   const [dialog, setDialog] = useState<"picker" | "save" | "scratch" | null>(
     null,
@@ -347,11 +348,23 @@ export function TemplatePage({
             </div>
           </section>
         </div>
-        <aside className="message-values">
-          {missing.length > 0 ? (
-            <FieldResolutionPanel fields={missing} />
-          ) : (
-            <>
+        <aside
+          className="message-values"
+          ref={valuesRef}
+          tabIndex={-1}
+          aria-label="Message values"
+        >
+          {table && placeholders.length > 0 && (
+            <FieldResolutionPanel
+              fields={placeholders}
+              missingFields={missing}
+              onReplace={() =>
+                valuesRef.current?.focus({ preventScroll: true })
+              }
+            />
+          )}
+          {missing.length === 0 && (
+            <div className="message-value-insertion">
               <h2>Add a spreadsheet value</h2>
               <p>Click in the subject or message, then insert a value.</p>
               <div className="message-token-list">
@@ -377,7 +390,7 @@ export function TemplatePage({
               {dynamicOptions.length === 0 && (
                 <p>This message has no spreadsheet values yet.</p>
               )}
-            </>
+            </div>
           )}
           {table ? (
             <div

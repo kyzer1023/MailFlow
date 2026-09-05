@@ -1,5 +1,5 @@
 import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Field } from "../common/Field";
 import { dynamicFieldLabel } from "../../lib/editor-dom";
 import { replaceMessageField, suggestColumn } from "../../lib/template-reuse";
@@ -8,57 +8,74 @@ import { useDraft } from "../../state/draft-context";
 
 export function FieldResolutionPanel({
   fields,
+  missingFields,
+  onReplace,
 }: {
   readonly fields: readonly string[];
+  readonly missingFields: readonly string[];
+  readonly onReplace: () => void;
 }) {
   const { setDraft, table, mapping } = useDraft();
   const options = columnOptions(table);
   const [textFields, setTextFields] = useState<Record<string, string>>({});
-  const focusNext = () =>
-    requestAnimationFrame(() =>
-      (
-        document.querySelector<HTMLElement>(".field-resolution-panel select") ||
-        document.querySelector<HTMLElement>(".subject-editor")
-      )?.focus(),
-    );
+  const selects = useRef<Record<string, HTMLSelectElement | null>>({});
   const connect = (key: string, column: string) => {
-    if (column) {
-      setDraft((current) => ({
-        ...current,
-        mappings: { ...current.mappings, [key]: column },
-      }));
-      focusNext();
-    }
+    setDraft((current) => ({
+      ...current,
+      mappings: { ...current.mappings, [key]: column },
+    }));
   };
   return (
     <section
       className="field-resolution-panel"
-      aria-label="Connect missing message values"
+      aria-label="Message value connections"
     >
       <h2>
-        {fields.length} {fields.length === 1 ? "value" : "values"} to connect
+        {missingFields.length
+          ? `${missingFields.length} ${missingFields.length === 1 ? "value" : "values"} to connect`
+          : "Message value connections"}
       </h2>
-      <p>
-        Columns in your file: {options.map((option) => option.label).join(", ")}
+      <p
+        className={
+          missingFields.length ? undefined : "field-connection-success"
+        }
+        role="status"
+        aria-atomic="true"
+      >
+        {missingFields.length
+          ? `Columns in your file: ${options.map((option) => option.label).join(", ")}`
+          : "All message values are connected. You can change a column below."}
       </p>
       <div className="field-resolutions">
         {fields.map((key) => {
           const label = dynamicFieldLabel(key);
+          const connected = !missingFields.includes(key);
+          const column = connected ? mapping.placeholders?.[key] || "" : "";
           const suggestion = suggestColumn(key, table);
           const suggestedLabel = options.find(
             (option) => option.value === suggestion,
           )?.label;
           return (
-            <section key={key}>
+            <section key={key} aria-label={`${label} connection`}>
               <h3>
                 {label}
-                <span>
-                  <WarningCircle /> Not connected
+                <span
+                  className={connected ? "field-connection-success" : undefined}
+                >
+                  {connected ? (
+                    <CheckCircle weight="fill" />
+                  ) : (
+                    <WarningCircle />
+                  )}
+                  {connected ? "Connected" : "Not connected"}
                 </span>
               </h3>
               <Field label={`Column for ${label}`}>
                 <select
-                  value=""
+                  ref={(element) => {
+                    selects.current[key] = element;
+                  }}
+                  value={column}
                   onChange={(event) => connect(key, event.target.value)}
                 >
                   <option value="">Choose a column</option>
@@ -69,72 +86,67 @@ export function FieldResolutionPanel({
                   ))}
                 </select>
               </Field>
-              {suggestion && (
+              {!connected && suggestion && (
                 <>
                   <p>Suggested: {suggestedLabel}</p>
                   <button
                     className="button button--outline"
-                    onClick={() => connect(key, suggestion)}
+                    onClick={() => {
+                      connect(key, suggestion);
+                      selects.current[key]?.focus({ preventScroll: true });
+                    }}
                   >
                     Use {suggestedLabel}
                   </button>
                 </>
               )}
-              {Object.hasOwn(textFields, key) ? (
-                <>
-                  <Field label={`Text for ${label}`}>
-                    <input
-                      autoFocus
-                      value={textFields[key]}
-                      placeholder="The same text for everyone"
-                      onChange={(event) =>
-                        setTextFields((current) => ({
-                          ...current,
-                          [key]: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
+              {!connected &&
+                (Object.hasOwn(textFields, key) ? (
+                  <>
+                    <Field label={`Text for ${label}`}>
+                      <input
+                        autoFocus
+                        value={textFields[key]}
+                        placeholder="The same text for everyone"
+                        onChange={(event) =>
+                          setTextFields((current) => ({
+                            ...current,
+                            [key]: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <button
+                      className="button button--outline"
+                      disabled={!textFields[key].trim()}
+                      onClick={() => {
+                        setDraft((current) =>
+                          replaceMessageField(current, key, textFields[key]),
+                        );
+                        onReplace();
+                      }}
+                    >
+                      Replace {label} with text
+                    </button>
+                  </>
+                ) : (
                   <button
-                    className="button button--outline"
-                    disabled={!textFields[key].trim()}
-                    onClick={() => {
-                      setDraft((current) =>
-                        replaceMessageField(current, key, textFields[key]),
-                      );
-                      focusNext();
-                    }}
+                    className="button button--text"
+                    onClick={() =>
+                      setTextFields((current) => ({ ...current, [key]: "" }))
+                    }
                   >
-                    Replace {label} with text
+                    Replace with text
                   </button>
-                </>
-              ) : (
-                <button
-                  className="button button--text"
-                  onClick={() =>
-                    setTextFields((current) => ({ ...current, [key]: "" }))
-                  }
-                >
-                  Replace with text
-                </button>
-              )}
+                ))}
             </section>
           );
         })}
       </div>
       <p>
-        You can also remove a value in the message editor. These choices only
-        affect this message.
+        Each message value uses its selected column for every recipient. These
+        choices only affect this message.
       </p>
-      {Object.entries(mapping.placeholders || {})
-        .filter(([key, value]) => !fields.includes(key) && value)
-        .map(([key, value]) => (
-          <p className="field-connected" key={key}>
-            <CheckCircle weight="fill" />
-            {dynamicFieldLabel(key)} is connected to{" "}
-            {dynamicFieldLabel(value, options)}
-          </p>
-        ))}
     </section>
   );
 }

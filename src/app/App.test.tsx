@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -1047,13 +1048,57 @@ describe("campaign attachments", () => {
     expect(await screen.findByText("current-members.csv")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to review/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Use Full name" }));
+    expect(screen.getByLabelText("Column for Name")).toHaveValue("full_name");
+    expect(screen.getByLabelText("Column for Name")).toHaveFocus();
+    expect(within(screen.getByRole("region", { name: "Name connection" })).getByText("Connected")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Replace with text" }));
     fireEvent.change(screen.getByLabelText("Text for Venue"), { target: { value: "Room 101" } });
     fireEvent.click(screen.getByRole("button", { name: "Replace Venue with text" }));
+    expect(screen.getByRole("complementary", { name: "Message values" })).toHaveFocus();
+    expect(screen.getByText("All message values are connected. You can change a column below.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Continue to review/ }));
     expect(await screen.findByText("member@example.test", { selector: "dd" })).toBeInTheDocument();
     expect(screen.getByText("Welcome Member", { selector: "dd" })).toBeInTheDocument();
     expect(screen.getByTitle("Email preview for member@example.test")).toHaveAttribute("srcdoc", expect.stringContaining("Member, meet at Room 101."));
+    expect(mockedCreateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("keeps completed column mappings visible and focused, and previews later changes", async () => {
+    const user = userEvent.setup();
+    const flow = { id: "mapped-template", ownerUserId: "user-1", societyName: null, name: "Welcome message", currentTemplateVersionId: "mapped-v1", state: "active" as const, createdAt: "2026-09-05", updatedAt: "2026-09-05" };
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+    mockedGetFlow.mockResolvedValue({ flow, templateVersion: { id: "mapped-v1", flowId: flow.id, version: 1, createdAt: "2026-09-05", subjectTemplate: "Hello {{student_name}}", bodyHtml: "<p>Greetings {{student_name}}.</p>", placeholderManifest: ["student_name"], recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" } } });
+    window.history.replaceState({}, "", "/flows/new/data");
+    render(<App />);
+    await user.upload(await screen.findByLabelText("Recipient spreadsheet"), new File(["Email,Name,Preferred name\nmember@example.test,Amina,Amy\n"], "renamed-columns.csv", { type: "text/csv" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue to message" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue to message" }));
+    await user.click(await screen.findByRole("button", { name: "Choose a saved template" }));
+    await user.click(await screen.findByRole("button", { name: /^Welcome message/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Use this template" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Use this template" }));
+
+    const column = screen.getByRole("combobox", { name: "Column for Student Name" });
+    await user.selectOptions(column, "name");
+    expect(column).toBeInTheDocument();
+    expect(column).toHaveValue("name");
+    expect(column).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Subject" })).not.toHaveFocus();
+    expect(within(screen.getByRole("region", { name: "Student Name connection" })).getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("All message values are connected. You can change a column below.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeEnabled();
+
+    await user.selectOptions(column, "");
+    expect(column).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Continue to review" })).toBeDisabled();
+    expect(within(screen.getByRole("region", { name: "Student Name connection" })).getByText("Not connected")).toBeInTheDocument();
+    await user.selectOptions(column, "preferred_name");
+    expect(column).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Continue to review" }));
+    expect(await screen.findByText("Hello Amy", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByTitle("Email preview for member@example.test")).toHaveAttribute("srcdoc", expect.stringContaining("Greetings Amy."));
+    await user.click(screen.getByRole("link", { name: "Message" }));
+    expect(await screen.findByRole("combobox", { name: "Column for Student Name" })).toHaveValue("preferred_name");
     expect(mockedCreateCampaign).not.toHaveBeenCalled();
   });
 });

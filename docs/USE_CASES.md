@@ -66,6 +66,8 @@ The member chooses:
 
 MailFlow automatically detects commas, semicolons, and newlines in address lists, including pasted CC, BCC, and Reply-To values. The member does not choose a separator.
 
+After connecting a template value to a differently named spreadsheet column, the Message sidebar keeps the connection visible with its selected column and a Connected state. The member can change or clear that choice, and focus stays in the mapping controls. Clearing a required connection blocks Review until it is resolved again. Template-value names in the editor remain stable.
+
 Every source row creates one recipient job and one separate message. Unrelated recipients are never combined in one To list.
 
 ## UC-06 Validate before sending

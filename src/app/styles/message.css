@@ -643,6 +643,12 @@ html:has(.template-dialog[open]) {
   line-height: 1.5;
   font-size: 0.9rem;
 }
+.field-resolution-panel {
+  margin-bottom: var(--send-space-lg);
+}
+.field-resolution-panel .field-connection-success {
+  color: var(--moss-dark);
+}
 .field-resolutions section {
   display: grid;
   gap: var(--send-space-sm);
@@ -672,12 +678,6 @@ html:has(.template-dialog[open]) {
 }
 .field-resolutions .button {
   justify-self: start;
-}
-.field-connected {
-  display: flex;
-  align-items: center;
-  gap: var(--send-space-sm);
-  color: var(--moss-dark);
 }
 .template-compatibility {
   margin-bottom: 0;
