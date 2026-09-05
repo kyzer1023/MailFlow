@@ -99,7 +99,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       bcc: source("bcc"),
       replyTo: source("replyTo"),
       importance: draft.importance || "normal",
-      separator: draft.separator || "auto",
+      separator: "auto",
       placeholders: Object.fromEntries(extractPlaceholders(draft.subject, bodyHtml).map((key) => [key, Object.hasOwn(draft.mappings, key) ? draft.mappings[key] : matchColumn(key, table)])),
     };
   }, [draft, bodyHtml, table]);
@@ -111,9 +111,9 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
     bodyHtml,
     rows: mappedRows,
     mappedFields: mapping.placeholders,
-    separator: draft.separator || "auto",
+    separator: "auto",
     maxRecipients: config.maxCampaignRecipients,
-    pacePerMinute: draft.pace,
+    pacePerMinute: config.defaultPacePerMinute,
     mappingIssues,
   }) : null, [table, user, draft, bodyHtml, mapping, mappedRows, mappingIssues, config]);
   const campaignValidation = useMemo<ClientValidationSummary | null>(() => {
@@ -258,7 +258,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       worksheet: "",
       headerRow: "Row 1",
       toField: savedMapping.toField,
-      separator: savedMapping.separator ?? "auto",
+      separator: "auto",
       ccMode: cc.mode,
       bccMode: bcc.mode,
       replyToMode: replyTo.mode,

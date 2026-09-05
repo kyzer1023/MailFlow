@@ -25,6 +25,7 @@ export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
       state.skipInvalidRows,
       state.attachmentSetId,
       state.attachments,
+      state.config.defaultPacePerMinute,
     ]);
     if (preparation.current && preparation.current.signature !== signature) {
       throw new Error(
@@ -90,7 +91,7 @@ export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
         subjectTemplate: state.draft.subject,
         bodyHtml: state.bodyHtml,
         mapping: state.mapping,
-        pacePerMinute: state.draft.pace,
+        pacePerMinute: state.config.defaultPacePerMinute,
         rows: state.mappedRows,
         validation: state.campaignValidation!,
       });

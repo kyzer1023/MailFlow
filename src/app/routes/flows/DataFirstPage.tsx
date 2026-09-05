@@ -45,12 +45,12 @@ export function DataFirstPage() {
             mapSpreadsheetRows(table, {
               toField: draft.toField,
               placeholders: {},
-              separator: draft.separator,
+              separator: "auto",
             }).rows,
-            draft.separator,
+            "auto",
           )
         : null,
-    [table, draft.toField, draft.separator],
+    [table, draft.toField],
   );
 
   const rebuildTable = (

@@ -63,7 +63,8 @@ The member chooses:
 - Placeholder-to-column mappings.
 - Fixed or column-based CC, BCC, and Reply-To.
 - Message importance.
-- The separator for multiple addresses in a cell.
+
+MailFlow automatically detects commas, semicolons, and newlines in address lists, including pasted CC, BCC, and Reply-To values. The member does not choose a separator.
 
 Every source row creates one recipient job and one separate message. Unrelated recipients are never combined in one To list.
 
@@ -115,7 +116,6 @@ The final review shows:
 - Message and recipient counts.
 - CC and BCC counts.
 - Flow and template version.
-- Configured pace.
 - Estimated duration.
 - Validation totals and skipped rows.
 - Attachment filenames and sizes.
@@ -128,6 +128,7 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 
 - A Queue consumer advances the campaign after the browser closes.
 - Default pace is 12 messages per minute and can be reduced by configuration.
+- The client uses the deployment's configured pace automatically. Members see an estimated duration, without a messages-per-minute setting.
 - All campaigns and self-only test sends from one authenticated mailbox share one durable D1 lease, mailbox pace, provider backoff, and rolling recipient budget.
 - MailFlow reserves 8,000 envelope-recipient entries per mailbox in any rolling 24 hours. To, every CC entry, every BCC entry, and each test send count; repeated address occurrences count again.
 - Each job records status, attempts, timestamps, provider response category, and a human-readable note.

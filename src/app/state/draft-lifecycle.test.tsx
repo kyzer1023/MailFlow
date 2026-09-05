@@ -132,6 +132,49 @@ afterEach(() => {
 });
 
 describe("reviewed campaign lifecycle", () => {
+  it("detects mixed address lists and uses configured pacing instead of stale draft controls", async () => {
+    const configuredApi = {
+      ...api,
+      config: { ...api.config, defaultPacePerMinute: 8 },
+    };
+    const { result } = renderHook(
+      () => ({ state: useDraft(), ensure: useEnsureCampaign() }),
+      {
+        wrapper: ({ children }) => (
+          <ApiContext.Provider value={configuredApi}>
+            <DraftProvider>{children}</DraftProvider>
+          </ApiContext.Provider>
+        ),
+      },
+    );
+    act(() => {
+      result.current.state.setTable(table);
+      result.current.state.setDraft((current) => ({
+        ...current,
+        toField: "email",
+        subject: "Hello",
+        body: "<p>Hello</p>",
+        cc: "one@example.test,two@example.test;three@example.test\nfour@example.test",
+        separator: "semicolon",
+        pace: 20,
+      }));
+      result.current.state.setFlowId(flow.id);
+    });
+    expect(result.current.state.campaignValidation?.ok).toBe(true);
+    await act(async () => {
+      await result.current.ensure();
+    });
+    const payload = vi.mocked(createCampaign).mock.calls.at(-1)![0];
+    expect(payload.pacePerMinute).toBe(8);
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0].to).toBe("recipient@example.test");
+    expect(payload.rows[0].cc).toEqual([
+      "one@example.test",
+      "two@example.test",
+      "three@example.test",
+      "four@example.test",
+    ]);
+  });
   it("replays an identical request after a lost creation response without publishing a template", async () => {
     vi.mocked(createCampaign)
       .mockRejectedValueOnce(new TypeError("Lost response"))

@@ -56,7 +56,7 @@ export function applyTemplate(
     subject: version.subjectTemplate,
     body: version.bodyHtml,
     importance: saved.importance || "normal",
-    separator: saved.separator || "auto",
+    separator: "auto" as const,
   };
   for (const key of ["cc", "bcc", "replyTo"] as const) {
     const rule = saved[key];

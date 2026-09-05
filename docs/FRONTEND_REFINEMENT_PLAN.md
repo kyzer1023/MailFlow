@@ -105,3 +105,7 @@ The three PRs remain a useful engineering grouping, but not a claim that a subst
 - Unknown is never presented as Failed or Delivered, and manual verification cannot overwrite SMTP evidence.
 - Optional controls remain discoverable and accessible; loading, empty, error, disabled, and recovery states work with keyboard and narrow screens.
 - Relevant type checks, integration tests, production builds, and visual comparisons pass on the integrated candidate. Real mail requires a separately authorized, bounded verification run.
+
+### Staging feedback refinement, 2026-09-05
+
+The user requested top placement of Attachments and Sending options, visible confirmation on the template save button, automatic address-list detection, automatic configured pacing, and thorough Chrome layout verification. These instructions supersede the optional-section placement and manual separator/pacing controls shown in earlier references. Keep the Paper/Moss/Coral identity and existing sending safeguards.

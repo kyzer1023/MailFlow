@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CaretDown,
+  CheckCircle,
   Files,
   Info,
   Paperclip,
@@ -72,6 +73,7 @@ export function TemplatePage({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedNotice, setSavedNotice] = useState("");
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const placeholders = extractPlaceholders(
     draft.subject,
     bodyHtmlFromDraft(draft.body),
@@ -92,14 +94,17 @@ export function TemplatePage({
     missing.length === 0 &&
     state.attachmentsReady &&
     Boolean(table);
+  const recipientConfiguration = mappingToRecipientConfiguration({
+    ...mapping,
+    toField: mapping.toField || "email",
+  });
+  const templateSignature = (name: string) =>
+    JSON.stringify([name, draft.subject, safeBody, recipientConfiguration]);
+  const isTemplateSaved = savedSignature === templateSignature(draft.name);
   const save = async (name: string, update: boolean) => {
     if (saving || !hasContent) return;
     setSaving(true);
     setSaveError("");
-    const recipientConfiguration = mappingToRecipientConfiguration({
-      ...mapping,
-      toField: mapping.toField || "email",
-    });
     const payload = {
       subjectTemplate: draft.subject,
       bodyHtml: safeBody,
@@ -125,6 +130,7 @@ export function TemplatePage({
         setTemplateVersionId(response.templateVersion?.id || null);
       }
       updateDraft("name", name);
+      setSavedSignature(templateSignature(name));
       setSavedNotice(
         `Saved as “${name}”. Recipients and attachment files stay with this send.`,
       );
@@ -192,15 +198,33 @@ export function TemplatePage({
         {editing ? "Back to templates" : "Back to recipients"}
       </button>
       <button
-        className="button button--text"
-        disabled={!hasContent || state.snapshotLocked}
+        className={`button button--text${isTemplateSaved ? " template-save--saved" : ""}`}
+        disabled={!hasContent || state.snapshotLocked || saving}
+        aria-busy={saving}
+        title={
+          isTemplateSaved
+            ? "This version is saved. Open save options."
+            : undefined
+        }
         onClick={() => {
           setSaveError("");
           setDialog("save");
         }}
       >
-        <Files />
-        Save as template
+        {saving ? (
+          <SpinnerGap className="spin" />
+        ) : isTemplateSaved ? (
+          <CheckCircle weight="fill" />
+        ) : (
+          <Files />
+        )}
+        <span aria-live="polite">
+          {saving
+            ? "Saving template…"
+            : isTemplateSaved
+              ? "Template saved"
+              : "Save as template"}
+        </span>
       </button>
       {!editing && (
         <button
@@ -215,8 +239,8 @@ export function TemplatePage({
   );
   const content = (
     <>
-      {savedNotice && (
-        <p className="notice" role="status">
+      {savedNotice && isTemplateSaved && (
+        <p className="notice template-save-notice" role="status">
           {savedNotice}
         </p>
       )}
@@ -224,6 +248,58 @@ export function TemplatePage({
         className={`template-layout familiar-layout${missing.length ? " field-resolution-layout" : ""}`}
       >
         <div className="message-main">
+          <div className="message-options">
+            {!editing && (
+              <details className="panel message-disclosure">
+                <summary>
+                  <Paperclip /> Attachments <small>Optional</small>
+                  <span>
+                    {state.attachments.length
+                      ? `${state.attachments.length} ${state.attachments.length === 1 ? "file" : "files"}`
+                      : "Add files"}
+                  </span>
+                  <CaretDown className="disclosure-caret" />
+                </summary>
+                <div>
+                  {config.attachmentsEnabled ? (
+                    <AttachmentPicker />
+                  ) : (
+                    <div className="notice">
+                      <Info />
+                      <span>
+                        {config.attachmentsSmtpAuthorizationRequired
+                          ? "Reconnect Microsoft to authorize attachments."
+                          : config.attachmentsOneDriveAuthorizationRequired
+                            ? "Connect OneDrive to add attachment files."
+                            : "Attachments are available when this deployment uses SMTP."}
+                        {(config.attachmentsSmtpAuthorizationRequired ||
+                          config.attachmentsOneDriveAuthorizationRequired) && (
+                          <a
+                            href={
+                              config.attachmentsSmtpAuthorizationRequired
+                                ? "/auth/microsoft/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
+                                : "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
+                            }
+                          >
+                            {config.attachmentsOneDriveAuthorizationRequired
+                              ? "Connect OneDrive"
+                              : "Reconnect Microsoft"}
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </details>
+            )}
+            <details className="panel message-disclosure">
+              <summary>
+                Sending options <small>CC, BCC, Reply-to and importance</small>
+                <CaretDown className="disclosure-caret" />
+              </summary>
+              <SendingOptions />
+            </details>
+          </div>
           <section className="panel editor-card">
             {!editing && (
               <div className="template-choice">
@@ -284,52 +360,6 @@ export function TemplatePage({
               />
             </div>
           </section>
-          {!editing && (
-            <details className="panel message-disclosure">
-              <summary>
-                <Paperclip /> Attachments <small>Optional</small>
-                <span>Add files</span>
-                <CaretDown className="disclosure-caret" />
-              </summary>
-              <div>
-                {config.attachmentsEnabled ? (
-                  <AttachmentPicker />
-                ) : (
-                  <div className="notice">
-                    <Info />
-                    <span>
-                      {config.attachmentsSmtpAuthorizationRequired
-                        ? "Reconnect Microsoft to authorize attachments."
-                        : config.attachmentsOneDriveAuthorizationRequired
-                          ? "Connect OneDrive to add attachment files."
-                          : "Attachments are available when this deployment uses SMTP."}
-                      {(config.attachmentsSmtpAuthorizationRequired ||
-                        config.attachmentsOneDriveAuthorizationRequired) && (
-                        <a
-                          href={
-                            config.attachmentsSmtpAuthorizationRequired
-                              ? "/auth/microsoft/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
-                              : "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
-                          }
-                        >
-                          {config.attachmentsOneDriveAuthorizationRequired
-                            ? "Connect OneDrive"
-                            : "Reconnect Microsoft"}
-                        </a>
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </details>
-          )}
-          <details className="panel message-disclosure">
-            <summary>
-              Sending options <small>CC, BCC, Reply-to and importance</small>
-              <CaretDown className="disclosure-caret" />
-            </summary>
-            <SendingOptions />
-          </details>
         </div>
         <aside className="message-values">
           {missing.length > 0 ? (

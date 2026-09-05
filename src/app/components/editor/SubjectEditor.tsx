@@ -98,6 +98,18 @@ export const SubjectEditor = forwardRef<
       aria-multiline="false"
       data-placeholder="Add a clear email subject"
       onFocus={onFocus}
+      onBlur={() => {
+        if (
+          root.current &&
+          /\{\{[^}]+\}\}/u.test(root.current.textContent || "")
+        ) {
+          appendTokenEditorContent(
+            root.current,
+            `<span>${escapeMergeValue(read())}</span>`,
+            options,
+          );
+        }
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") event.preventDefault();
       }}

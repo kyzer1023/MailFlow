@@ -336,6 +336,17 @@ describe("authenticated information architecture", () => {
     await waitFor(() => expect(mockedUpdateFlow).toHaveBeenCalledWith("flow-rename", { name: "Renamed flow" }, "test-csrf-token"));
     expect(mockedCreateTemplateVersion).toHaveBeenCalled();
     expect(await screen.findByRole("status")).toHaveTextContent("Renamed flow");
+    expect(screen.getByRole("button", { name: "Template saved" })).toBeEnabled();
+    expect(screen.queryByLabelText("Messages per minute")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Separate multiple addresses with")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Sending options", { exact: false }));
+    fireEvent.paste(screen.getByRole("textbox", { name: "CC" }), { clipboardData: { getData: () => "one@example.test,two@example.test;three@example.test\nfour@example.test" } });
+    for (const address of ["one", "two", "three", "four"]) {
+      expect(screen.getByRole("button", { name: `Remove ${address}@example.test` })).toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText("Importance"), { target: { value: "high" } });
+    expect(screen.getByRole("button", { name: "Save as template" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Template saved" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to templates" }));
     expect(await screen.findByRole("heading", { name: "Renamed flow" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Original flow" })).not.toBeInTheDocument();
@@ -380,6 +391,7 @@ describe("authenticated information architecture", () => {
     expect(await screen.findByText("Choose a different flow name. Flow names must be unique.")).toBeInTheDocument();
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
     expect(mockedCreateTemplateVersion).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Template saved" })).not.toBeInTheDocument();
     expect(screen.queryByText("Changes were not fully saved.")).not.toBeInTheDocument();
   });
 

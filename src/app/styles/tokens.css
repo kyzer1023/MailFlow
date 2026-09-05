@@ -32,7 +32,9 @@
   --send-space-md: 20px;
   --send-space-row: 16px;
   --send-heading-gap: 14px;
-  --send-content-width: 1110px;
+  --send-content-width: 1440px;
+  --send-values-width: 300px;
+  --send-editor-max-height: 640px;
   --send-space-lg: 28px;
   --send-space-xl: 40px;
   --send-radius: 5px;

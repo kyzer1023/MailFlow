@@ -45,29 +45,6 @@ export function SendingOptions() {
           <option value="low">Low</option>
         </select>
       </Field>
-      <Field label="Separate multiple addresses with">
-        <select
-          value={draft.separator}
-          onChange={(event) => updateDraft("separator", event.target.value)}
-        >
-          <option value="auto">Detect automatically</option>
-          <option value="comma">Comma</option>
-          <option value="semicolon">Semicolon</option>
-          <option value="newline">New line</option>
-        </select>
-      </Field>
-      <Field
-        label="Messages per minute"
-        hint="Messages are sent one at a time."
-      >
-        <input
-          type="number"
-          min="1"
-          max="20"
-          value={draft.pace}
-          onChange={(event) => updateDraft("pace", Number(event.target.value))}
-        />
-      </Field>
     </div>
   );
 }

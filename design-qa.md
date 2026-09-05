@@ -65,3 +65,24 @@ No blocking design question remains for the approved slice. Member usability tes
 - [P3] The name field is shared beneath the new/update choices so either choice can rename a template. Grouping differs slightly from the concept; defaults and publishing behavior match.
 
 final result: passed
+
+## 2026-09-05 staging feedback refinement: Chrome verification
+
+The six user-supplied staging screenshots and accompanying comments are the current source for this refinement. The requested changes supersede the previous placement of optional sections and manual separator/pace controls. Compared the user Message and Review crops with final Chrome captures in `artifacts/local/chrome-message-feedback-comparison.png` and `chrome-review-feedback-comparison.png`. These are before/after content-region comparisons at a common width, preserving aspect ratio. The source captures omit browser chrome and use the user's data; the implementation uses a synthetic long HTML message, a wide table, 48 imported rows, four CC addresses and two small files. They are not claimed as identical-data pixel comparisons. Source screenshots and comparisons remain local and ignored by Git.
+
+Findings and corrections:
+
+- [P2, fixed] Attachments and Sending options were hidden after long HTML content. Both now precede the editor, with separate bordered rows and consistent gaps. Collapsed attachment summaries show the file count. Long HTML has a bounded scrollable editor; an 800px table stays inside it on mobile.
+- [P2, fixed] The save action gave no feedback at the button. It now shows saving progress and a green check with `Template saved` after success. Changing subject, body, mappings or sending rules invalidates that confirmation. Confirmed save-copy and update behavior, and rule-change invalidation in Chrome; component tests also verify failure never shows success.
+- [P2, fixed] Manual separator and pace controls exposed operational details. Address lists always use comma/semicolon/newline detection, including older template mappings. Pasting newlines into a single-line address input previously joined values; paste now parses the original clipboard text before input normalization. Verified four separate chips and four resolved CC addresses in Review. Configured pacing is automatic; Review retains an estimated duration with correct singular wording.
+- [P2, fixed] The wide Message screen used a narrow content cap while the header and other routes stretched further. Message and Review now share a centered 1440px maximum content width; the message sidebar uses a bounded width. Header, notice and content left edges matched at 1440px and 1920px viewports.
+- [P2, fixed] Step labels were unevenly distributed. All three steps now occupy equal columns with continuous connector lines on desktop. Explicitly skipped rows show `skipped` and a completed node rather than continuing to demand review.
+- [P2, fixed] At tablet width, the logo extended beyond the sidebar and the action bar wrapped excessively. The logo now fits the available rail width; the action bar groups its assurance above one action row. The message sidebar narrows at the tablet breakpoint. Modal dialogs lock background scrolling.
+
+Verified in the requested Chrome browser at 1920x1080, 1440x900, 1024x768 and 390x844: Message, Review, long HTML, wide table containment, expanded Sending options, TXT/CSV attachments, mixed-address paste, save/update and subsequent edit, template picker, Escape/focus restoration, explicit skipped rows and acknowledgement. No document overflow was observed. The 15px scrollbar accounts for the document/viewport width difference on applicable captures. Reduced-motion emulation reported zero running animations and was cleared; viewport overrides were reset. Browser warning/error logs were empty. No test-send or campaign start ran.
+
+Evidence includes `chrome-message-wide-final.png`, `chrome-review-wide-final.png`, `chrome-message-desktop.png`, `chrome-message-tablet.png`, `chrome-message-mobile.png`, `chrome-review-desktop.png`, `chrome-review-tablet.png` and `chrome-review-mobile.png`. Full-page captures include the sticky action bar at the captured viewport position; this is capture behavior, not a second footer. The wide final captures are viewport captures. The earlier 1024px capture identified the logo/action-bar issues and was replaced after correction.
+
+All identified P0/P1/P2 issues in this refinement are resolved. No new blocking question remains. Real Microsoft delivery was not part of this visual test. Existing bundle-size warnings remain an engineering follow-up.
+
+final result: passed
