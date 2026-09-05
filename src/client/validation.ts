@@ -289,5 +289,3 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
   };
 }
 
-/** Alias used by UI view-models. */
-export const validateCampaignData = validateClientCampaign;

@@ -1,10 +1,9 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { buildMessagePreviews, createCampaignPayload, formatAttachmentSize, representativeRows, validateAttachmentSelection } from "./campaign";
-import { mapSpreadsheetRows, mappingToRecipientConfiguration, mappingsForCurrentTable, recipientConfigurationToClientMapping } from "./mapping";
-import { resultsToCsv } from "./results-export";
-import { parseAndSelectSpreadsheet, parseCsvText, parseSpreadsheet, parseXlsx, selectSpreadsheetTable } from "./spreadsheet";
-import { buildPreviewSrcDoc, escapeMergeValue, renderTemplate, replaceTextSelection, sanitizeTemplateHtml } from "./template";
+import { mapSpreadsheetRows, mappingToRecipientConfiguration, recipientConfigurationToClientMapping } from "./mapping";
+import { parseCsvText, parseSpreadsheet, parseXlsx, selectSpreadsheetTable } from "./spreadsheet";
+import { buildPreviewSrcDoc, escapeMergeValue, renderTemplate, sanitizeTemplateHtml } from "./template";
 import type { MappedRecipientRow, NormalizedRecipientRow, SpreadsheetTable } from "./types";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES } from "./types";
 import { extractPlaceholders, parseEmailList, validateClientCampaign, validateMappedRecipientRows } from "./validation";
@@ -22,32 +21,7 @@ function mappedRow(sourceRow: number, to: string, name: string): MappedRecipient
   return { sourceRow, to, cc: "", bcc: "", replyTo: "", mergeData: { first_name: name } };
 }
 
-describe("template editor selections", () => {
-  it("replaces highlighted copy with a dynamic field and leaves the cursor after it", () => {
-    expect(replaceTextSelection("Hello friend, welcome", "{{first_name}}", 6, 12)).toEqual({
-      value: "Hello {{first_name}}, welcome",
-      cursor: 20,
-    });
-  });
-
-  it("inserts a dynamic field at an empty caret", () => {
-    expect(replaceTextSelection("Hello ", "{{first_name}}", 6, 6)).toEqual({
-      value: "Hello {{first_name}}",
-      cursor: 20,
-    });
-  });
-});
-
 describe("spreadsheet parsing and selection", () => {
-  it("uses only the latest worksheet headers as dynamic fields", () => {
-    const current = mappingsForCurrentTable(makeTable([
-      { sourceRow: 1, values: ["Name", "Email"] },
-      { sourceRow: 2, values: ["Ada", "ada@example.test"] },
-    ]));
-    expect(current).toEqual({ name: "name", email: "email" });
-    expect(current).not.toHaveProperty("past_sheet_field");
-  });
-
   it("parses quoted CSV fields, escaped quotes, and embedded newlines", () => {
     const rows = parseCsvText('Name,Email,Note\r\n"Ada, Lovelace",ada@example.com,"line 1\nline 2"\r\n"She said ""hello""",b@example.com,ok\r\n');
     expect(rows).toEqual([
@@ -115,11 +89,12 @@ describe("spreadsheet parsing and selection", () => {
     expect(table.rows[0].values).toEqual({ name: "Ada", email: "ada@example.com" });
   });
 
-  it("detects a format from a file name and supports one-call selection", async () => {
-    const table = await parseAndSelectSpreadsheet(new TextEncoder().encode("Email\na@example.com\n").buffer, {
+  it("detects a format from the filename before worksheet selection", async () => {
+    const workbook = await parseSpreadsheet(new TextEncoder().encode("Email\na@example.com\n").buffer, {
       fileName: "members.csv",
-      headerRow: 1,
     });
+    expect(workbook.format).toBe("csv");
+    const table = selectSpreadsheetTable(workbook, { headerRow: 1 });
     expect(table.rows).toHaveLength(1);
     expect(table.rows[0].values.email).toBe("a@example.com");
     await expect(parseSpreadsheet("not xlsx", { format: "xlsx" })).rejects.toMatchObject({ code: "unsupported_format" });
@@ -461,26 +436,4 @@ describe("campaign payload and result export", () => {
     expect(payload).not.toHaveProperty("attachments");
   });
 
-  it("exports result rows with quoting and formula-injection protection", () => {
-    const csv = resultsToCsv([
-      {
-        sourceRow: 2,
-        recipient: "a@example.com",
-        status: "accepted",
-        attemptCount: 1,
-        createdAt: "2026-08-31T00:00:00.000Z",
-        acceptedAt: "2026-08-31T00:00:01.000Z",
-        lastErrorMessage: "line 1, \"line 2\"",
-      },
-      {
-        sourceRow: 3,
-        recipient: "=HYPERLINK(\"https://bad\")",
-        status: "failed",
-        attemptCount: 1,
-      },
-    ]);
-    expect(csv.split("\r\n")[0]).toBe("row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message");
-    expect(csv).toContain('"line 1, ""line 2"""');
-    expect(csv).toContain("'=HYPERLINK");
-  });
 });

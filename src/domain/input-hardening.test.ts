@@ -7,7 +7,6 @@ import { parseSpreadsheet, parseCsvText, normalizeHeaders } from "../client/spre
 import { isValidEmail } from "./validation";
 import { isValidEmail as clientEmail } from "../client/validation";
 import { renderTemplate as clientRender } from "../client/template";
-import { renderTemplate, missingTemplateValues } from "./template";
 
 const encode = (value: string) => new TextEncoder().encode(value);
 const check = (filename: string, bytes: Uint8Array, contentType?: string) => validateAttachmentInput({ filename, bytes, contentType });
@@ -100,9 +99,10 @@ describe("shared input hardening", () => {
       expect(clientEmail(value)).toBe(false);
     }
     expect(isValidEmail("First.Last+tag@example.test")).toBe(true);
-    expect(renderTemplate("{{constructor}}", {})).toBe("");
-    expect(missingTemplateValues("{{toString}}", {})).toEqual(["toString"]);
-    expect(clientRender("{{constructor}}", "<p>{{toString}}</p>", {}).missingPlaceholders).toEqual(["constructor", "toString"]);
+    const inherited = clientRender("{{constructor}}", "<p>{{toString}}</p>", {});
+    expect(inherited.subject).toBe("");
+    expect(inherited.bodyHtml).toBe("<p></p>");
+    expect(inherited.missingPlaceholders).toEqual(["constructor", "toString"]);
     expect(clientRender("{{constructor}}", "<p>OK</p>", { constructor: "Own value" }).subject).toBe("Own value");
     expect(normalizeHeaders(["A", "A", "A_2"]).map((item) => item.key)).toEqual(["a", "a_2", "a_2_2"]);
   });

@@ -1,7 +1,6 @@
 import type { ClientMapping } from "./types";
 import { mappingToRecipientConfiguration } from "./mapping";
 import { renderTemplate } from "./template";
-import { validateClientCampaign } from "./validation";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_FILES,
@@ -15,7 +14,6 @@ import type {
   MessagePreview,
   MappedRecipientRow,
   NormalizedRecipientRow,
-  PreviewPosition,
   RepresentativeRow,
 } from "./types";
 
@@ -152,9 +150,6 @@ export function representativeRows(rows: readonly NormalizedRecipientRow[]): rea
   ];
 }
 
-/** Alias used by the review step. */
-export const getRepresentativeRows = representativeRows;
-
 /** Resolve representative rows into safe, isolated preview models. */
 export function buildMessagePreviews(input: RepresentativePreviewInput): readonly MessagePreview[] {
   return representativeRows(input.rows).map(({ position, row }) => {
@@ -201,7 +196,6 @@ export function createCampaignPayload(input: CreateCampaignPayloadInput): Campai
   if (!flowId) throw new CampaignPayloadError("A flow is required before starting a campaign.");
 
   const fieldMappings = input.mapping.placeholders ?? {};
-  const validSourceRows = new Set(input.validation.validRows.map((row) => row.sourceRow));
   const sourceRows = new Map(input.rows.map((row) => [row.sourceRow, row]));
   const rows: CampaignRecipientPayload[] = [];
   for (const normalized of input.validation.validRows) {
@@ -223,12 +217,6 @@ export function createCampaignPayload(input: CreateCampaignPayloadInput): Campai
     });
   }
 
-  // Keep this check explicit so a caller cannot accidentally add a row between
-  // validation and serialization without re-running validation.
-  if (rows.some((row) => !validSourceRows.has(row.sourceRow))) {
-    throw new CampaignPayloadError("The campaign data changed after validation. Validate the rows again.");
-  }
-
   const persistedMapping = mappingToRecipientConfiguration(input.mapping);
   return {
     idempotencyKey,
@@ -248,21 +236,3 @@ export function createCampaignPayload(input: CreateCampaignPayloadInput): Campai
   };
 }
 
-/** Alias describing the endpoint-oriented operation. */
-export const createCampaignRequest = createCampaignPayload;
-
-/** Convert an arbitrary position into a stable display label. */
-export function previewPositionLabel(position: PreviewPosition): string {
-  switch (position) {
-    case "first":
-      return "First valid row";
-    case "middle":
-      return "Middle valid row";
-    case "last":
-      return "Last valid row";
-  }
-}
-
-// Exporting this helper keeps integration code from importing the validation
-// module solely to create the pre-flight summary.
-export { validateClientCampaign };

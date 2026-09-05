@@ -76,9 +76,6 @@ export function normalizeHeaderKey(label: string, fallback = "column"): string {
   return /^[a-z]/u.test(key) ? key : `${safeFallback}_${key}`;
 }
 
-/** Alias with a concise name for mapping controls. */
-export const normalizeHeader = normalizeHeaderKey;
-
 /** Normalize headers and suffix collisions deterministically. */
 export function normalizeHeaders(labels: readonly string[]): readonly SpreadsheetColumn[] {
   const seen = new Map<string, number>();
@@ -416,11 +413,3 @@ export function selectSpreadsheetTable(
   };
 }
 
-/** Convenience for the common one-call import path. */
-export async function parseAndSelectSpreadsheet(
-  input: SpreadsheetInput,
-  options: ParseSpreadsheetOptions & SelectTableOptions = {},
-): Promise<SpreadsheetTable> {
-  const workbook = await parseSpreadsheet(input, options);
-  return selectSpreadsheetTable(workbook, options);
-}

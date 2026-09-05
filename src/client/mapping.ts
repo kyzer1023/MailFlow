@@ -5,7 +5,6 @@ import type {
   MappedRecipientRow,
   MappingIssue,
   MappingResult,
-  SpreadsheetColumn,
   SpreadsheetTable,
 } from "./types";
 
@@ -170,28 +169,3 @@ export function recipientConfigurationToClientMapping(
   };
 }
 
-/** Safe source-to-placeholder mapping used by template rendering. */
-export function normalizePlaceholderMapping(
-  placeholders: readonly string[],
-  mapping: ClientMapping,
-): Readonly<Record<string, string>> {
-  const result: Record<string, string> = {};
-  for (const placeholder of placeholders) {
-    const field = mapping.placeholders?.[placeholder];
-    if (field !== undefined) result[placeholder] = field.trim();
-  }
-  return result;
-}
-
-/** Return a compact list useful for mapping controls. */
-export function mappingColumnOptions(columns: readonly SpreadsheetColumn[]): readonly { key: string; label: string }[] {
-  return columns.map((column) => ({ key: column.key, label: column.label || column.key }));
-}
-
-/**
- * Treat the currently selected worksheet as the complete dynamic-field source.
- * Replacing a workbook must never carry placeholder keys from an earlier file.
- */
-export function mappingsForCurrentTable(table: SpreadsheetTable): Readonly<Record<string, string>> {
-  return Object.fromEntries(table.columns.map((column) => [column.key, column.key]));
-}
