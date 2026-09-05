@@ -11,6 +11,6 @@ describe("completed campaign presentation", () => {
   it("distinguishes owner verification, skipped rows and processing completion", () => {
     expect(completedResult(1, 0, 0, 1).label).toBe("Finished, receipt verified");
     expect(completedResult(0, 0, 1).label).toBe("Finished with skipped rows");
-    expect(completedResult(0, 0, 0).label).toBe("Processing finished");
+    expect(completedResult(0, 0, 0).label).toBe("Accepted by Microsoft");
   });
 });

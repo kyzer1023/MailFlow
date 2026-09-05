@@ -131,17 +131,20 @@
 .status {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  border-radius: 999px;
-  padding: 0.35rem 0.62rem;
-  font-size: 0.72rem;
-  line-height: 1;
+  gap: var(--status-gap);
+  border-radius: var(--status-radius);
+  min-height: var(--status-height);
+  max-width: 100%;
+  padding: var(--status-padding-block) var(--status-padding-inline);
+  font-size: var(--status-font-size);
+  line-height: 1.35;
   font-weight: 750;
-  white-space: nowrap;
+  white-space: normal;
 }
 .status > span {
-  width: 7px;
-  height: 7px;
+  width: var(--status-dot-size);
+  height: var(--status-dot-size);
+  flex-shrink: 0;
   border-radius: 50%;
   background: currentColor;
 }
@@ -300,7 +303,7 @@
 @media (max-width: 680px) {
   .campaign-list table {
     width: 100%;
-    min-width: 0;
+    min-width: var(--campaign-table-min-width);
     table-layout: fixed;
   }
 

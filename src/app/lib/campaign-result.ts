@@ -4,5 +4,5 @@ export function completedResult(unknown: number, failed: number, skipped: number
   if (failed > 0) return { label: "Finished with recipient failures", tone: "failed" };
   if (unknown > 0) return { label: "Finished, receipt verified", tone: "completed" };
   if (skipped > 0) return { label: "Finished with skipped rows", tone: "paused" };
-  return { label: "Processing finished", tone: "completed" };
+  return { label: "Accepted by Microsoft", tone: "completed" };
 }

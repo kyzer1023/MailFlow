@@ -120,3 +120,9 @@ final result: passed
 - Typography and assets retain the existing fonts, logo and Phosphor icons. Paper/Moss colors and panel rhythm retained. Note wrapping, separate action alignment and explicit outcome copy inspected; mobile has no document overflow. Existing horizontally scrollable recipient table is retained. No new image assets are needed.
 - Confirmation remains disabled until checked; saving preserves Unknown and changes the summary to recipient failures when failures remain. Browser warning/error logs empty. No remaining actionable P0/P1/P2 findings for this scoped correction.
 - final result: passed
+
+### 2026-09-06 - Status pill size
+- Source: supplied codex-clipboard-fd2fc147-769d-465d-94ae-f4a21af16906.png, a cropped status column. Compared it together with the synthetic history capture at 1440x900; focus is the badge region, not the unmatched full-page crop. Implementation: artifacts/local/results/status-pills-desktop.png and status-pills-mobile.png (390x844); normal browser density.
+- Retained existing typeface, weights, palette, dots and assets; centralized larger badge size and padding. Replaced Processing finished with Accepted by Microsoft for fully accepted campaigns. Browser DOM confirms 13px type and 32px height; longer labels can wrap without overlap.
+- P2 mobile overlap found in first capture: fixed-width history columns squeezed enlarged labels. Corrected with a horizontally scrolling 640px table minimum and focusable named region. Reinspection confirms short labels remain one line and long labels have readable wraps, with no document overflow. No remaining P0/P1/P2 findings for this scoped change.
+- final result: passed

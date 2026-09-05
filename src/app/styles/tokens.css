@@ -51,6 +51,14 @@
   --space-campaign-notice-gap: 16px;
   --space-campaign-identity-gap: 14px;
   --space-campaign-identity-bottom: 20px;
+  --status-height: 32px;
+  --status-font-size: 0.8125rem;
+  --status-padding-block: 7px;
+  --status-padding-inline: 12px;
+  --status-gap: 7px;
+  --status-dot-size: 7px;
+  --status-radius: 999px;
+  --campaign-table-min-width: 640px;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-display);

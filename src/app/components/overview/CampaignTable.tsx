@@ -10,7 +10,7 @@ export interface CampaignTableProps {
 
 export function CampaignTable({ campaigns }: CampaignTableProps) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" tabIndex={0} role="region" aria-label="Campaign results, scroll horizontally to see all columns">
       <table>
         <thead>
           <tr>
