@@ -99,6 +99,7 @@ export interface TemplateVersionRecord {
 }
 
 export interface CampaignRecord {
+  deliveryVerifiedCount?: number;
   id: string;
   flowId: string;
   templateVersionId: string;
@@ -131,6 +132,9 @@ export interface CampaignRecord {
 }
 
 export interface RecipientJobRecord {
+  deliveryVerifiedBy?: string | null;
+  deliveryVerifiedAt?: string | null;
+  deliveryVerificationNote?: string | null;
   id: string;
   campaignId: string;
   sourceRow: number;
@@ -160,6 +164,7 @@ export interface RecipientJobRecord {
 }
 
 export type AuditEventType =
+  | "recipient.delivery_verified"
   | "campaign.created"
   | "campaign.validated"
   | "campaign.queued"

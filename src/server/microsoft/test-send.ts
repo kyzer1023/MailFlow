@@ -31,6 +31,7 @@ export class TestSendError extends Error {
     readonly safeToRetry = false,
     readonly retryAfter: number | string | Date | null = null,
     readonly category: string | null = null,
+    readonly diagnosticId?: string,
   ) {
     super(message);
     this.name = "TestSendError";
@@ -128,6 +129,7 @@ export async function sendProviderTestToSelf(
       result.kind !== "unknown",
       result.kind === "retryable" ? result.retryAfter ?? null : null,
       result.kind === "retryable" ? result.category : result.kind,
+      result.diagnosticId,
     );
   }
   return {

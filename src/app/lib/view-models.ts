@@ -1,7 +1,7 @@
 import type { CampaignCounts, CampaignRecord, FlowRecord } from "../../domain/types";
 import type { SpreadsheetTable } from "../../client/types";
 import type { CampaignViewModel, CampaignViewStatus, DynamicFieldOption, FlowViewModel } from "../state/types";
-import { formatDate } from "./format";
+import { formatDate, formatTimestamp } from "./format";
 
 export function columnOptions(table: SpreadsheetTable | null | undefined): readonly DynamicFieldOption[] {
   return table ? table.columns.map((column) => ({ value: column.key, label: column.label || column.key })) : [];
@@ -39,10 +39,12 @@ export function displayCampaign(
   return {
     id: campaign.id,
     name: flowName.trim() || campaign.sourceFilename || "Campaign",
-    date: formatDate(campaign.createdAt),
-    updated: formatDate(campaign.updatedAt),
+    date: formatTimestamp(campaign.createdAt),
+    updated: formatTimestamp(campaign.updatedAt),
     status: resolvedStatus,
     accepted: counts?.accepted ?? 0,
+    skipped: counts?.skipped ?? 0,
+    deliveryVerifiedCount: campaign.deliveryVerifiedCount ?? 0,
     recipientFailed: counts?.failed ?? 0,
     unknown: counts?.unknown ?? 0,
     notSent: resolvedStatus === "failed"

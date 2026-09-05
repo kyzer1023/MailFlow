@@ -40,6 +40,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
               </td>
               <td className="campaign-results">
                 <strong>{campaign.accepted}</strong> accepted
+                {(campaign.skipped ?? 0) > 0 && <><br /><small>{campaign.skipped} skipped</small></>}
                 {campaign.recipientFailed > 0 && (
                   <>
                     <br />
@@ -50,6 +51,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
                   <>
                     <br />
                     <small>{campaign.unknown} outcome unknown</small>
+                    {(campaign.deliveryVerifiedCount ?? 0) > 0 && <><br /><small>{campaign.deliveryVerifiedCount} delivery verified manually</small></>}
                   </>
                 )}
                 {campaign.status === "failed" && (

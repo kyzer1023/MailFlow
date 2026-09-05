@@ -96,3 +96,20 @@ Synthetic interactions passed: XLSX import and flags, template picker/reuse, dir
 Scoped follow-up to the user's two Message screenshots: retain the existing editor and show persistent, editable column connections in the sidebar. The chosen selector remains focused after the final connection; the subject receives no programmatic focus. Green Connected states and an accessible completion message make the result explicit. Template token names remain stable.
 
 Verified in the in-app browser at 1440x900, 1024x768 and 390x844 using `renamed-columns.xlsx` and a saved workshop message. Keyboard selection, suggested-column selection, clearing/reconnecting, Review rendering and return navigation passed. Connected controls stay visible, selected values persist, and there is no horizontal overflow. Local captures are `artifacts/local/mapping-unconnected-1440.png` and `mapping-connected-{1440,1024,390}.png`. Result: passed. Chrome was unavailable; no real mail was sent.
+
+
+## 2026-09-05: Results reporting and manual delivery verification
+
+Scope: preserve the established campaign composition and Familiar Paper tokens while separating Unknown from recipient failure, adding explicit member verification, and making timing evidence readable. Source: `mock-images/06-campaign.png`; the existing application remains the source for current navigation, branding and reusable dialog controls. The old mock's example identities, decorative receipt, six-counter total and recovery copy are superseded by the accepted product requirements.
+
+Compared the source and the running implementation together at the source's 1672 x 941 viewport. Evidence: `artifacts/local/results/reference-running.png`. The source is a framed concept; the implementation is an unframed production screen with synthetic rows and an additional Unknown counter/attention notice, so this is a composition and component comparison, not a claim of identical content or pixels. Paper surfaces, Moss/Coral roles, sidebar, counter route, result table and recovery/audit sidebar remain consistent.
+
+Initial P2 finding: adding a seventh counter with column auto-placement conflicted with the existing mobile three-column rule and collapsed the first tracks. Fixed the narrow layout to use row auto-placement; `mobile-fixed.png` shows all seven readable counters. Also separated manual evidence onto its own history line, retained visible confirmation focus, and prevented the longer audit sidebar from stretching the recovery card into an empty tall panel.
+
+Functional inventory passed: running/completed Unknown and recipient-failed counters; processed-row feedback; configured maximum pace versus observed throughput; completed/failed/paused states without a remaining-time promise; Not sent rows; exact MYT timestamps; explicit receipt checkbox gating; optional note; failure/retry; Escape cancellation and opener focus; fresh confirmation required after reopening; saved-evidence focus; preserved Unknown and attempt count after verification; history evidence; reduced motion and console checks.
+
+Final captures in `artifacts/local/results/`: `completed-desktop-final.png` (1440 x 900), `failed-tablet-final.png` (1024 x 768), `mobile-fixed.png` and `dialog-mobile-error.png` (390 x 844), `running-wide-final.png` (1920 x 1080), `history-desktop-final.png`, and `history-mobile-final.png`. Earlier desktop/dialog/saved-state captures are retained locally. Long-page screenshots include the existing fixed support footer at its viewport position; actual scrolling and horizontal result-table access were exercised. No document overflow was observed at the required sizes. Browser console warnings/errors were empty. Viewport and reduced-motion overrides were cleared.
+
+The in-app browser was used with synthetic browser-only API interception; fixture source lives in ignored `tmp/` and `.local-preview.html` and is absent from production imports. No provider-bound action ran. No new raster assets or redesign were needed. Earlier workflow QA above remains unchanged.
+
+final result: passed

@@ -373,6 +373,12 @@ export function pauseCampaign(
   );
 }
 
+export function verifyDelivery(campaignId: string, jobId: string, note: string, csrfToken: string): Promise<{ job: RecipientJobRecord }> {
+  return apiRequest(`/api/campaigns/${encodeURIComponent(campaignId)}/jobs/${encodeURIComponent(jobId)}/delivery-verification`, {
+    method: "POST", body: { confirmed: true, note }, csrfToken,
+  });
+}
+
 export function resumeCampaign(
   campaignId: string,
   csrfToken: string,

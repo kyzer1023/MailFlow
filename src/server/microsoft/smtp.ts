@@ -26,6 +26,7 @@ export type SmtpErrorCategory =
   | "provider";
 
 export class SmtpProviderError extends Error {
+  diagnosticId?: string;
   readonly category: SmtpErrorCategory;
   readonly safeToRetry: boolean;
   readonly responseCode?: number;
@@ -44,13 +45,19 @@ export interface SmtpReply {
   lines: string[];
 }
 
+type SmtpStage = "prepare" | "connect" | "greeting" | "ehlo" | "starttls" | "tls" | "secure_ehlo" | "authenticate" | "sender" | "recipient" | "data" | "body" | "terminator" | "acknowledgement" | "quit";
+type SmtpTrace = { stage: SmtpStage; startedAt: number; correlationId: string };
+class SmtpWireFailure extends Error {
+  constructor(readonly classification: "timeout" | "socket_closed") { super(classification); }
+}
+
 async function withinTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       operation,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("SMTP operation timeout")), timeoutMs);
+        timer = setTimeout(() => reject(new SmtpWireFailure("timeout")), timeoutMs);
       }),
     ]);
   } finally {
@@ -94,7 +101,7 @@ class SmtpWire {
       const complete = this.takeCompleteReply();
       if (complete) return complete;
       const result = await withinTimeout(this.reader.read(), this.timeoutMs);
-      if (result.done) throw new Error("SMTP connection closed");
+      if (result.done) throw new SmtpWireFailure("socket_closed");
       this.buffer += this.decoder.decode(result.value, { stream: true });
       for (;;) {
         const newline = this.buffer.indexOf("\r\n");
@@ -183,32 +190,39 @@ export class ExchangeOnlineSmtpClient {
     this.connector = options.connect ?? cloudflareConnect;
   }
 
-  private async authenticatedWire(accessToken: string, mailboxAddress: string): Promise<{ wire: SmtpWire; auth: SmtpReply; greeting: SmtpReply; startTls: SmtpReply }> {
+  private async authenticatedWire(accessToken: string, mailboxAddress: string, trace?: SmtpTrace): Promise<{ wire: SmtpWire; auth: SmtpReply; greeting: SmtpReply; startTls: SmtpReply }> {
     if (!accessToken || /\s/.test(accessToken)) throw new SmtpProviderError("authentication", "Microsoft SMTP authorization is missing");
     const mailbox = requireMailbox(mailboxAddress);
     let socket: SmtpSocketLike | null = null;
     let wire: SmtpWire | null = null;
     try {
+      if (trace) trace.stage = "connect";
       socket = await this.connector({ hostname: this.hostname, port: this.port }, { secureTransport: "starttls" });
       await withinTimeout(socket.opened, this.timeoutMs);
       wire = new SmtpWire(socket, this.timeoutMs);
+      if (trace) trace.stage = "greeting";
       const greeting = await wire.readReply();
       expect(greeting, [220], "connection");
+      if (trace) trace.stage = "ehlo";
       await wire.writeLine(`EHLO ${this.clientName}`);
       expect(await wire.readReply(), [250], "greeting");
+      if (trace) trace.stage = "starttls";
       await wire.writeLine("STARTTLS");
       const startTls = await wire.readReply();
       expect(startTls, [220], "TLS negotiation");
       wire.release();
+      if (trace) trace.stage = "tls";
       socket = socket.startTls();
       await withinTimeout(socket.opened, this.timeoutMs);
       wire = new SmtpWire(socket, this.timeoutMs);
+      if (trace) trace.stage = "secure_ehlo";
       await wire.writeLine(`EHLO ${this.clientName}`);
       const secureEhlo = await wire.readReply();
       expect(secureEhlo, [250], "secure greeting");
       if (!secureEhlo.lines.some((line) => /AUTH.*XOAUTH2/i.test(line))) {
         throw new SmtpProviderError("permission", "Microsoft did not offer OAuth SMTP authentication for this mailbox");
       }
+      if (trace) trace.stage = "authenticate";
       const xoauth2 = base64Utf8(`user=${mailbox}\x01auth=Bearer ${accessToken}\x01\x01`);
       await wire.writeLine(`AUTH XOAUTH2 ${xoauth2}`);
       let auth = await wire.readReply();
@@ -219,11 +233,21 @@ export class ExchangeOnlineSmtpClient {
       expect(auth, [235], "authentication");
       return { wire, auth, greeting, startTls };
     } catch (error) {
+      const mapped = error instanceof SmtpProviderError ? error : new SmtpProviderError("network", "MailFlow could not establish an authenticated SMTP connection", { safeToRetry: true });
+      if (trace) { this.recordFailure(trace, error); mapped.diagnosticId = trace.correlationId; }
       if (wire) await wire.close().catch(() => undefined);
       else if (socket) await socket.close().catch(() => undefined);
-      if (error instanceof SmtpProviderError) throw error;
-      throw new SmtpProviderError("network", "MailFlow could not establish an authenticated SMTP connection", { safeToRetry: true });
+      throw mapped;
     }
+  }
+
+  private recordFailure(trace: SmtpTrace, error: unknown): void {
+    console.warn("mailflow.smtp.failure", {
+      correlationId: trace.correlationId,
+      stage: trace.stage,
+      classification: error instanceof SmtpWireFailure ? error.classification : error instanceof SmtpProviderError ? "provider_rejection" : "socket_failure",
+      elapsedMs: Math.max(0, Math.round(performance.now() - trace.startedAt)),
+    });
   }
 
   async probe(accessToken: string, mailboxAddress: string): Promise<SmtpProbeResult> {
@@ -244,6 +268,7 @@ export class ExchangeOnlineSmtpClient {
     message: MailMessage,
     options: { sendKey?: string } = {},
   ): Promise<SmtpSendAccepted> {
+    const trace: SmtpTrace = { stage: "prepare", startedAt: performance.now(), correlationId: crypto.randomUUID() };
     const sender = requireMailbox(mailboxAddress);
     let submissionMayHaveCompleted = false;
     let wire: SmtpWire | null = null;
@@ -257,22 +282,28 @@ export class ExchangeOnlineSmtpClient {
       } catch {
         throw new SmtpProviderError("invalid_message", "The message or an attachment is invalid");
       }
-      const session = await this.authenticatedWire(accessToken, sender);
+      const session = await this.authenticatedWire(accessToken, sender, trace);
       wire = session.wire;
+      trace.stage = "sender";
       await wire.writeLine(`MAIL FROM:<${sender}>`);
       expect(await wire.readReply(), [250], "sender validation");
+      trace.stage = "recipient";
       for (const recipient of recipients) {
         await wire.writeLine(`RCPT TO:<${recipient}>`);
         expect(await wire.readReply(), [250, 251], "recipient validation");
       }
+      trace.stage = "data";
       await wire.writeLine("DATA");
       expect(await wire.readReply(), [354], "message transfer");
+      trace.stage = "body";
       for (const chunk of mimeChunks) await wire.writeRaw(dotStuffMime(chunk));
       // Exchange cannot accept the message before the DATA terminator. A
       // failure while writing the terminator or awaiting its reply is the
       // first point where delivery becomes ambiguous.
+      trace.stage = "terminator";
       submissionMayHaveCompleted = true;
       await wire.writeRaw(".\r\n");
+      trace.stage = "acknowledgement";
       const result = await wire.readReply();
       submissionMayHaveCompleted = false;
       expect(result, [250], "message submission");
@@ -284,11 +315,15 @@ export class ExchangeOnlineSmtpClient {
       }
       return { accepted: true, status: 250 };
     } catch (error) {
+      if (!(error instanceof SmtpProviderError && error.diagnosticId)) this.recordFailure(trace, error);
       if (submissionMayHaveCompleted) {
-        throw new SmtpProviderError("ambiguous", "The SMTP connection ended after submission may have completed. The row will not be resent automatically");
+        const ambiguous = new SmtpProviderError("ambiguous", "The SMTP connection ended after submission may have completed. The row will not be resent automatically");
+        ambiguous.diagnosticId = trace.correlationId;
+        throw ambiguous;
       }
-      if (error instanceof SmtpProviderError) throw error;
-      throw new SmtpProviderError("network", "MailFlow could not complete SMTP submission", { safeToRetry: true });
+      const mapped = error instanceof SmtpProviderError ? error : new SmtpProviderError("network", "MailFlow could not complete SMTP submission", { safeToRetry: true });
+      mapped.diagnosticId = trace.correlationId;
+      throw mapped;
     } finally {
       if (wire) await wire.close().catch(() => undefined);
     }

@@ -1,3 +1,4 @@
+import { safeErrorKind } from "../diagnostics";
 import { validateRecipientRows } from "../../domain";
 import type {
   AuditEventType,
@@ -82,6 +83,9 @@ export function publicCampaign(campaign: import("../../domain/types").CampaignRe
 
 export function publicJob(job: RecipientJobRecord): Record<string, unknown> {
   return {
+    deliveryVerifiedBy: job.deliveryVerifiedBy ?? null,
+    deliveryVerifiedAt: job.deliveryVerifiedAt ?? null,
+    deliveryVerificationNote: job.deliveryVerificationNote ?? null,
     id: job.id,
     campaignId: job.campaignId,
     sourceRow: job.sourceRow,
@@ -118,8 +122,7 @@ export function responseError(
 export function attachmentErrorResponse(context: MailFlowContext, error: unknown): Response {
   if (!(error instanceof AttachmentError)) {
     console.warn("Attachment request failed", {
-      name: error instanceof Error ? error.name : "unknown",
-      code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+      classification: safeErrorKind(error),
     });
     return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
   }
@@ -337,7 +340,7 @@ function csvValue(value: string): string {
 }
 
 export function jobCsv(jobs: readonly RecipientJobRecord[]): string {
-  const columns = ["row_number", "recipient", "status", "attempt_count", "created_at", "claimed_at", "sending_at", "accepted_at", "last_error_category", "last_error_message"];
+  const columns = ["row_number", "recipient", "status", "attempt_count", "created_at", "claimed_at", "sending_at", "accepted_at", "last_error_category", "last_error_message", "delivery_verified_by", "delivery_verified_at", "delivery_verification_note"];
   const lines = [columns.join(",")];
   for (const job of jobs) {
     lines.push([
@@ -351,6 +354,9 @@ export function jobCsv(jobs: readonly RecipientJobRecord[]): string {
       job.acceptedAt ?? "",
       job.lastErrorCategory ?? "",
       job.lastErrorMessage ?? "",
+      job.deliveryVerifiedBy ?? "",
+      job.deliveryVerifiedAt ?? "",
+      job.deliveryVerificationNote ?? "",
     ].map(csvValue).join(","));
   }
   return `${lines.join("\r\n")}\r\n`;

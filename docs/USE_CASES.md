@@ -170,6 +170,12 @@ Campaign history and detail views keep campaign-level failure separate from reci
 
 Members can export a result CSV containing row number, recipient, status, attempt count, timestamps, and diagnostic message.
 
+Processing completion does not confirm inbox delivery. Running and completed monitors keep Unknown separate from recipient failure and show the number of processed rows. Unknown outcomes prompt receipt verification before any resend.
+
+The owning member can mark an unknown row's delivery verified after explicitly confirming receipt, with an optional private note of at most 500 characters. The first confirmation records the actor and server timestamp atomically with an audit event. Repeated actions return that original evidence. The provider status stays Unknown, attempt and budget accounting stay unchanged, and no message is sent. Results, history, and CSV present this member-reported evidence separately.
+
+Recipient updates and campaign timestamps use second-precision Malaysia time (MYT, UTC+8). Elapsed processing duration includes waits. Observed throughput is distinct from configured maximum pace; active remaining-time estimates require at least three processed outcomes and disappear while paused, waiting, stale, or terminal.
+
 ## UC-14 Human-readable recovery
 
 Examples include:

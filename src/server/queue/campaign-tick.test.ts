@@ -161,6 +161,7 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       completeExhaustedBatch: async () => [],
     },
     recipientJobs: {
+      verifyDelivery: async () => null,
       getById: async () => state.job,
       getByCampaignAndSourceRow: async () => state.job,
       listByCampaign: async () => [state.job],
@@ -246,6 +247,17 @@ describe("campaign tick", () => {
     expect(deps.state.job.status).toBe("accepted");
     expect(deps.mailboxDecision.kind === "acquired" && deps.mailboxDecision.attempt.envelopeRecipientCount).toBe(3);
     expect(deps.state.campaign.schedulerMessage).toContain("Mailbox pacing is active");
+  });
+
+  it("links an unknown outcome to sanitized diagnostics without inventing provider evidence", async () => {
+    const diagnosticId = "12345678-1234-4123-8123-123456789abc";
+    const deps = dependencies({ send: async () => ({ kind: "unknown", category: "ambiguous", message: "Submission acknowledgement lost", diagnosticId }) });
+    await processCampaignTick(TICK, deps);
+    expect(deps.state.job.status).toBe("unknown");
+    expect(deps.state.job.providerRequestId).toBeNull();
+    expect(deps.state.audits.find(event => event.eventType === "recipient.unknown")?.metadata).toMatchObject({ diagnosticId, category: "ambiguous" });
+    await processCampaignTick(TICK, deps);
+    expect(deps.state.sends).toBe(1);
   });
 
   it("keeps a budget-blocked job pending and schedules the exact release time", async () => {

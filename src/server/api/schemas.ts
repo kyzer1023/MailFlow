@@ -120,6 +120,11 @@ export const pauseSchema = z.object({
   reason: z.string().trim().max(240).optional(),
 }).strict();
 
+export const deliveryVerificationSchema = z.object({
+  confirmed: z.literal(true),
+  note: z.string().trim().max(500).regex(/^[^\u0000-\u001f\u007f]*$/u).optional(),
+}).strict();
+
 export type CampaignCreateInput = z.infer<typeof campaignCreateSchema>;
 export type FlowCreateInput = z.infer<typeof flowCreateSchema>;
 export type TemplateVersionInput = z.infer<typeof templateVersionSchema>;

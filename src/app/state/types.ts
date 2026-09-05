@@ -59,6 +59,8 @@ export type CampaignViewStatus =
   "completed" | "paused" | "running" | "queued" | "failed";
 
 export interface CampaignViewModel {
+  readonly skipped?: number;
+  readonly deliveryVerifiedCount?: number;
   readonly id: string;
   readonly name: string;
   readonly date: string;

@@ -206,6 +206,14 @@ The delivery-attempt ledger distinguishes `reserved` from `provider_bound`. A cr
 
 ## Ambiguous outcomes
 
+### Manual delivery evidence (2026-09-05)
+
+An owner may explicitly mark an unknown recipient's delivery verified after checking receipt. `POST /api/campaigns/:id/jobs/:jobId/delivery-verification` requires the existing authenticated, same-origin, CSRF-protected mutation session and `{ confirmed: true, note?: string }`. Notes are trimmed, limited to 500 characters, and reject control characters. They are private owner-visible evidence, never diagnostic or audit metadata.
+
+Forward-only migration `0010_manual_delivery_verification.sql` adds a separate actor, timestamp, and optional note to recipient jobs. One conditional owner-scoped update records the first confirmation; an SQLite trigger atomically appends `recipient.delivery_verified` without the note. Replays return the original evidence, including when their note differs. The database enforces owner identity, unknown status, and immutable confirmation evidence. This action changes no provider outcome, job update timestamp, attempt count, campaign state, delivery ledger, or budget. Reads and CSV expose confirmation separately from raw `unknown`; it is member-reported receipt, not new SMTP evidence. It cannot resend mail.
+
+Diagnostics use only fixed stage and failure classifications, elapsed milliseconds, and generated correlation IDs. Raw exception messages, stacks, request paths or query strings, provider payloads, credentials, addresses, message content, and OneDrive locators are excluded. SMTP diagnostics do not change the DATA terminator ambiguity boundary, retry policy, or timeouts.
+
 Neither Graph sendMail nor SMTP submission provides a safe application idempotency key. Graph records `accepted` after `202`. SMTP records `accepted` only after the final `250` response following the terminating DATA marker. If a known response proves that no send occurred, apply the safe retry policy. If the network fails after either provider may have accepted the message, record `unknown` and stop automatic retry for that row. This favors no duplicate message over an automatic blind rerun.
 
 ## API shape

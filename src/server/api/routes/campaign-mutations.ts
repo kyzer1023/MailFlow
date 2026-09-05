@@ -99,7 +99,7 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
     : errorValue instanceof GraphApiError
       ? errorValue.category
       : null;
-  return { safeToRetry, retryAfter, category, failure: { status, code: "test_send_failed", message } };
+  return { safeToRetry, retryAfter, category, diagnosticId: errorValue instanceof TestSendError ? errorValue.diagnosticId : undefined, failure: { status, code: "test_send_failed", message } };
 }
 
 function attachmentIssueCode(failure: Extract<AttachmentLoadFailure, { disposition: "fail" }>) {

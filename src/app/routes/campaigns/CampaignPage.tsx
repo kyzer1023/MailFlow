@@ -29,7 +29,9 @@ import {
 } from "../../api";
 import { StatusChip } from "../../components/common/StatusChip";
 import { AppShell } from "../../components/shell/AppShell";
-import { formatDate, formatSchedulerNotice } from "../../lib/format";
+import { formatTimestamp, formatSchedulerNotice } from "../../lib/format";
+import { campaignTiming, processingDuration } from "../../lib/campaign-timing";
+import { DeliveryVerification } from "../../components/common/DeliveryVerification";
 import { useApi } from "../../state/api-context";
 
 type CampaignAction = "idle" | "pause" | "resume";
@@ -124,9 +126,13 @@ export function CampaignPage() {
         ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt],
         ["Accepted", activeCounts.accepted, Check],
         ["Skipped", activeCounts.skipped, MinusCircle],
-        ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
+        ["Recipient failed", activeCounts.failed, WarningCircle],
+        ["Unknown", activeCounts.unknown, WarningCircle],
       ];
   const displayJobs = jobs || [];
+  const verifiedCount = displayJobs.filter(job => job.status === "unknown" && job.deliveryVerifiedAt).length;
+  const unverifiedCount = Math.max(0, activeCounts.unknown - verifiedCount);
+  const timing = campaignState ? campaignTiming(campaignState, displayJobs) : null;
   const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
   const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
   const visibleJobs = displayJobs.slice(firstJobIndex, firstJobIndex + RECIPIENT_JOBS_PER_PAGE);
@@ -146,6 +152,8 @@ export function CampaignPage() {
         ? "Campaign failed"
         : waiting
           ? "Waiting safely"
+          : statusKind === "running"
+          ? "Sending safely"
           : statusKind === "queued"
           ? "Queued"
           : statusKind === "validated"
@@ -206,7 +214,7 @@ export function CampaignPage() {
           <div>
             <span className="section-kicker">CAMPAIGN</span>
             <h1>{failedCampaign ? "This campaign stopped safely." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
-            <p>{failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Accepted, failed, skipped, and unknown rows remain available for review." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
+            <p>{failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Processing is finished. Acceptance by Microsoft does not confirm inbox delivery." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
           </div>
           <div className="header-actions">
             {!failedCampaign && !completedCampaign && <button
@@ -224,6 +232,7 @@ export function CampaignPage() {
         </header>
 
         {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
+        {activeCounts.unknown > 0 && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /><span><strong>{unverifiedCount > 0 ? `${unverifiedCount} unknown ${unverifiedCount === 1 ? "outcome needs" : "outcomes need"} receipt verification.` : "Receipt has been manually verified for every unknown outcome."}</strong>{unverifiedCount > 0 && "Check receipt before considering any resend. Microsoft may already have submitted these messages. "}{verifiedCount > 0 && `${verifiedCount} manually verified; original provider outcomes remain Unknown.`}</span></div>}
         {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
         {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
         {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
@@ -255,7 +264,10 @@ export function CampaignPage() {
                   ? "Campaign complete, all recipient outcomes are recorded"
                   : paused
                     ? "Paused, accepted and unknown rows remain protected"
-                    : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}
+                    : waiting ? "Waiting safely; remaining time is not estimated"
+                      : timing?.remainingMinutes ? `About ${timing.remainingMinutes} ${timing.remainingMinutes === 1 ? "minute" : "minutes"} remaining at observed processing speed`
+                        : "Remaining time is not available yet"}
+              {` · ${processed} of ${total} rows processed`}
             </span>
             <strong>{progress}%</strong>
           </div>
@@ -302,7 +314,7 @@ export function CampaignPage() {
                           ? "Campaign stopped before this row"
                           : pausedBeforeSend
                             ? "Paused before send"
-                            : job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
+                            : job.lastErrorMessage || (status === "unknown" ? "Outcome unknown. Check receipt before any resend." : status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
                         return (
                           <tr key={`${job.recipient}-${job.sourceRow}`}>
                             <td><strong>{job.recipient}</strong></td>
@@ -311,8 +323,8 @@ export function CampaignPage() {
                               <StatusChip status={visibleStatus}>{statusText}</StatusChip>
                             </td>
                             <td>{job.attemptCount}</td>
-                            <td>{formatDate(job.updatedAt)}</td>
-                            <td>{note}</td>
+                            <td>{formatTimestamp(job.updatedAt)}</td>
+                            <td>{note}{status === "unknown" && <DeliveryVerification job={job} csrfToken={csrfToken} onVerified={() => { void load(); void refreshDashboard(); }} />}</td>
                           </tr>
                         );
                       })}
@@ -377,7 +389,12 @@ export function CampaignPage() {
                 <div><dt>Source file</dt><dd>{campaignState?.sourceFilename || "Not available"}</dd></div>
                 <div><dt>Flow</dt><dd><code>{campaignState?.flowId || "Not available"}</code></dd></div>
                 <div><dt>Template version</dt><dd><code>{campaignState?.templateVersionId || "Not available"}</code></dd></div>
-                <div><dt>Started</dt><dd>{formatDate(campaignState?.startedAt)}</dd></div>
+                <div><dt>Created</dt><dd>{formatTimestamp(campaignState?.createdAt)}</dd></div>
+                <div><dt>Started</dt><dd>{formatTimestamp(campaignState?.startedAt)}</dd></div>
+                <div><dt>Processing finished</dt><dd>{formatTimestamp(campaignState?.completedAt)}</dd></div>
+                <div><dt>Elapsed since processing started</dt><dd>{processingDuration(timing?.elapsedSeconds ?? null)} (includes waits)</dd></div>
+                <div><dt>Configured maximum pace</dt><dd>{campaignState?.pacePerMinute ?? "Not available"} messages/min</dd></div>
+                <div><dt>Observed processing speed</dt><dd>{timing?.throughput ? `${timing.throughput.toFixed(1)} rows/min` : "Not enough completed rows"}</dd></div>
                 <div><dt>Started by</dt><dd>{user?.displayName || "USM member"}</dd></div>
               </dl>
             </section>

@@ -9,6 +9,7 @@ import { buildAuditEventInsert } from "./d1-audit";
 import { buildRecipientJobInserts } from "./d1-recipient-jobs";
 
 interface CampaignRow {
+  delivery_verified_count?: number;
   id: string;
   flow_id: string;
   template_version_id: string;
@@ -38,6 +39,7 @@ interface CampaignRow {
 
 function toCampaign(row: CampaignRow): CampaignRecord {
   return {
+    ...(row.delivery_verified_count !== undefined ? { deliveryVerifiedCount: row.delivery_verified_count } : {}),
     id: row.id,
     flowId: row.flow_id,
     templateVersionId: row.template_version_id,
@@ -95,7 +97,8 @@ export class D1CampaignRepository implements CampaignRepository {
           SELECT status, COUNT(*) AS total FROM recipient_jobs
           WHERE campaign_id = campaigns.id GROUP BY status
         )
-      ) AS counts_json
+      ) AS counts_json,
+      (SELECT COUNT(*) FROM recipient_jobs WHERE campaign_id = campaigns.id AND delivery_verified_at IS NOT NULL) AS delivery_verified_count
       FROM campaigns WHERE owner_user_id = ?1 ORDER BY created_at DESC LIMIT ?2`),
       [ownerUserId, safeLimit],
     ).all<CampaignRow & { counts_json: string }>();

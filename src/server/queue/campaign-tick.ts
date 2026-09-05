@@ -1,3 +1,4 @@
+import { diagnosticMetadata } from "../diagnostics";
 import {
   MAILBOX_BUDGET_WINDOW_MS,
   MAILBOX_LEASE_MS,
@@ -389,6 +390,7 @@ export async function processCampaignTick(
     category,
     nextAttemptAt: outcome === "retry_scheduled" ? nextAttemptAt : undefined,
     envelopeRecipientCount: acquired.attempt.envelopeRecipientCount,
+    ...diagnosticMetadata(result.diagnosticId),
   });
 
   const completed = await dependencies.campaigns.completeIfExhausted(campaign.id, resultNow);

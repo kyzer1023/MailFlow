@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../../../worker/index.ts";
 import type { MailFlowBindings } from "./contracts";
 
@@ -17,6 +17,20 @@ function bindings(calls: string[]): MailFlowBindings {
 }
 
 describe("Cloudflare Worker static routing", () => {
+  it("records private-safe API diagnostics with a response correlation ID", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const env = bindings([]);
+      env.DB = { batch: async () => [], prepare() { throw Object.assign(new TypeError("private-token recipient@example.test body OneDrive-locator"), { name: "private-name", code: "private-code", stack: "private-stack" }); } };
+      const response = await worker.fetch(new Request("https://mailflow.example/api/campaigns/private-campaign?secret=private-query", { headers: { Cookie: `mailflow_session=${"s".repeat(43)}` } }), env, { waitUntil() {} });
+      expect(response.status).toBe(500);
+      const requestId = response.headers.get("X-MailFlow-Request-Id");
+      expect(requestId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(logged).toHaveBeenCalledWith("mailflow.api.failure", { requestId, route: "campaigns", stage: "request_handler", classification: "type_error", elapsedMs: expect.any(Number) });
+      expect(JSON.stringify(logged.mock.calls)).not.toMatch(/private-|recipient@|OneDrive|stack|secret=/u);
+      expect(await response.json()).toEqual({ error: { code: "internal_error", message: "Mail Flow could not complete that request. Try again." } });
+    } finally { logged.mockRestore(); }
+  });
   it("serves the SPA shell for an unknown document route", async () => {
     const calls: string[] = [];
     const response = await worker.fetch(new Request("https://mailflow.example/flows/new/data?source=upload", { headers: { accept: "text/html" } }), bindings(calls), { waitUntil() {} });

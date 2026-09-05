@@ -324,3 +324,58 @@ describe("D1 campaign creation safeguards", () => {
     }
   });
 });
+
+
+describe("manual delivery verification", () => {
+  it("atomically audits owner confirmation once without rewriting outcome or processing evidence", async () => {
+    const db = new SqliteD1();
+    try {
+      db.migrate();
+      const owner = seedOwnerFlowTemplate(db);
+      seedOwnerFlowTemplate(db, "2");
+      const value = campaign(owner, 2);
+      await new D1CampaignRepository(db).create(value, jobs(value.id, 2));
+      run(db, "UPDATE recipient_jobs SET status = 'unknown', attempt_count = 1, last_error_category = 'ambiguous' WHERE id = 'job-1'");
+      const repo = new D1RecipientJobRepository(db);
+      const before = await repo.getById("job-1");
+      run(db, `INSERT INTO delivery_attempts(id, owner_user_id, campaign_id, recipient_job_id, attempt_token, envelope_recipient_count, state, reserved_at, budget_expires_at)
+        VALUES ('delivery-fixture', ?, ?, 'job-1', 'synthetic-attempt', 3, 'unknown', ?, '2026-09-06T00:00:00.000Z')`, owner.userId, value.id, NOW);
+      const budgetBefore = db.database.prepare("SELECT * FROM delivery_attempts").all();
+      const campaignBefore = await new D1CampaignRepository(db).getById(value.id);
+      expect(await repo.verifyDelivery("job-1", value.id, "user-2", NOW, null)).toBeNull();
+      expect(await repo.verifyDelivery("job-1", "other-campaign", owner.userId, NOW, null)).toBeNull();
+      expect(await repo.verifyDelivery("job-2", value.id, owner.userId, NOW, null)).toBeNull();
+      const [verified, concurrent] = await Promise.all([
+        repo.verifyDelivery("job-1", value.id, owner.userId, NOW, "Receipt checked"),
+        repo.verifyDelivery("job-1", value.id, owner.userId, NOW, "Concurrent note"),
+      ]);
+      expect(concurrent).toEqual(verified);
+      expect(verified).toEqual({ ...before, deliveryVerifiedBy: owner.userId, deliveryVerifiedAt: NOW, deliveryVerificationNote: "Receipt checked" });
+      expect(await repo.verifyDelivery("job-1", value.id, owner.userId, "2026-09-06T00:00:00.000Z", "Different note")).toEqual(verified);
+      const audits = db.database.prepare("SELECT * FROM audit_events WHERE event_type = 'recipient.delivery_verified'").all();
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ actor_user_id: owner.userId, recipient_job_id: "job-1", created_at: NOW });
+      expect(JSON.stringify(audits)).not.toContain("Receipt checked");
+      expect(db.database.prepare("SELECT * FROM delivery_attempts").all()).toEqual(budgetBefore);
+      expect(await new D1CampaignRepository(db).getById(value.id)).toEqual(campaignBefore);
+      expect(() => run(db, "UPDATE recipient_jobs SET status = 'pending' WHERE id = 'job-1'")).toThrow();
+      expect((await new D1CampaignRepository(db).listByOwner(owner.userId))[0]).toMatchObject({ deliveryVerifiedCount: 1, counts: { unknown: 1, accepted: 0 } });
+      expect(() => run(db, "UPDATE recipient_jobs SET delivery_verification_note = 'overwrite' WHERE id = 'job-1'")).toThrow();
+      await expect(repo.verifyDelivery("job-1", value.id, owner.userId, NOW, "x".repeat(501))).rejects.toThrow();
+    } finally { db.close(); }
+  });
+  it("rolls back verification if its audit cannot be stored", async () => {
+    const db = new SqliteD1();
+    try {
+      db.migrate();
+      const owner = seedOwnerFlowTemplate(db);
+      const value = campaign(owner, 1);
+      await new D1CampaignRepository(db).create(value, jobs(value.id, 1));
+      run(db, "UPDATE recipient_jobs SET status = 'unknown' WHERE id = 'job-1'");
+      db.database.exec("CREATE TRIGGER fail_verification_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT, 'unavailable'); END");
+      const repo = new D1RecipientJobRepository(db);
+      await expect(repo.verifyDelivery("job-1", value.id, owner.userId, NOW, null)).rejects.toThrow();
+      expect((await repo.getById("job-1"))?.deliveryVerifiedAt).toBeNull();
+    } finally { db.close(); }
+  });
+});

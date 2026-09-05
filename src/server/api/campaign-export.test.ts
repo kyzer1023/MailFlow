@@ -65,6 +65,13 @@ beforeEach(() => {
 });
 
 describe("campaign CSV export", () => {
+  it("exports member verification separately while preserving Unknown and protecting note formulas", async () => {
+    store.getByIdForOwner.mockResolvedValue({ id: "campaign-export" });
+    store.listByCampaign.mockResolvedValue([{ ...job(2), status: "unknown", deliveryVerifiedBy: "owner", deliveryVerifiedAt: "2026-09-05T01:00:00.000Z", deliveryVerificationNote: "=private note" }]);
+    const csv = await (await exportRequest()).text();
+    expect(csv).toContain("2,member2@example.test,unknown,1,");
+    expect(csv).toContain("owner,2026-09-05T01:00:00.000Z,'=private note");
+  });
   it("exports every owner-scoped page with quoting and formula protection", async () => {
     store.getByIdForOwner.mockResolvedValue({ id: "campaign-export" });
     const jobs = Array.from({ length: 500 }, (_, index) => job(index + 2));
@@ -94,7 +101,7 @@ describe("campaign CSV export", () => {
     ]);
     const csv = await response.text();
     expect(csv.split("\r\n")[0]).toBe(
-      "row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message",
+      "row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message,delivery_verified_by,delivery_verified_at,delivery_verification_note",
     );
     expect(csv).toContain('"line 1, ""line 2""\nline 3"');
     expect(csv).toContain("502,member502@example.test,failed,1,");

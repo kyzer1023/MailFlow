@@ -106,6 +106,7 @@ export interface CampaignRepository {
 }
 
 export interface RecipientJobRepository {
+  verifyDelivery(id: string, campaignId: string, ownerUserId: string, now: string, note: string | null): Promise<RecipientJobRecord | null>;
   getById(id: string): Promise<RecipientJobRecord | null>;
   getByCampaignAndSourceRow(campaignId: string, sourceRow: number): Promise<RecipientJobRecord | null>;
   listByCampaign(campaignId: string, limit?: number, offset?: number): Promise<RecipientJobRecord[]>;

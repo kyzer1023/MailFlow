@@ -27,6 +27,9 @@
 
 ### Integration
 
+- Manual delivery verification enforces owner, campaign, Unknown status, authentication, same-origin and CSRF checks. First-write evidence survives concurrent/repeated actions; audit failure rolls back confirmation. Original outcome, timestamps, attempt count, delivery-attempt ledger and budget remain unchanged. Bounded notes reject controls, remain outside audit/diagnostic logs, and receive CSV formula protection.
+- SMTP diagnostics distinguish acknowledgement timeout, socket closure, and socket failure from pre-terminator failures. Correlation IDs join to audits without changing provider evidence or retry suppression. API diagnostic redaction excludes arbitrary exception fields, URLs and payloads, including database error details.
+
 - D1 migrations from an empty database.
 - Flow and template version repositories.
 - Campaign creation and recipient-job insertion.

@@ -153,6 +153,10 @@ Notes without addresses, tokens, or message content:
 
 ## Rollback and recovery
 
+- Apply forward-only `0010_manual_delivery_verification.sql` before deploying results-verification code. Retain its columns, evidence, and audit triggers during rollback. A member confirmation is owner-reported receipt; it does not change the original `unknown` provider result or release mailbox budget. Notes are private owner-visible records and must not be copied into operational logs.
+- SMTP failure logs use `mailflow.smtp.failure` with a generated correlation ID, fixed stage, failure classification, and elapsed milliseconds since send preparation started. Recipient and controlled test-send failure audits include the matching `diagnosticId`. Use that link to investigate; never log send keys, attempt/claim/wake tokens, addresses, content, or provider payloads. `timeout`, `socket_closed`, and `socket_failure` describe the observed failure, not a proven delivery root cause. Older unknown rows without these diagnostics cannot establish which network failure occurred.
+- Uncaught API errors emit `mailflow.api.failure` with an application-generated request ID, fixed route group and stage, allowlisted error classification, and elapsed milliseconds. The response carries the same ID in `X-MailFlow-Request-Id` while retaining the generic error text. SQL text, raw exceptions, stacks, request URLs, query parameters, and request bodies are excluded.
+
 - Pause the campaign before investigating a live sending problem.
 - Never reset an `unknown` row to pending automatically.
 - A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.

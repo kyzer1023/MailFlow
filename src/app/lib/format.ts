@@ -1,5 +1,10 @@
 import { formatMalaysiaDateTime } from "../../domain/mailbox-scheduler";
 
+export function formatTimestamp(value: string | null | undefined): string {
+  if (!value || !Number.isFinite(Date.parse(value))) return "Not available";
+  return `${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date(value))} MYT (UTC+8)`;
+}
+
 /** Format an ISO timestamp for the compact labels used by the app shell. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "Not available";
