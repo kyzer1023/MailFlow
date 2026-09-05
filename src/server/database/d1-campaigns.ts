@@ -74,6 +74,9 @@ function toCampaign(row: CampaignRow): CampaignRecord {
 }
 
 export class D1CampaignRepository implements CampaignRepository {
+  // Every boolean mutation targets one campaign by primary key. D1 meta.changes
+  // includes trigger writes (FIFO turns and audits), so success is any change,
+  // not exactly one. A failed conditional update still reports zero.
   constructor(private readonly db: D1Database) {}
 
   async getById(id: string): Promise<CampaignRecord | null> {
@@ -240,7 +243,7 @@ export class D1CampaignRepository implements CampaignRepository {
       SET state = 'paused', cancel_requested_at = ?1, pause_reason = 'Cancelled by member',
         wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?1
       WHERE id = ?2 AND owner_user_id = ?3 AND cancel_requested_at IS NULL
-        AND state IN ('queued', 'running', 'paused')`), [now, id, ownerUserId]).run()) === 1;
+        AND state IN ('queued', 'running', 'paused')`), [now, id, ownerUserId]).run()) > 0;
     await this.settleCancellations(now, ownerUserId);
     if (changed) return true;
     const existing = await this.getByIdForOwner(id, ownerUserId);
@@ -275,7 +278,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async pause(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean> {
@@ -289,7 +292,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [reason.trim() || "Paused by member", now, id, ownerUserId],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async resume(id: string, ownerUserId: string, now: string): Promise<boolean> {
@@ -304,7 +307,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [now, id, ownerUserId],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async fail(id: string, now: string, reason: string, attachmentIssueCode: CampaignRecord["attachmentIssueCode"] | null = null): Promise<boolean> {
@@ -317,7 +320,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [reason.trim() || "Campaign failed", attachmentIssueCode, now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async pauseForAttachmentAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean> {
@@ -331,7 +334,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [reason.trim() || "Reconnect OneDrive, then resume from the pending rows.", now, id, ownerUserId],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async markAttachmentRetry(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean> {
@@ -345,7 +348,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [nextAttemptAt, message, now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async clearAttachmentIssue(id: string, now: string): Promise<boolean> {
@@ -359,7 +362,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async completeIfExhausted(id: string, now: string): Promise<boolean> {
@@ -377,7 +380,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async reserveWake(
@@ -400,7 +403,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [wakeToken, dueAt, message, now, id, replaceDueBefore],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async consumeWake(id: string, wakeToken: string, now: string): Promise<CampaignRecord | null> {
@@ -426,7 +429,7 @@ export class D1CampaignRepository implements CampaignRepository {
         ),
         [nextAttemptAt, message, now, id],
       ).run(),
-    ) === 1;
+    ) > 0;
   }
 
   async listWatchdogWakeCandidates(now: string, staleBefore: string, limit = 100): Promise<CampaignRecord[]> {
@@ -491,12 +494,12 @@ export class D1CampaignRepository implements CampaignRepository {
            ${timestampColumn} = COALESCE(${timestampColumn}, ?7)
          WHERE id = ?4 AND owner_user_id = ?5 AND state = ?6`,
       );
-      return changes(await bind(statement, [to, pauseReason, now, id, ownerUserId, from, now]).run()) === 1;
+      return changes(await bind(statement, [to, pauseReason, now, id, ownerUserId, from, now]).run()) > 0;
     }
     const statement = this.db.prepare(
       `UPDATE campaigns SET state = ?1, pause_reason = ?2, updated_at = ?3
        WHERE id = ?4 AND owner_user_id = ?5 AND state = ?6`,
     );
-    return changes(await bind(statement, [to, pauseReason, now, id, ownerUserId, from]).run()) === 1;
+    return changes(await bind(statement, [to, pauseReason, now, id, ownerUserId, from]).run()) > 0;
   }
 }

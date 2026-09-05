@@ -37,8 +37,10 @@ class SqliteStatement implements D1PreparedStatement {
   }
 
   async run(): Promise<D1RunResult> {
+    const before = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
     const result = this.database.prepare(this.query).run(...sqliteValues(this.values));
-    return { success: true, meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } };
+    const after = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
+    return { success: true, meta: { changes: after - before, last_row_id: Number(result.lastInsertRowid) } };
   }
 }
 

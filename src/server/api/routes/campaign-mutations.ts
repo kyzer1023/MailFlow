@@ -334,6 +334,12 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   const idValue = routeParam(context, "id");
   const campaign = await repo.campaigns.getByIdForOwner(idValue, authenticated.user.id);
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+  // A committed start may have lost its response or failed before publishing.
+  // Retry the existing queued head without rejoining FIFO or recreating rows.
+  if (campaign.state === "queued" || campaign.state === "running" || campaign.state === "completed") {
+    if (campaign.state === "queued") await handoffMailbox(context, authenticated.user.id);
+    return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), replayed: true });
+  }
   if (campaign.state !== "validated") return responseError(context, 409, "campaign_not_ready", "Review and validate the campaign before starting it.");
   const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
   if (attachmentSet && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {

@@ -27,6 +27,8 @@
 
 ### Integration
 
+- Exercise campaign lifecycle against the actual local Cloudflare D1 binding, including FIFO and audit triggers. SQLite test adapters must report the `total_changes()` delta for D1 `meta.changes`, not direct `changes()`. Verify an acknowledged start replay recovers a missing queued wake without changing FIFO order, publishing duplicate running ticks, or restarting cancelled/paused campaigns.
+
 - FIFO turns preserve start order across campaigns from one mailbox and permit independent mailboxes to progress. Followers cannot reserve wakes, claim recipients, or become provider-bound. Completing, pausing, cancelling, or terminally failing the head hands off promptly while preserving pace/backoff.
 - Resume joins the back, including a pause/resume race with an existing provider call. Cancellation before submission releases only proven pre-submission reservations. Cancellation during accepted, unknown, or safely retryable outcomes waits for settlement, preserves evidence/budget, prevents another attempt, and produces one request and one completion audit.
 - Cancellation requires ownership, authenticated same-origin CSRF protection, and explicit acknowledgement. Missing/forged confirmations fail. Replays retain first-write timestamps, audit failure rolls back the cancellation request, and cancelled campaigns cannot resume or test-send.

@@ -42,8 +42,10 @@ class SqliteStatement implements D1PreparedStatement {
   }
 
   async run(): Promise<D1RunResult> {
+    const before = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
     const result = this.database.prepare(this.query).run(...sqliteValues(this.values));
-    return { success: true, meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } };
+    const after = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
+    return { success: true, meta: { changes: after - before, last_row_id: Number(result.lastInsertRowid) } };
   }
 }
 
@@ -512,6 +514,28 @@ function deferred<T>() {
 }
 
 describe("FIFO campaign turns and cancellation", () => {
+  it("recognizes a trigger-backed start and resume, while rejected transitions remain false", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "start-result");
+      run(db, "UPDATE campaigns SET state = 'validated' WHERE id = ?", a.campaignId);
+      const h = fifoHarness(db);
+      expect(await h.campaigns.queue(a.campaignId, "other-owner", h.now())).toBe(false);
+      expect(await h.campaigns.queue(a.campaignId, a.userId, h.now())).toBe(true);
+      expect(await h.campaigns.queue(a.campaignId, a.userId, h.now())).toBe(false);
+      await h.wake(a.userId);
+      expect(h.messages).toHaveLength(1);
+      expect(await h.campaigns.pause(a.campaignId, a.userId, h.now(), "Member pause")).toBe(true);
+      expect(await h.campaigns.pause(a.campaignId, a.userId, h.now(), "Member pause")).toBe(false);
+      expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(true);
+      expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(false);
+      h.messages.length = 0;
+      await h.wake(a.userId);
+      expect(await h.next()).toMatchObject({ kind: "completed", campaignId: a.campaignId });
+      expect(h.send).toHaveBeenCalledTimes(1);
+    } finally { db.close(); }
+  });
+
   it("a duplicate tick and watchdog do not wake an invocation still loading attachments", async () => {
     const db = migratedDatabase();
     try {

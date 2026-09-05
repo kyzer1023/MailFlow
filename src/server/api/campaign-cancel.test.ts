@@ -8,6 +8,7 @@ import { registerCampaignMutationRoutes } from "./routes/campaign-mutations";
 const store = vi.hoisted(() => ({
   getByIdForOwner: vi.fn(), getById: vi.fn(), cancel: vi.fn(), findByTokenHash: vi.fn(),
   settleCancellations: vi.fn(), getMailboxHead: vi.fn(), send: vi.fn(),
+  queue: vi.fn(), reserveWake: vi.fn(), append: vi.fn(), getSetByCampaignId: vi.fn(),
 }));
 vi.mock("./dependencies", async original => ({
   ...(await original<typeof import("./dependencies")>()),
@@ -15,6 +16,8 @@ vi.mock("./dependencies", async original => ({
   repositories: () => ({
     users: { getById: async () => ({ id: "owner" }) },
     campaigns: store,
+    attachments: { getSetByCampaignId: store.getSetByCampaignId },
+    audit: { append: store.append },
   }),
 }));
 vi.mock("../database/d1-auth", () => ({
@@ -22,10 +25,10 @@ vi.mock("../database/d1-auth", () => ({
 }));
 const token = "synthetic-session-token-at-least-32-characters";
 const secret = "synthetic-session-secret";
-async function request(body: unknown = { acknowledged: true }, headers: Record<string, string> = {}) {
+async function request(body: unknown = { acknowledged: true }, headers: Record<string, string> = {}, action = "cancel") {
   const app = new Hono<MailFlowAppEnv>();
   registerCampaignMutationRoutes(app);
-  return app.request("https://example.test/api/campaigns/campaign/cancel", {
+  return app.request(`https://example.test/api/campaigns/campaign/${action}`, {
     method: "POST", headers: {
       "Content-Type": "application/json", Cookie: `mailflow_session=${token}`, Origin: "https://example.test",
       "X-CSRF-Token": await createCsrfToken(token, secret), ...headers,
@@ -41,6 +44,52 @@ beforeEach(async () => {
   store.cancel.mockResolvedValue(true);
   store.settleCancellations.mockResolvedValue([]);
   store.getMailboxHead.mockResolvedValue(null);
+});
+
+describe("campaign start response and recovery", () => {
+  it("publishes the first wake after a successful start", async () => {
+    const queued = { id: "campaign", ownerUserId: "owner", state: "queued" };
+    store.getByIdForOwner.mockResolvedValue({ ...queued, state: "validated" });
+    store.getById.mockResolvedValue(queued);
+    store.getMailboxHead.mockResolvedValue(queued);
+    store.queue.mockResolvedValue(true);
+    store.reserveWake.mockResolvedValue(true);
+    expect((await request({ acknowledged: true }, {}, "start")).status).toBe(200);
+    expect(store.queue).toHaveBeenCalledTimes(1);
+    expect(store.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a committed queued start without adding another FIFO turn", async () => {
+    const queued = { id: "campaign", ownerUserId: "owner", state: "queued", wakeToken: null };
+    store.getByIdForOwner.mockResolvedValue(queued);
+    store.getById.mockResolvedValue(queued);
+    store.getMailboxHead.mockResolvedValue(queued);
+    store.reserveWake.mockResolvedValue(true);
+    const response = await request({ acknowledged: true }, {}, "start");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ replayed: true, campaign: { state: "queued" } });
+    expect(store.queue).not.toHaveBeenCalled();
+    expect(store.send).toHaveBeenCalledTimes(1);
+    store.getMailboxHead.mockResolvedValue({ ...queued, wakeToken: "existing-wake" });
+    expect((await request({ acknowledged: true }, {}, "start")).status).toBe(200);
+    expect(store.send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["running", "completed"])("returns an existing %s start without publishing a competing tick", async state => {
+    store.getByIdForOwner.mockResolvedValue({ id: "campaign", state });
+    store.getById.mockResolvedValue({ id: "campaign", state });
+    expect((await request({ acknowledged: true }, {}, "start")).status).toBe(200);
+    expect(store.queue).not.toHaveBeenCalled();
+    expect(store.getMailboxHead).not.toHaveBeenCalled();
+    expect(store.send).not.toHaveBeenCalled();
+  });
+
+  it.each(["paused", "cancelling", "cancelled", "failed", "draft"])("cannot use start replay to restart %s", async state => {
+    store.getByIdForOwner.mockResolvedValue({ id: "campaign", state });
+    expect((await request({ acknowledged: true }, {}, "start")).status).toBe(409);
+    expect(store.queue).not.toHaveBeenCalled();
+    expect(store.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("campaign cancellation API", () => {
