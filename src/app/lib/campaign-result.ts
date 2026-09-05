@@ -1,5 +1,17 @@
-import type { CampaignRecord } from "../../domain/types";
+import type { CampaignCounts, CampaignRecord } from "../../domain/types";
 import { formatSchedulerNotice } from "./format";
+
+export const ineffectiveCancellationNote = "Cancellation was requested, but no rows were stopped.";
+
+/** Derive the visible outcome without rewriting the cancellation audit/state. */
+export function finishedWithoutCancelledRows(
+  campaign: Pick<CampaignRecord, "state" | "totalRecipients">,
+  counts: CampaignCounts | null | undefined,
+): boolean {
+  if (!counts || campaign.state !== "cancelled" || campaign.totalRecipients <= 0) return false;
+  return counts.pending === 0 && counts.claimed === 0 && counts.sending === 0
+    && counts.accepted + counts.failed + counts.unknown + counts.skipped === campaign.totalRecipients;
+}
 
 // Presentation only: completed is the scheduler's terminal processing state.
 export function completedResult(unknown: number, failed: number, skipped: number, verified = 0) {

@@ -2,6 +2,7 @@ import type { CampaignCounts, CampaignRecord, FlowRecord } from "../../domain/ty
 import type { SpreadsheetTable } from "../../client/types";
 import type { CampaignViewModel, CampaignViewStatus, DynamicFieldOption, FlowViewModel } from "../state/types";
 import { formatDate, formatTimestamp } from "./format";
+import { finishedWithoutCancelledRows, ineffectiveCancellationNote } from "./campaign-result";
 
 export function columnOptions(table: SpreadsheetTable | null | undefined): readonly DynamicFieldOption[] {
   return table ? table.columns.map((column) => ({ value: column.key, label: column.label || column.key })) : [];
@@ -31,7 +32,8 @@ export function displayCampaign(
   counts: CampaignCounts | null | undefined,
   flowName = "",
 ): CampaignViewModel {
-  const status = campaign.state;
+  const finishedAfterCancel = finishedWithoutCancelledRows(campaign, counts);
+  const status = finishedAfterCancel ? "completed" : campaign.state;
   const visibleStatuses: readonly CampaignViewStatus[] = ["completed", "paused", "running", "queued", "failed", "cancelling", "cancelled"];
   const resolvedStatus: CampaignViewStatus = visibleStatuses.includes(status as CampaignViewStatus)
     ? status as CampaignViewStatus
@@ -42,6 +44,7 @@ export function displayCampaign(
     date: formatTimestamp(campaign.createdAt),
     updated: formatTimestamp(campaign.updatedAt),
     status: resolvedStatus,
+    cancellationNote: finishedAfterCancel ? ineffectiveCancellationNote : undefined,
     schedulerMessage: campaign.schedulerMessage,
     schedulerNextAttemptAt: campaign.schedulerNextAttemptAt,
     accepted: counts?.accepted ?? 0,

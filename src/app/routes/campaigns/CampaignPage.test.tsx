@@ -192,6 +192,22 @@ describe("campaign outcome reporting", () => {
 
 
 describe("campaign cancellation and activity clarity", () => {
+  it("shows Completed when cancellation stopped no rows and retains its audit timestamp", async () => {
+    mocks.campaign.state = "cancelled";
+    mocks.campaign.cancelRequestedAt = "2026-09-05T00:01:58.000Z";
+    mocks.counts = { pending: 0, claimed: 0, sending: 0, accepted: 3, failed: 0, skipped: 0, unknown: 0 };
+    mocks.jobs.forEach(job => { job.status = "accepted"; });
+    mount();
+    expect(await screen.findByText("Completed", { selector: ".status" })).toBeInTheDocument();
+    expect(screen.getByText(/All 3 emails were submitted successfully to Microsoft/)).toBeInTheDocument();
+    expect(screen.getByText("Cancellation was requested, but no rows were stopped.")).toBeInTheDocument();
+    expect(screen.getByText("Cancellation requested")).toBeInTheDocument();
+    expect(screen.queryByText("This campaign was cancelled.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 rows will not be sent/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Resume|Pause campaign|Cancel campaign/ })).not.toBeInTheDocument();
+    expect(mocks.campaign.state).toBe("cancelled");
+  });
+
   it("confirms permanent cancellation and keeps an in-flight outcome visible", async () => {
     mocks.campaign.state = "running";
     mocks.campaign.completedAt = null;

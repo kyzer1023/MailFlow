@@ -40,6 +40,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
                 </StatusChip>
                 {campaign.status === "completed" && campaign.accepted === campaign.total && campaign.total > 0 && <small className="campaign-status-detail">All {campaign.total} emails submitted successfully to Microsoft.</small>}
                 {campaign.status !== "completed" && <small className="campaign-status-detail">{activity.detail}</small>}
+                {campaign.cancellationNote && <small className="campaign-status-detail">{campaign.cancellationNote}</small>}
               </td>
               <td className="campaign-results">
                 <strong>{campaign.accepted}</strong> accepted

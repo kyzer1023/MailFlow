@@ -32,7 +32,7 @@ import { StatusChip } from "../../components/common/StatusChip";
 import { AppShell } from "../../components/shell/AppShell";
 import { formatTimestamp, formatSchedulerNotice } from "../../lib/format";
 import { campaignTiming, processingDuration } from "../../lib/campaign-timing";
-import { completedResult, campaignActivity } from "../../lib/campaign-result";
+import { completedResult, campaignActivity, finishedWithoutCancelledRows, ineffectiveCancellationNote } from "../../lib/campaign-result";
 import { Modal } from "../../components/common/Modal";
 import { DeliveryVerification } from "../../components/common/DeliveryVerification";
 import { useApi } from "../../state/api-context";
@@ -119,9 +119,10 @@ export function CampaignPage() {
 
   const paused = campaignState?.state === "paused";
   const failedCampaign = campaignState?.state === "failed";
-  const completedCampaign = campaignState?.state === "completed";
+  const finishedAfterCancel = campaignState ? finishedWithoutCancelledRows(campaignState, counts) : false;
+  const completedCampaign = campaignState?.state === "completed" || finishedAfterCancel;
   const cancelling = campaignState?.state === "cancelling";
-  const cancelled = campaignState?.state === "cancelled";
+  const cancelled = campaignState?.state === "cancelled" && !finishedAfterCancel;
   const cancellation = cancelling || cancelled;
   const attachmentAuthorizationPaused = paused && campaignState?.attachmentIssueCode === "attachment_authorization_required";
   const activeCounts = counts || { pending: 0, claimed: 0, sending: 0, accepted: 0, skipped: 0, failed: 0, unknown: 0 };
@@ -266,6 +267,7 @@ export function CampaignPage() {
         {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
         {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
         {(campaignState?.state === "queued" || cancellation) && <div className="notice" role="status"><Clock /><span>{activity?.detail}</span></div>}
+        {finishedAfterCancel && <div className="notice" role="status"><Clock /><span>{ineffectiveCancellationNote}</span></div>}
         {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
 
         <div className="campaign-identity" ref={statusRef} tabIndex={-1}>
@@ -399,8 +401,8 @@ export function CampaignPage() {
           <aside className="campaign-aside">
             <section className={`panel recovery-card${failedCampaign ? " recovery-card--failed" : ""}`}>
               <span className="route-dot"><FlowArrow /></span>
-              <h2>{cancellation ? "Cancellation is permanent" : failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
-              <p>{cancellation ? "Pending rows will not be submitted, and this campaign cannot be resumed." : failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
+              <h2>{finishedAfterCancel ? "Cancellation request recorded" : cancellation ? "Cancellation is permanent" : failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
+              <p>{finishedAfterCancel ? "Every row has a recorded outcome. The cancellation request remains in the audit history." : cancellation ? "Pending rows will not be submitted, and this campaign cannot be resumed." : failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
               <strong>{failedCampaign ? `${activeCounts.failed} recipient-level ${activeCounts.failed === 1 ? "failure" : "failures"}, ${activeCounts.unknown} unknown, and ${notSent} not sent.` : "Accepted and unknown outcomes are never sent again automatically."}</strong>
               {attachmentAuthorizationPaused && <a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a>}
             </section>

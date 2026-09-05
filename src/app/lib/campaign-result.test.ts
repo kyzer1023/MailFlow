@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { completedResult, campaignActivity } from "./campaign-result";
+import { finishedWithoutCancelledRows, ineffectiveCancellationNote } from "./campaign-result";
+import { displayCampaign } from "./view-models";
+import { emptyCampaignCounts, type CampaignRecord } from "../../domain/types";
+
+describe("cancellation after the final submission", () => {
+  const campaign = { state: "cancelled", totalRecipients: 5 } as CampaignRecord;
+  const counts = { ...emptyCampaignCounts(), accepted: 5 };
+  it("presents a fully settled campaign as completed while preserving raw evidence", () => {
+    expect(finishedWithoutCancelledRows(campaign, counts)).toBe(true);
+    expect(displayCampaign(campaign, counts)).toMatchObject({ status: "completed", cancellationNote: ineffectiveCancellationNote });
+    expect(campaign.state).toBe("cancelled");
+    expect(counts.accepted).toBe(5);
+  });
+  it("retains failure and unknown warnings when no rows were stopped", () => {
+    const mixed = { ...counts, accepted: 3, failed: 1, unknown: 1 };
+    const result = displayCampaign(campaign, mixed);
+    expect(result.status).toBe("completed");
+    expect(completedResult(result.unknown, result.recipientFailed, result.skipped ?? 0).label).toBe("Finished, receipt unverified");
+  });
+  it("requires complete settled counts and never masks prevented submissions", () => {
+    for (const unsafe of [undefined, { ...counts, accepted: 4 }, { ...counts, accepted: 4, pending: 1 }, { ...counts, accepted: 4, sending: 1 }, { ...counts, accepted: 4, claimed: 1 }]) {
+      expect(finishedWithoutCancelledRows(campaign, unsafe)).toBe(false);
+    }
+    expect(finishedWithoutCancelledRows({ ...campaign, state: "cancelling" }, counts)).toBe(false);
+    expect(finishedWithoutCancelledRows({ ...campaign, totalRecipients: 0 }, emptyCampaignCounts())).toBe(false);
+  });
+});
 
 describe("completed campaign presentation", () => {
   it("shows unresolved receipt for historical completed campaigns", () => {

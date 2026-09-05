@@ -137,3 +137,9 @@ final result: passed
 - Both the campaign waiting notice and persisted recipient note displayed GMT-4 during America/New_York emulation. Reduced-motion emulation and console checks passed; warnings/errors were empty. Timezone, reduced-motion, and viewport overrides were cleared. The synthetic fixture remains ignored and outside production imports.
 - No remaining actionable P0/P1/P2 issue for this scoped change.
 - final result: passed
+
+### 2026-09-06 - Final-submission cancellation result
+
+- Compared the supplied all-accepted/Cancelled screenshot with the corrected synthetic state. Preserved the existing page layout and tokens; changed the badge, outcome summary, cancellation note and recovery copy to agree with the recorded outcomes.
+- Detail and history both show Completed with all rows accepted and a secondary cancellation note. The cancellation request remains visible in audit details. At 1440, 1024 and 390px, the note wraps within the existing layout; mobile history retains its horizontal table scrolling. Viewport overrides reset.
+- Automated coverage retains genuine cancellation, unsettled/incomplete data and mixed-outcome warnings. No layout redesign, provider action or campaign data edit occurred.
