@@ -1,3 +1,4 @@
+import { laterIso } from "../../domain/mailbox-scheduler";
 import { safeErrorKind } from "../diagnostics";
 import { validateRecipientRows } from "../../domain";
 import type {
@@ -23,7 +24,7 @@ import {
 } from "../attachments";
 import { createD1AuthStores } from "../database/d1-auth";
 import type { Repositories } from "../database/contracts";
-import { cloudflareQueueAdapter, reserveCampaignWake } from "../queue";
+import { cloudflareQueueAdapter, reserveCampaignWake, wakeMailboxHead } from "../queue";
 import type { MailFlowContext, AuthenticatedSession } from "./context";
 import { applicationOrigin, repositories, textEnv } from "./dependencies";
 import { validationIssues } from "./schemas";
@@ -339,8 +340,8 @@ function csvValue(value: string): string {
   return /[",\r\n]/u.test(safe) ? `"${safe.replace(/"/gu, '""')}"` : safe;
 }
 
-export function jobCsv(jobs: readonly RecipientJobRecord[]): string {
-  const columns = ["row_number", "recipient", "status", "attempt_count", "created_at", "claimed_at", "sending_at", "accepted_at", "last_error_category", "last_error_message", "delivery_verified_by", "delivery_verified_at", "delivery_verification_note"];
+export function jobCsv(jobs: readonly RecipientJobRecord[], campaign?: Pick<import("../../domain/types").CampaignRecord, "state" | "cancelRequestedAt" | "cancelledAt">): string {
+  const columns = ["row_number", "recipient", "status", "attempt_count", "created_at", "claimed_at", "sending_at", "accepted_at", "last_error_category", "last_error_message", "delivery_verified_by", "delivery_verified_at", "delivery_verification_note", "campaign_status", "cancel_requested_at", "cancelled_at", "not_sent_reason"];
   const lines = [columns.join(",")];
   for (const job of jobs) {
     lines.push([
@@ -357,6 +358,10 @@ export function jobCsv(jobs: readonly RecipientJobRecord[]): string {
       job.deliveryVerifiedBy ?? "",
       job.deliveryVerifiedAt ?? "",
       job.deliveryVerificationNote ?? "",
+      campaign?.state ?? "",
+      campaign?.cancelRequestedAt ?? "",
+      campaign?.cancelledAt ?? "",
+      campaign?.cancelRequestedAt && job.status === "pending" ? "Cancelled before submission" : "",
     ].map(csvValue).join(","));
   }
   return `${lines.join("\r\n")}\r\n`;
@@ -367,14 +372,20 @@ export async function enqueueTick(
   campaignId: string,
   dueAt = nowIso(),
   message: string | null = null,
-): Promise<{ reserved: boolean; published: boolean }> {
+): Promise<{ reserved: boolean; published: boolean; dormant?: boolean }> {
   if (!context.env.CAMPAIGN_QUEUE || typeof context.env.CAMPAIGN_QUEUE.send !== "function") throw new Error("Campaign queue is not configured on this Worker");
   const now = new Date();
+  const campaigns = repositories(context).campaigns;
+  const campaign = await campaigns.getById(campaignId);
+  const head = campaign ? await campaigns.getMailboxHead(campaign.ownerUserId) : null;
+  if (campaign && head?.id !== campaignId) {
+    return { reserved: false, published: false, dormant: true };
+  }
   const result = await reserveCampaignWake({
     campaigns: repositories(context).campaigns,
     queue: cloudflareQueueAdapter(context.env.CAMPAIGN_QUEUE),
     campaignId,
-    dueAt,
+    dueAt: laterIso(dueAt, head?.schedulerNextAttemptAt) ?? dueAt,
     message,
     now,
   });
@@ -399,4 +410,13 @@ export async function parseOrError<T>(
   const parsed = schema.safeParse(raw.value);
   if (!parsed.success) return responseError(context, 422, "invalid_input", "Review the highlighted fields and try again.", validationIssues(parsed.error));
   return parsed.data;
+}
+
+export async function handoffMailbox(context: MailFlowContext, ownerUserId: string): Promise<void> {
+  try {
+    await wakeMailboxHead({ campaigns: repositories(context).campaigns,
+      queue: cloudflareQueueAdapter(context.env.CAMPAIGN_QUEUE), ownerUserId, now: new Date() });
+  } catch {
+    // Durable FIFO state survives; the scheduled watchdog retries publication.
+  }
 }

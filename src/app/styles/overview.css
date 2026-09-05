@@ -150,23 +150,26 @@
 }
 .status--ready,
 .status--completed,
-.status--accepted,
-.status--running {
+.status--accepted {
   background: #e2eee5;
   color: #315540;
 }
 .status--draft,
 .status--pending,
 .status--queued,
-.status--skipped {
+.status--skipped,
+.status--cancelled {
   background: #ebe9e3;
   color: #656b67;
 }
-.status--paused {
+.status--paused,
+.status--waiting,
+.status--cancelling {
   background: #fff0d9;
   color: #925d19;
 }
-.status--sending {
+.status--sending,
+.status--running {
   background: #ffe6df;
   color: #a54534;
 }
@@ -334,4 +337,13 @@
     padding-inline: 0.65rem;
     overflow-wrap: anywhere;
   }
+}
+
+.campaign-status-detail {
+  display: block;
+  max-width: var(--campaign-status-detail-width);
+  margin-top: var(--send-space-xs);
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: normal;
 }

@@ -151,6 +151,14 @@ Inbox receipt observed: yes | no | partial | not checked
 Notes without addresses, tokens, or message content:
 ```
 
+## FIFO turn and cancellation migration
+
+Apply forward-only `0011_campaign_turns_cancellation.sql` before deploying FIFO/cancellation code. It retains the in-flight campaign as the first mailbox turn, backfills other runnable campaigns by queue time, preserves each head's existing wake, and invalidates competing follower wakes. Existing provider and budget evidence is preserved. The scheduled watchdog repairs a previously missing wake or handoff. A provider-bound database guard also covers the brief migration/Worker deployment overlap.
+
+Do not roll back to a Worker predating migration 0011: its UI cannot interpret cancellation timestamps and its queue code does not implement FIFO handoff. Preserve the turn table, cancellation columns, audit triggers, attempts, mailbox pace and budget on rollback. Cancellation is internally a stopped `paused` row with immutable request/completion timestamps; repository/API reads project Cancelling or Cancelled. For read-only operational counts, distinguish those timestamps from an ordinary member pause. Do not remove a turn, clear a lease, or replay a recipient manually to shorten a wait.
+
+Only the head has timer wakes for pacing, provider backoff, budget, or attachment retry. Followers are Queued with no wake until a handoff event. A lease collision is event-driven, with the hourly watchdog retained as a bounded crash-recovery fallback. Cancellation cleanup waits for the current attempt to settle; original Unknown and accepted budget charges remain unchanged.
+
 ## Rollback and recovery
 
 - Apply forward-only `0010_manual_delivery_verification.sql` before deploying results-verification code. Retain its columns, evidence, and audit triggers during rollback. A member confirmation is owner-reported receipt; it does not change the original `unknown` provider result or release mailbox budget. Notes are private owner-visible records and must not be copied into operational logs.

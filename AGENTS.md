@@ -83,6 +83,8 @@ The user also accepted the Message-screen continuation at `mock-images/refinemen
 
 2026-09-05 mapping feedback: keep message-value connections visible after resolution, including a green Connected state and the selected spreadsheet column. Members must be able to inspect and change a connection. Selecting a column must retain focus on that control and must never automatically focus the subject. Preserve readable template-value names in the editor; the connection panel explains their source columns.
 
+2026-09-06 scheduling and results feedback: use FIFO campaign turns per mailbox. New campaigns stay Queued without periodic follower wake-ups. Completion, pause, cancellation, and terminal failure hand off to the next campaign after any current submission settles; retain scheduled recovery for missed handoffs. Resume joins the back. History and detail use the same Queued, Sending, Waiting (with a reason), and Paused wording. Routine mailbox pacing remains Sending. A fully accepted campaign shows Completed with a successful Microsoft-submission summary; recipient evidence stays Accepted by Microsoft. Cancellation requires explicit confirmation, cannot resume or withdraw submitted mail, shows Cancelling while an attempt settles, then Cancelled with pending rows labeled Not sent. All display timestamps, including persisted recipient notes, use the member's browser timezone.
+
 ## Secret handling
 
 - Do not print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, or source files.

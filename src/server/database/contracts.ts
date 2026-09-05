@@ -86,6 +86,9 @@ export interface CampaignRepository {
     auditEvents?: readonly AuditEventRecord[],
   ): Promise<void>;
   /** Conditional lifecycle transitions return false when a concurrent update won. */
+  getMailboxHead(ownerUserId: string): Promise<CampaignRecord | null>;
+  cancel(id: string, ownerUserId: string, now: string): Promise<boolean>;
+  settleCancellations(now: string, ownerUserId?: string, limit?: number): Promise<string[]>;
   markValidated(id: string, ownerUserId: string, now: string): Promise<boolean>;
   queue(id: string, ownerUserId: string, now: string): Promise<boolean>;
   markRunningIfQueued(id: string, now: string): Promise<boolean>;

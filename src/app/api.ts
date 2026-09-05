@@ -415,3 +415,9 @@ export function logout(csrfToken: string): Promise<{ ok: true }> {
     csrfToken,
   });
 }
+
+export function cancelCampaign(campaignId: string, csrfToken: string): Promise<{ campaign: CampaignResponse["campaign"] }> {
+  return apiRequest(`/api/campaigns/${encodeURIComponent(campaignId)}/cancel`, {
+    method: "POST", body: { acknowledged: true }, csrfToken,
+  });
+}

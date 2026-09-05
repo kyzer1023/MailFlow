@@ -44,7 +44,7 @@ export function apiDiagnosticRoute(path: string): string {
       "delivery_verification",
     ],
     [
-      /^\/api\/campaigns(?:\/[^/]+(?:\/(?:jobs|export\.csv|start|pause|resume|test-send))?)?$/u,
+      /^\/api\/campaigns(?:\/[^/]+(?:\/(?:jobs|export\.csv|start|pause|resume|cancel|test-send))?)?$/u,
       "campaigns",
     ],
     [/^\/api\/flows(?:\/[^/]+(?:\/versions)?)?$/u, "flows"],

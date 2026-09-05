@@ -94,6 +94,9 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       },
     } as MailboxLeaseDecision,
     campaigns: {
+      getMailboxHead: async () => null,
+      cancel: async () => false,
+      settleCancellations: async () => [],
       getById: async () => state.campaign,
       getByIdForOwner: async () => state.campaign,
       getByIdempotencyKey: async () => state.campaign,
@@ -220,6 +223,15 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
 }
 
 describe("campaign tick", () => {
+  it("waits for lease release without scheduling a five-minute wake", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.mailboxDecision = { kind: "unavailable", reason: "lease", nextAvailableAt: "2026-08-31T00:06:00.000Z" };
+    const result = await processCampaignTick(TICK, deps);
+    expect(result).toMatchObject({ kind: "waiting", reason: "lease", delaySeconds: 0 });
+    expect(deps.state.campaign.wakeToken).toBeNull();
+    expect(deps.state.job.status).toBe("pending");
+    expect(deps.state.sends).toBe(0);
+  });
   it("rejects non-minimal or oversized Queue payloads", async () => {
     const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
     await expect(handleCampaignQueueMessage({ ...TICK, rows: [] }, deps)).resolves.toEqual({ kind: "ignored", reason: "not_runnable" });

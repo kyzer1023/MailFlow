@@ -50,7 +50,7 @@ describe("processing timing", () => {
     ).toEqual(result);
   });
   it("suppresses unsupported estimates for paused, waiting, stale, terminal and sparse states", () => {
-    for (const state of ["paused", "queued", "completed", "failed"] as const)
+    for (const state of ["paused", "queued", "completed", "failed", "cancelling", "cancelled"] as const)
       expect(
         campaignTiming({ ...campaign, state }, jobs, start + 95_000)
           .remainingMinutes,

@@ -1,3 +1,4 @@
+import { laterIso, mailboxWaitMessage } from "../../domain/mailbox-scheduler";
 import { emptyCampaignCounts, type AuditEventRecord, type CampaignCounts, type CampaignRecord, type RecipientJobRecord } from "../../domain/types";
 import type {
   CampaignRepository,
@@ -9,6 +10,8 @@ import { buildAuditEventInsert } from "./d1-audit";
 import { buildRecipientJobInserts } from "./d1-recipient-jobs";
 
 interface CampaignRow {
+  cancel_requested_at: string | null;
+  cancelled_at: string | null;
   delivery_verified_count?: number;
   id: string;
   flow_id: string;
@@ -50,7 +53,9 @@ function toCampaign(row: CampaignRow): CampaignRecord {
     validRecipients: row.valid_recipients,
     skippedRecipients: row.skipped_recipients,
     pacePerMinute: row.pace_per_minute,
-    state: row.state,
+    state: row.cancelled_at ? "cancelled" : row.cancel_requested_at ? "cancelling" : row.state,
+    cancelRequestedAt: row.cancel_requested_at ?? null,
+    cancelledAt: row.cancelled_at ?? null,
     pauseReason: row.pause_reason ?? null,
     idempotencyKey: row.idempotency_key,
     requestFingerprint: row.request_fingerprint ?? null,
@@ -208,6 +213,51 @@ export class D1CampaignRepository implements CampaignRepository {
     if (results.some((result) => result.success === false)) throw new Error("D1 campaign batch did not complete successfully");
   }
 
+  async getMailboxHead(ownerUserId: string): Promise<CampaignRecord | null> {
+    const row = await bind(this.db.prepare(`SELECT h.*,
+      (SELECT MIN(COALESCE(j.next_attempt_at, '1970-01-01T00:00:00.000Z')) FROM recipient_jobs j
+        WHERE j.campaign_id = h.id AND j.status = 'pending') AS next_pending_at,
+      m.next_send_at, m.provider_backoff_until
+      FROM campaign_turn_heads h LEFT JOIN mailbox_send_state m ON m.owner_user_id = h.owner_user_id
+      WHERE h.owner_user_id = ?1 AND NOT EXISTS (SELECT 1 FROM delivery_attempts a
+        WHERE a.owner_user_id = ?1 AND a.state IN ('reserved', 'provider_bound'))
+        AND NOT EXISTS (SELECT 1 FROM recipient_jobs j JOIN campaigns c ON c.id = j.campaign_id
+          WHERE c.owner_user_id = ?1 AND j.status IN ('claimed', 'sending'))`), [ownerUserId])
+      .first<CampaignRow & { next_pending_at: string | null; next_send_at: string | null; provider_backoff_until: string | null }>();
+    if (!row) return null;
+    const nextAt = laterIso(row.scheduler_next_attempt_at, row.next_pending_at, row.next_send_at, row.provider_backoff_until);
+    let message = row.scheduler_message;
+    if (nextAt && (nextAt !== row.scheduler_next_attempt_at || !message || message === "Waiting for the current mailbox submission to finish.")) {
+      message = nextAt === row.provider_backoff_until ? mailboxWaitMessage("provider_backoff", nextAt)
+        : nextAt === row.next_send_at ? mailboxWaitMessage("pace", nextAt)
+        : `A safe retry is waiting. Sending will continue after ${nextAt}.`;
+    }
+    return { ...toCampaign(row), schedulerNextAttemptAt: nextAt, schedulerMessage: message };
+  }
+
+  async cancel(id: string, ownerUserId: string, now: string): Promise<boolean> {
+    const changed = changes(await bind(this.db.prepare(`UPDATE campaigns
+      SET state = 'paused', cancel_requested_at = ?1, pause_reason = 'Cancelled by member',
+        wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?1
+      WHERE id = ?2 AND owner_user_id = ?3 AND cancel_requested_at IS NULL
+        AND state IN ('queued', 'running', 'paused')`), [now, id, ownerUserId]).run()) === 1;
+    await this.settleCancellations(now, ownerUserId);
+    if (changed) return true;
+    const existing = await this.getByIdForOwner(id, ownerUserId);
+    return Boolean(existing?.cancelRequestedAt);
+  }
+
+  async settleCancellations(now: string, ownerUserId?: string, limit = 100): Promise<string[]> {
+    const rows = await bind(this.db.prepare(`UPDATE campaigns SET cancelled_at = ?1,
+      completed_at = ?1, updated_at = ?1 WHERE id IN (
+        SELECT c.id FROM campaigns c WHERE c.cancel_requested_at IS NOT NULL AND c.cancelled_at IS NULL
+          AND (?2 IS NULL OR c.owner_user_id = ?2)
+          AND NOT EXISTS (SELECT 1 FROM delivery_attempts a WHERE a.campaign_id = c.id AND a.state IN ('reserved', 'provider_bound'))
+          AND NOT EXISTS (SELECT 1 FROM recipient_jobs j WHERE j.campaign_id = c.id AND j.status IN ('claimed', 'sending'))
+        LIMIT ?3) RETURNING id`), [now, ownerUserId ?? null, Math.max(1, Math.min(250, limit))]).all<{ id: string }>();
+    return rows.results.map(row => row.id);
+  }
+
   async markValidated(id: string, ownerUserId: string, now: string): Promise<boolean> {
     return this.updateState(id, ownerUserId, "draft", "validated", now, null);
   }
@@ -221,7 +271,7 @@ export class D1CampaignRepository implements CampaignRepository {
       await bind(
         this.db.prepare(
           `UPDATE campaigns SET state = 'running', started_at = COALESCE(started_at, ?1), updated_at = ?1
-           WHERE id = ?2 AND state = 'queued'`,
+           WHERE id = ?2 AND state = 'queued' AND id IN (SELECT id FROM campaign_turn_heads)`,
         ),
         [now, id],
       ).run(),
@@ -246,10 +296,11 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'running', pause_reason = NULL,
+          `UPDATE campaigns SET state = 'queued', pause_reason = NULL,
+             queued_at = ?1, wake_token = NULL, wake_due_at = NULL, scheduler_message = NULL, scheduler_next_attempt_at = NULL,
              attachment_issue_code = NULL, attachment_retry_count = 0,
-             started_at = COALESCE(started_at, ?1), updated_at = ?1
-           WHERE id = ?2 AND owner_user_id = ?3 AND state = 'paused'`,
+             updated_at = ?1
+           WHERE id = ?2 AND owner_user_id = ?3 AND state = 'paused' AND cancel_requested_at IS NULL`,
         ),
         [now, id, ownerUserId],
       ).run(),
@@ -262,7 +313,7 @@ export class D1CampaignRepository implements CampaignRepository {
         this.db.prepare(
           `UPDATE campaigns SET state = 'failed', pause_reason = ?1, attachment_issue_code = ?2, wake_token = NULL,
              wake_due_at = NULL, scheduler_next_attempt_at = NULL, scheduler_message = NULL, updated_at = ?3
-           WHERE id = ?4 AND state IN ('validated', 'queued', 'running', 'paused')`,
+           WHERE id = ?4 AND state IN ('validated', 'queued', 'running', 'paused') AND cancel_requested_at IS NULL`,
         ),
         [reason.trim() || "Campaign failed", attachmentIssueCode, now, id],
       ).run(),
@@ -343,7 +394,8 @@ export class D1CampaignRepository implements CampaignRepository {
           `UPDATE campaigns
            SET wake_token = ?1, wake_due_at = ?2, scheduler_next_attempt_at = ?2,
                scheduler_message = ?3, updated_at = ?4
-           WHERE id = ?5 AND state IN ('queued', 'running')
+           WHERE id = ?5 AND state IN ('queued', 'running') AND id IN (SELECT id FROM campaign_turn_heads)
+             AND NOT EXISTS (SELECT 1 FROM delivery_attempts a WHERE a.owner_user_id = campaigns.owner_user_id AND a.state IN ('reserved', 'provider_bound'))
              AND (wake_token IS NULL OR (?6 IS NOT NULL AND wake_due_at <= ?6))`,
         ),
         [wakeToken, dueAt, message, now, id, replaceDueBefore],
@@ -357,7 +409,7 @@ export class D1CampaignRepository implements CampaignRepository {
         `UPDATE campaigns
          SET wake_token = NULL, wake_due_at = NULL, scheduler_message = NULL, updated_at = ?1
          WHERE id = ?2 AND wake_token = ?3 AND wake_due_at <= ?1
-           AND state IN ('queued', 'running')
+           AND state IN ('queued', 'running') AND id IN (SELECT id FROM campaign_turn_heads)
          RETURNING *`,
       ),
       [now, id, wakeToken],
@@ -370,7 +422,7 @@ export class D1CampaignRepository implements CampaignRepository {
       await bind(
         this.db.prepare(
           `UPDATE campaigns SET scheduler_next_attempt_at = ?1, scheduler_message = ?2, updated_at = ?3
-           WHERE id = ?4 AND state IN ('queued', 'running')`,
+           WHERE id = ?4 AND state IN ('queued', 'running') AND id IN (SELECT id FROM campaign_turn_heads)`,
         ),
         [nextAttemptAt, message, now, id],
       ).run(),
@@ -382,14 +434,15 @@ export class D1CampaignRepository implements CampaignRepository {
     const rows = await bind(
       this.db.prepare(
         `SELECT campaigns.* FROM campaigns
-         WHERE campaigns.state IN ('queued', 'running')
+         WHERE campaigns.id IN (SELECT id FROM campaign_turn_heads)
+           AND NOT EXISTS (SELECT 1 FROM delivery_attempts a WHERE a.owner_user_id = campaigns.owner_user_id AND a.state IN ('reserved', 'provider_bound'))
            AND EXISTS (
              SELECT 1 FROM recipient_jobs
              WHERE recipient_jobs.campaign_id = campaigns.id
                AND recipient_jobs.status = 'pending'
-               AND (recipient_jobs.next_attempt_at IS NULL OR recipient_jobs.next_attempt_at <= ?1)
            )
-           AND (campaigns.wake_token IS NULL OR campaigns.wake_due_at <= ?2)
+           AND ((campaigns.wake_token IS NULL AND (campaigns.state = 'queued' OR campaigns.updated_at <= ?2))
+             OR campaigns.wake_due_at <= ?2)
          ORDER BY COALESCE(campaigns.wake_due_at, campaigns.updated_at) ASC
          LIMIT ?3`,
       ),

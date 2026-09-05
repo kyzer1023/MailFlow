@@ -65,6 +65,15 @@ beforeEach(() => {
 });
 
 describe("campaign CSV export", () => {
+  it("exports cancellation independently of the original provider status", async () => {
+    store.getByIdForOwner.mockResolvedValue({ id: "campaign-export", state: "cancelled", cancelRequestedAt: "2026-09-05T01:00:00.000Z", cancelledAt: "2026-09-05T01:00:02.000Z" });
+    store.listByCampaign.mockResolvedValue([{ ...job(2), status: "pending" }, { ...job(3), status: "unknown" }]);
+    const csv = await (await exportRequest()).text();
+    expect(csv).toContain("2,member2@example.test,pending,1,");
+    expect(csv).toContain("3,member3@example.test,unknown,1,");
+    expect(csv).toContain("cancelled,2026-09-05T01:00:00.000Z,2026-09-05T01:00:02.000Z,Cancelled before submission");
+    expect(csv.match(/Cancelled before submission/gu)).toHaveLength(1);
+  });
   it("exports member verification separately while preserving Unknown and protecting note formulas", async () => {
     store.getByIdForOwner.mockResolvedValue({ id: "campaign-export" });
     store.listByCampaign.mockResolvedValue([{ ...job(2), status: "unknown", deliveryVerifiedBy: "owner", deliveryVerifiedAt: "2026-09-05T01:00:00.000Z", deliveryVerificationNote: "=private note" }]);
@@ -101,7 +110,7 @@ describe("campaign CSV export", () => {
     ]);
     const csv = await response.text();
     expect(csv.split("\r\n")[0]).toBe(
-      "row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message,delivery_verified_by,delivery_verified_at,delivery_verification_note",
+      "row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message,delivery_verified_by,delivery_verified_at,delivery_verification_note,campaign_status,cancel_requested_at,cancelled_at,not_sent_reason",
     );
     expect(csv).toContain('"line 1, ""line 2""\nline 3"');
     expect(csv).toContain("502,member502@example.test,failed,1,");

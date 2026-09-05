@@ -590,7 +590,7 @@ describe("authenticated information architecture", () => {
       state: "running" as const,
       pauseReason: null,
       schedulerNextAttemptAt: "2026-09-06T08:30:00.000Z",
-      schedulerMessage: "Mailbox pacing is active. Sending will continue after 2026-09-04T17:28:09.265Z.",
+      schedulerMessage: "Microsoft requested a temporary pause. Sending will continue after 2026-09-04T17:28:09.265Z.",
       createdAt: "2026-09-05T08:00:00.000Z",
       queuedAt: "2026-09-05T08:00:01.000Z",
       startedAt: "2026-09-05T08:00:02.000Z",
@@ -602,8 +602,8 @@ describe("authenticated information architecture", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Waiting safely")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Mailbox pacing is active");
+    expect(await screen.findByText("Waiting")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Microsoft requested a temporary pause");
     expect(screen.getByRole("status")).toHaveTextContent(formatTimestamp("2026-09-04T17:28:09.265Z"));
     expect(screen.getByRole("status")).not.toHaveTextContent("2026-09-04T17:28:09.265Z");
     expect(document.body.textContent).not.toMatch(/wake_|attempt_|lease_/u);

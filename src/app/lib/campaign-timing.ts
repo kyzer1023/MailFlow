@@ -14,7 +14,7 @@ export function campaignTiming(
   now = Date.now(),
 ) {
   const terminal =
-    campaign.state === "completed" || campaign.state === "failed";
+    ["completed", "failed", "cancelled"].includes(campaign.state);
   const start = Date.parse(campaign.startedAt || "");
   const end = terminal
     ? Date.parse(campaign.completedAt || campaign.updatedAt)

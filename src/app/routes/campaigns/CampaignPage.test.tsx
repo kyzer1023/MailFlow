@@ -22,12 +22,14 @@ const mocks = vi.hoisted(() => ({
   jobs: [] as RecipientJobRecord[],
   counts: {} as CampaignCounts,
   verify: vi.fn(),
+  cancel: vi.fn(),
 }));
 vi.mock("../../api", async (original) => ({
   ...(await original<typeof import("../../api")>()),
   getCampaign: async () => ({ campaign: mocks.campaign, counts: mocks.counts }),
   getCampaignJobs: async () => ({ jobs: mocks.jobs, counts: mocks.counts }),
   verifyDelivery: mocks.verify,
+  cancelCampaign: mocks.cancel,
 }));
 vi.mock("../../state/api-context", () => ({
   useApi: () => ({
@@ -67,6 +69,7 @@ beforeEach(() => {
     updatedAt: "2026-09-05T00:02:00.000Z",
   })) as RecipientJobRecord[];
   mocks.verify.mockReset();
+  mocks.cancel.mockReset();
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
   };
@@ -184,5 +187,73 @@ describe("campaign outcome reporting", () => {
     expect(
       screen.getByRole("button", { name: "Confirm delivery verified" }),
     ).toBeEnabled();
+  });
+});
+
+
+describe("campaign cancellation and activity clarity", () => {
+  it("confirms permanent cancellation and keeps an in-flight outcome visible", async () => {
+    mocks.campaign.state = "running";
+    mocks.campaign.completedAt = null;
+    mocks.counts = { pending: 1, claimed: 0, sending: 1, accepted: 1, failed: 0, skipped: 0, unknown: 0 };
+    mocks.jobs[1].status = "pending";
+    mocks.jobs[2].status = "sending";
+    mocks.cancel.mockImplementation(async () => {
+      mocks.campaign = { ...mocks.campaign, state: "cancelling", cancelRequestedAt: "2026-09-05T00:01:00.000Z" };
+      return { campaign: mocks.campaign };
+    });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel campaign" }));
+    const dialog = screen.getByRole("dialog");
+    const confirm = within(dialog).getByRole("button", { name: "Confirm cancellation" });
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByText(/cannot withdraw submitted mail/)).toBeInTheDocument();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith("synthetic", "synthetic"));
+    expect(await screen.findByText("Cancelling", { selector: ".status" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Resume|Pause campaign|Cancel campaign/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Sending", { selector: ".count small" }).closest(".count")).toHaveTextContent("1");
+    expect(screen.getByText("Not sent because this campaign was cancelled")).toBeInTheDocument();
+    expect(screen.getByText("Accepted by Microsoft")).toBeInTheDocument();
+    expect(document.querySelector(".campaign-identity")).toHaveFocus();
+  });
+
+  it("can dismiss cancellation without a request and retains a retryable error", async () => {
+    mocks.campaign.state = "paused";
+    mount();
+    const open = await screen.findByRole("button", { name: "Cancel campaign" });
+    fireEvent.click(open);
+    fireEvent.click(screen.getByRole("button", { name: "Keep campaign" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    mocks.cancel.mockRejectedValue(new Error("The campaign could not be updated."));
+    fireEvent.click(open);
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("could not be updated");
+    expect(screen.getByRole("button", { name: "Confirm cancellation" })).toBeEnabled();
+  });
+
+  it("clearly completes an all-accepted run without claiming delivery", async () => {
+    mocks.counts = { pending: 0, claimed: 0, sending: 0, accepted: 3, failed: 0, skipped: 0, unknown: 0 };
+    mocks.jobs.forEach(job => { job.status = "accepted"; });
+    mount();
+    expect(await screen.findByText("Completed", { selector: ".status" })).toBeInTheDocument();
+    expect(screen.getByText(/All 3 emails were submitted successfully to Microsoft/)).toBeInTheDocument();
+    expect(screen.getAllByText("Accepted by Microsoft")).toHaveLength(3);
+    expect(screen.getByText(/does not confirm inbox delivery/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel campaign" })).not.toBeInTheDocument();
+  });
+
+  it("converts legacy recipient waiting notes into the member's local timezone", async () => {
+    mocks.campaign.state = "running";
+    mocks.jobs[1].status = "pending";
+    mocks.jobs[1].lastErrorMessage = "Sending will continue after 5 Sep 2026, 1:28 AM (Malaysia time, GMT+8).";
+    mount();
+    expect(await screen.findByText(`Sending will continue after ${formatTimestamp("2026-09-04T17:28:00.000Z")}.`)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("Malaysia time");
   });
 });

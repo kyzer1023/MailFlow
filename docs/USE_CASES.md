@@ -134,9 +134,11 @@ Campaign creation carries a stable client-generated idempotency key. Replaying t
 - All campaigns and self-only test sends from one authenticated mailbox share one durable D1 lease, mailbox pace, provider backoff, and rolling recipient budget.
 - MailFlow reserves 8,000 envelope-recipient entries per mailbox in any rolling 24 hours. To, every CC entry, every BCC entry, and each test send count; repeated address occurrences count again.
 - Each job records status, attempts, timestamps, provider response category, and a human-readable note.
-- Campaigns can be paused and resumed.
+- Campaigns use first-in, first-out turns per mailbox. New campaigns remain Queued while the current campaign continues; they do not repeatedly wake themselves.
+- Completion, pause, cancellation, and terminal failure wake the next campaign once any current provider-bound attempt settles. The next submission still respects mailbox pacing, Microsoft backoff, and the rolling budget.
+- Campaigns can be paused and resumed. Resume joins the back of the mailbox queue.
 - A resume starts from the first eligible unsent row.
-- A durable wake token makes duplicate Queue messages harmless. The hourly watchdog recreates a missing wake after a publish failure.
+- A durable wake token makes duplicate Queue messages harmless. Only the mailbox head owns an effective wake. The hourly watchdog repairs a missed handoff or missing publication without polling every follower.
 - Attachment bytes are loaded and revalidated before a recipient job is claimed. Network failures, Microsoft throttling, and service failures leave every recipient state unchanged and schedule a bounded retry that honors a longer provider `Retry-After` value.
 - An expired or revoked OneDrive grant pauses the campaign without deleting its attachment set. After the same member reconnects, resume revalidates that same immutable set and claims only pending rows. Accepted and unknown rows remain terminal.
 - A missing, deleted, oversized, or checksum-mismatched attachment fails the campaign before another recipient is claimed.
@@ -174,7 +176,13 @@ Processing completion does not confirm inbox delivery. Running and completed mon
 
 The owning member can mark an unknown row's delivery verified after explicitly confirming receipt, with an optional private note of at most 500 characters. The first confirmation records the actor and server timestamp atomically with an audit event. Repeated actions return that original evidence. The provider status stays Unknown, attempt and budget accounting stay unchanged, and no message is sent. Results, history, and CSV present this member-reported evidence separately.
 
-Recipient updates and campaign timestamps use second-precision Malaysia time (MYT, UTC+8). Elapsed processing duration includes waits. Observed throughput is distinct from configured maximum pace; active remaining-time estimates require at least three processed outcomes and disappear while paused, waiting, stale, or terminal.
+Recipient updates, persisted waiting notes, and campaign timestamps use second-precision dates in the member's browser timezone, including its UTC offset. Elapsed processing duration includes waits. Observed throughput is distinct from configured maximum pace; active remaining-time estimates require at least three processed outcomes and disappear while paused, waiting, stale, or terminal.
+
+### Activity clarity and cancellation
+
+History and detail use the same labels: Queued for waiting for a mailbox turn, Sending for active progress including ordinary pacing, Waiting for an exceptional timed or lease restriction with its reason, and Paused for a member-controlled stop. A fully accepted campaign shows Completed and states that all emails were submitted successfully to Microsoft. Recipient rows still say Accepted by Microsoft; unresolved outcomes and recipient failures retain explicit warning labels.
+
+A member can cancel a queued, sending, or paused campaign after confirming that cancellation is permanent and submitted mail cannot be withdrawn. No new provider submission may start after cancellation. An existing provider-bound attempt finishes with its actual outcome; the campaign shows Cancelling until it settles, then Cancelled. Remaining pending rows show Not sent. Original accepted, failed, skipped, Unknown, manually verified evidence, and budget charges remain intact. A cancelled campaign cannot resume or start another test send. CSV preserves raw job status with separate cancellation timestamps and unsent reason.
 
 ## UC-14 Human-readable recovery
 

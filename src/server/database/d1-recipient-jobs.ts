@@ -203,6 +203,7 @@ export class D1RecipientJobRepository implements RecipientJobRepository {
            SELECT jobs.id FROM recipient_jobs AS jobs
            INNER JOIN campaigns AS campaigns ON campaigns.id = jobs.campaign_id
            WHERE jobs.campaign_id = ?3 AND campaigns.state = 'running'
+             AND campaigns.id IN (SELECT id FROM campaign_turn_heads)
              AND jobs.status = 'pending'
              AND (jobs.next_attempt_at IS NULL OR jobs.next_attempt_at <= ?2)
            ORDER BY jobs.source_row ASC LIMIT 1

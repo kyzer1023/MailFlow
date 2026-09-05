@@ -59,6 +59,7 @@
   --status-dot-size: 7px;
   --status-radius: 999px;
   --campaign-table-min-width: 640px;
+  --campaign-status-detail-width: 24rem;
   color: var(--ink);
   background: var(--paper);
   font-family: var(--font-display);
