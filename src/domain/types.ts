@@ -14,6 +14,8 @@ export const CAMPAIGN_STATES = [
   "paused",
   "completed",
   "failed",
+  "cancelling",
+  "cancelled",
 ] as const;
 
 export type CampaignState = (typeof CAMPAIGN_STATES)[number];
@@ -99,6 +101,7 @@ export interface TemplateVersionRecord {
 }
 
 export interface CampaignRecord {
+  deliveryVerifiedCount?: number;
   id: string;
   flowId: string;
   templateVersionId: string;
@@ -119,6 +122,8 @@ export interface CampaignRecord {
   startedAt: string | null;
   completedAt: string | null;
   /** Durable scheduler status. Coordination tokens are never exposed here. */
+  cancelRequestedAt?: string | null;
+  cancelledAt?: string | null;
   schedulerNextAttemptAt?: string | null;
   schedulerMessage?: string | null;
   /** Sanitized attachment recovery state. Never contains a OneDrive locator. */
@@ -131,6 +136,9 @@ export interface CampaignRecord {
 }
 
 export interface RecipientJobRecord {
+  deliveryVerifiedBy?: string | null;
+  deliveryVerifiedAt?: string | null;
+  deliveryVerificationNote?: string | null;
   id: string;
   campaignId: string;
   sourceRow: number;
@@ -160,6 +168,9 @@ export interface RecipientJobRecord {
 }
 
 export type AuditEventType =
+  | "campaign.cancel_requested"
+  | "campaign.cancelled"
+  | "recipient.delivery_verified"
   | "campaign.created"
   | "campaign.validated"
   | "campaign.queued"

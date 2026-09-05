@@ -13,11 +13,13 @@ import type {
 export const CAMPAIGN_TRANSITIONS: Readonly<Record<CampaignState, readonly CampaignState[]>> = {
   draft: ["validated"],
   validated: ["queued"],
-  queued: ["running", "paused", "failed"],
-  running: ["paused", "completed", "failed"],
-  paused: ["running", "failed"],
+  queued: ["running", "paused", "failed", "cancelling", "cancelled"],
+  running: ["paused", "completed", "failed", "cancelling", "cancelled"],
+  paused: ["queued", "failed", "cancelling", "cancelled"],
   completed: [],
   failed: [],
+  cancelling: ["cancelled"],
+  cancelled: [],
 };
 
 export const RECIPIENT_TRANSITIONS: Readonly<Record<RecipientStatus, readonly RecipientStatus[]>> = {
@@ -72,7 +74,9 @@ export function transitionCampaign(
     pauseReason: to === "paused" ? options.pauseReason?.trim() || "Paused by member" : null,
     queuedAt: to === "queued" ? campaign.queuedAt ?? now : campaign.queuedAt,
     startedAt: to === "running" ? campaign.startedAt ?? now : campaign.startedAt,
-    completedAt: to === "completed" ? campaign.completedAt ?? now : campaign.completedAt,
+    completedAt: to === "completed" || to === "cancelled" ? campaign.completedAt ?? now : campaign.completedAt,
+    cancelRequestedAt: to === "cancelling" || to === "cancelled" ? campaign.cancelRequestedAt ?? now : campaign.cancelRequestedAt,
+    cancelledAt: to === "cancelled" ? campaign.cancelledAt ?? now : campaign.cancelledAt,
     updatedAt: now,
   };
 

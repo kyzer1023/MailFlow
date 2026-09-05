@@ -29,6 +29,7 @@ import {
 } from "../dependencies";
 import {
   audit,
+  handoffMailbox,
   enqueueTick,
   nowIso,
   parseOrError,
@@ -99,7 +100,7 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
     : errorValue instanceof GraphApiError
       ? errorValue.category
       : null;
-  return { safeToRetry, retryAfter, category, failure: { status, code: "test_send_failed", message } };
+  return { safeToRetry, retryAfter, category, diagnosticId: errorValue instanceof TestSendError ? errorValue.diagnosticId : undefined, failure: { status, code: "test_send_failed", message } };
 }
 
 function attachmentIssueCode(failure: Extract<AttachmentLoadFailure, { disposition: "fail" }>) {
@@ -159,6 +160,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     const repo = repositories(context);
     const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
     if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+    if (campaign.state === "cancelled" || campaign.state === "cancelling") return responseError(context, 409, "campaign_cancelled", "This campaign was cancelled. Prepare a new campaign before sending another test.");
     const recipientJob = await repo.recipientJobs.getByCampaignAndSourceRow(campaign.id, input.sourceRow);
     if (!recipientJob) return responseError(context, 404, "test_sample_not_found", "That reviewed sample is not part of this campaign.");
     if (
@@ -230,6 +232,8 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
       }
       const failure = testSendFailure(errorValue);
       return responseError(context, failure.failure.status, failure.failure.code, failure.failure.message);
+    } finally {
+      await handoffMailbox(context, authenticated.user.id);
     }
   });
 
@@ -244,8 +248,31 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
     if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
     if (!(await repo.campaigns.pause(campaign.id, authenticated.user.id, nowIso(), input.reason ?? "Paused by member"))) return responseError(context, 409, "campaign_changed", "Only a queued or running campaign can be paused.");
+    await handoffMailbox(context, authenticated.user.id);
     await audit(repo, "campaign.paused", { actorUserId: authenticated.user.id, campaignId: campaign.id, metadata: { reason: input.reason ?? "Paused by member" } });
     return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign) });
+  });
+
+  app.post("/api/campaigns/:id/cancel", async (context) => {
+    const authenticated = await requireMutationSession(context);
+    if (authenticated instanceof Response) return authenticated;
+    const input = await parseOrError(context, acknowledgementSchema);
+    if (input instanceof Response) return input;
+    const repo = repositories(context);
+    const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
+    if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+    if (!(await repo.campaigns.cancel(campaign.id, authenticated.user.id, nowIso()))) {
+      return responseError(context, 409, "campaign_changed", "Only a queued, sending, or paused campaign can be cancelled.");
+    }
+    await handoffMailbox(context, authenticated.user.id);
+    const latest = (await repo.campaigns.getById(campaign.id)) ?? campaign;
+    if (latest.state === "cancelled") {
+      const service = attachmentServiceFor(context, repo);
+      if (service) {
+        try { await cleanupCampaignAttachments(repo, service, campaign.id); } catch { /* Scheduled cleanup retries. */ }
+      }
+    }
+    return context.json({ campaign: publicCampaign(latest) });
   });
 
   app.post("/api/campaigns/:id/resume", async (context) => {
@@ -276,12 +303,15 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     if (!(await repo.campaigns.resume(campaign.id, authenticated.user.id, nowIso()))) return responseError(context, 409, "campaign_changed", "Only a paused campaign can be resumed.");
     const wakeAt = nowIso();
     let published = false;
+    let dormant = false;
     try {
-      published = (await enqueueTick(context, campaign.id, wakeAt, "Sending is ready to resume.")).published;
+      const wake = await enqueueTick(context, campaign.id, wakeAt);
+      published = wake.published;
+      dormant = wake.dormant ?? false;
     } catch {
       // The campaign remains safely runnable. The hourly watchdog recreates the wake.
     }
-    if (!published) {
+    if (!published && !dormant) {
       await repo.campaigns.markSchedulerWaiting(
         campaign.id,
         wakeAt,
@@ -290,7 +320,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
       );
     }
     await audit(repo, "campaign.resumed", { actorUserId: authenticated.user.id, campaignId: campaign.id, metadata: { queuePublished: published } });
-    return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), queuePending: !published }, published ? 200 : 202);
+    return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), queuePending: !published && !dormant }, published || dormant ? 200 : 202);
   });
 }
 
@@ -304,6 +334,12 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   const idValue = routeParam(context, "id");
   const campaign = await repo.campaigns.getByIdForOwner(idValue, authenticated.user.id);
   if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
+  // A committed start may have lost its response or failed before publishing.
+  // Retry the existing queued head without rejoining FIFO or recreating rows.
+  if (campaign.state === "queued" || campaign.state === "running" || campaign.state === "completed") {
+    if (campaign.state === "queued") await handoffMailbox(context, authenticated.user.id);
+    return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), replayed: true });
+  }
   if (campaign.state !== "validated") return responseError(context, 409, "campaign_not_ready", "Review and validate the campaign before starting it.");
   const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
   if (attachmentSet && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
@@ -337,12 +373,15 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   if (!(await repo.campaigns.queue(campaign.id, authenticated.user.id, nowIso()))) return responseError(context, 409, "campaign_changed", "The campaign changed in another session. Refresh and try again.");
   const wakeAt = nowIso();
   let published = false;
+  let dormant = false;
   try {
-    published = (await enqueueTick(context, campaign.id, wakeAt, "Sending is queued and will begin shortly.")).published;
+    const wake = await enqueueTick(context, campaign.id, wakeAt);
+    published = wake.published;
+    dormant = wake.dormant ?? false;
   } catch {
     // The queued campaign remains safe and the hourly watchdog recreates the wake.
   }
-  if (!published) {
+  if (!published && !dormant) {
     await repo.campaigns.markSchedulerWaiting(
       campaign.id,
       wakeAt,
@@ -351,5 +390,5 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
     );
   }
   await audit(repo, "campaign.queued", { actorUserId: authenticated.user.id, campaignId: campaign.id, metadata: { queuePublished: published } });
-  return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), queuePending: !published }, published ? 200 : 202);
+  return context.json({ campaign: publicCampaign((await repo.campaigns.getById(campaign.id)) ?? campaign), queuePending: !published && !dormant }, published || dormant ? 200 : 202);
 }

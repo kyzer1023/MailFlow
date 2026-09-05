@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MailMessage } from "../../domain/mail-provider";
 import { delegatedSmtpMailProvider } from "./smtp-adapter";
 import {
@@ -22,6 +22,7 @@ interface Script {
   dataMode?: boolean;
   failDataWriteAfterBytes?: number;
   dataBytes?: number;
+  lostAck?: "timeout" | "close";
 }
 
 class ScriptedSocket implements SmtpSocketLike {
@@ -58,6 +59,8 @@ class ScriptedSocket implements SmtpSocketLike {
       if (!this.script.mime.endsWith("\r\n.\r\n")) return;
       this.script.mime = this.script.mime.slice(0, -3);
       this.script.dataMode = false;
+      if (this.script.lostAck === "close") { this.controller.close(); return; }
+      if (this.script.lostAck === "timeout") return;
       if (this.script.finalCode === null) throw new Error("connection lost after DATA");
       this.reply(`${this.script.finalCode ?? 250} submission result`);
       return;
@@ -259,5 +262,40 @@ describe("Exchange Online SMTP client", () => {
       message: "Reconnect Microsoft before sending this campaign",
     });
     expect(test.script.commands).toEqual([]);
+  });
+});
+
+
+describe("sanitized SMTP diagnostics", () => {
+  it.each([
+    [{ authCode: 535 }, "authenticate", "provider_rejection", "failed"],
+    [{ failDataWriteAfterBytes: 1 }, "body", "socket_failure", "retryable"],
+    [{ finalCode: null }, "terminator", "socket_failure", "unknown"],
+    [{ lostAck: "close" }, "acknowledgement", "socket_closed", "unknown"],
+    [{ lostAck: "timeout" }, "acknowledgement", "timeout", "unknown"],
+  ] as const)("records safe stages and retains boundary outcome for %j", async (scenario, stage, classification, kind) => {
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const state: Script = { commands: [], mime: null, ...scenario };
+      const client = new ExchangeOnlineSmtpClient({ connect: () => new ScriptedSocket(state, false), timeoutMs: 10 });
+      const result = await delegatedSmtpMailProvider(client, "private-bearer-fixture", "sender@example.test").send(message(), { sendKey: "private-send-key" });
+      expect(result.kind).toBe(kind);
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged.mock.calls[0]).toEqual(["mailflow.smtp.failure", { correlationId: result.diagnosticId, stage, classification, elapsedMs: expect.any(Number) }]);
+      const diagnostic = logged.mock.calls[0][1] as { elapsedMs: number; correlationId: string };
+      expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(diagnostic.correlationId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(JSON.stringify(logged.mock.calls)).not.toMatch(/private-|@|Fixture subject|Hello fixture|AUTH|submission result|connection lost/u);
+    } finally { logged.mockRestore(); }
+  });
+  it("classifies connection timeout separately without leaking thrown fields", async () => {
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const state: Script = { commands: [], mime: null };
+      const client = new ExchangeOnlineSmtpClient({ connect: () => Object.assign(new ScriptedSocket(state, false), { opened: new Promise(() => {}) }), timeoutMs: 10 });
+      const result = await delegatedSmtpMailProvider(client, "private-bearer", "sender@example.test").send(message());
+      expect(result.kind).toBe("retryable");
+      expect(logged.mock.calls[0][1]).toMatchObject({ stage: "connect", classification: "timeout" });
+    } finally { logged.mockRestore(); }
   });
 });

@@ -1,4 +1,5 @@
 import type { AuditEventType } from "../../domain/types";
+import { diagnosticMetadata } from "../diagnostics";
 import { MAILBOX_BUDGET_WINDOW_MS, MAILBOX_LEASE_MS, mailboxWaitMessage } from "../../domain/mailbox-scheduler";
 import { DEFAULT_PACE_PER_MINUTE, paceDelaySeconds, parseRetryAfterSeconds } from "../../domain/pacing";
 import { sha256Base64Url } from "../auth/crypto";
@@ -35,6 +36,7 @@ export interface TestSendAuditInput {
 
 export type TestSendAudit = (input: TestSendAuditInput) => Promise<void>;
 export interface ClassifiedTestSendFailure {
+  readonly diagnosticId?: string;
   readonly failure: StoredTestSendFailure;
   /** True only when the failure happened before submission or proves no acceptance. */
   readonly safeToRetry: boolean;
@@ -241,7 +243,7 @@ export async function executeControlledTestSend(options: {
       eventType: "test_send.failed",
       campaignId: options.input.campaignId,
       actorUserId: options.input.ownerUserId,
-      metadata: { testSendId, code: classified.failure.code, safeToRetry: classified.safeToRetry },
+      metadata: { testSendId, code: classified.failure.code, safeToRetry: classified.safeToRetry, ...diagnosticMetadata(classified.diagnosticId) },
     });
     throw new ControlledTestSendError(classified.failure);
   }

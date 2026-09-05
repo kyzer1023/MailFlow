@@ -167,6 +167,7 @@ export async function processSchedulerWatchdog(bindings: MailFlowBindings, nowDa
     }
   }
 
+  const cancelled = await repo.campaigns.settleCancellations(now, undefined, WATCHDOG_BATCH_SIZE);
   const completed = await repo.campaigns.completeExhaustedBatch(now, WATCHDOG_BATCH_SIZE);
   for (const campaignId of completed) {
     try {
@@ -186,7 +187,9 @@ export async function processSchedulerWatchdog(bindings: MailFlowBindings, nowDa
 
   const queue = cloudflareQueueAdapter(bindings.CAMPAIGN_QUEUE);
   const candidates = await repo.campaigns.listWatchdogWakeCandidates(now, staleBefore, WATCHDOG_BATCH_SIZE);
-  for (const campaign of candidates) {
+  for (const candidate of candidates) {
+    const campaign = await repo.campaigns.getMailboxHead(candidate.ownerUserId);
+    if (!campaign || campaign.id !== candidate.id) continue;
     const dueAt = laterIso(now, campaign.schedulerNextAttemptAt) ?? now;
     const wake = await reserveCampaignWake({
       campaigns: repo.campaigns,
@@ -212,5 +215,5 @@ export async function processSchedulerWatchdog(bindings: MailFlowBindings, nowDa
       // The wake reservation remains authoritative.
     }
   }
-  return { completedCampaignIds: completed };
+  return { completedCampaignIds: [...completed, ...cancelled] };
 }

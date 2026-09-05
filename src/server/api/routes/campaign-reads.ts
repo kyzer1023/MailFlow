@@ -61,6 +61,6 @@ export function registerCampaignDetailRoutes(app: Hono<MailFlowAppEnv>): void {
     }
     context.header("Content-Type", "text/csv; charset=utf-8");
     context.header("Content-Disposition", `attachment; filename="${campaign.id}-results.csv"`);
-    return context.body(jobCsv(jobs));
+    return context.body(jobCsv(jobs, campaign));
   });
 }

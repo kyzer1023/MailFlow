@@ -32,7 +32,8 @@
 }
 .route-counts {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   padding: 16px 24px;
   background: var(--paper-bright);
   border: 1px solid var(--line);
@@ -233,9 +234,8 @@
     grid-template-columns: 1fr;
   }
   .route-counts {
-    overflow-x: auto;
-    grid-template-columns: repeat(6, 130px);
-    padding-bottom: 0.5rem;
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
   }
 }
 @media (max-width: 680px) {
@@ -301,3 +301,17 @@
     padding-bottom: 8px;
   }
 }
+
+.delivery-verification, .delivery-evidence { display: grid; gap: var(--send-space-sm); }
+.delivery-verification { padding: var(--send-space-md); }
+.delivery-verification p { margin-block: var(--send-space-xs); }
+.delivery-verification .field > span { font-size: inherit; }
+.campaign-page .campaign-lower, .campaign-aside { align-items: start; }
+.delivery-evidence { margin-top: var(--send-space-sm); white-space: normal; overflow-wrap: anywhere; }
+.delivery-evidence strong { color: var(--moss); }
+.recipient-outcome-note { display: grid; justify-items: start; gap: var(--send-space-sm); white-space: normal; }
+.recipient-outcome-note p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.recipient-outcome-note .delivery-evidence { margin-top: 0; }
+.route-summary--finished .count--sending > span { background: var(--paper); color: var(--muted); box-shadow: none; }
+.progress-meta { gap: var(--send-space-sm); align-items: flex-start; }
+.progress-meta > strong { flex-shrink: 0; }

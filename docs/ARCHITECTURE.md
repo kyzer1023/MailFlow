@@ -143,7 +143,7 @@ Campaign states:
 
 ```text
 draft -> validated -> queued -> running -> completed
-                              -> paused -> running
+                              -> paused -> queued
                               -> failed
 ```
 
@@ -178,7 +178,7 @@ have one of three durable outcomes:
 - OneDrive authorization failures pause the campaign before a recipient is
   claimed, retain the attachment set, and record an explicit reconnect-required
   issue code. Resume validates the same owner-scoped attachment set before the
-  conditional `paused -> running` transition and then reserves one new wake.
+  conditional `paused -> queued` transition and joins the back of the mailbox FIFO. Only the head reserves a new wake.
 - A permanently missing OneDrive object, deleted attachment metadata, byte-size
   mismatch, or SHA-256 mismatch fails the campaign before a recipient is
   claimed. The campaign keeps a sanitized terminal issue code and explanation;
@@ -196,15 +196,37 @@ duplicate Queue delivery.
 
 ## Mailbox scheduler, budget, and recovery
 
+### FIFO campaign turns and cancellation (2026-09-06)
+
+Visible results distinguish a cancellation request from its effect. A settled cancelled campaign whose complete recipient counts contain no pending, claimed or sending rows uses completed-result presentation, retaining failure/Unknown/skipped warnings. Fully accepted results display Completed. History and detail explain that cancellation stopped no rows, while the underlying irreversible cancellation state, timestamps, audit events and CSV evidence remain unchanged. Missing/incomplete counts or an attempt still settling must not receive this presentation.
+
+Campaign mutation success uses positive D1 `meta.changes` for primary-key conditional updates, because D1 counts trigger writes as well as the campaign row. Tests emulate the `total_changes()` delta and include the local D1 runtime. Repeating an acknowledged start for an owned queued/running/completed campaign returns that same campaign. A queued replay requests the existing mailbox head's missing wake without changing FIFO order, recipient evidence, or a reserved wake; running/completed replays never publish another tick. Paused, cancelled and failed campaigns cannot use start replay to resume.
+
+Each mailbox has a durable FIFO of campaign turns. Starting or resuming appends a new monotonically numbered turn; resume joins the back. Only the head may reserve/consume a wake or cross the campaign provider boundary. Followers stay Queued without timer polling. Completion, pause, cancellation, and terminal failure release the turn and request the next head's wake. An outstanding reserved or provider-bound mailbox attempt blocks handoff until it settles. The scheduled watchdog is fallback recovery for a missed event or publication; pacing, backoff, attachment retries, and budget waits schedule only the head.
+
+Cancellation is an explicit owner-scoped, CSRF-protected, audited action. Forward-only migration 0011 stores immutable cancellation request and completion timestamps, projecting Cancelling and Cancelled from the existing stopped database lifecycle to avoid rebuilding referenced tables. Cancellation prevents new provider calls; an already provider-bound attempt records its real accepted, failed, or unknown result before cancellation completes. Pending rows remain original pending evidence and display Not sent (cancelled). Cancellation never recalls mail, changes accepted/unknown evidence, releases their budget, or permits resume. Pause and cancellation release proven pre-submission reservations atomically; provider-bound attempts remain protected. A new test send against a cancelled campaign is rejected, while an existing provider-bound test preserves its actual result.
+
+`campaign_turns.sequence` is an autoincrementing durable order assigned inside the campaign lifecycle transaction. `campaign_turn_heads` is the authoritative SQL head projection, enforced at wake, claim, lease, and provider-bound transitions. A lease collision leaves only the head dormant until the holder's completion event; no five-minute collision wake is published. New handoff due times respect persisted pending-row retry deadlines and mailbox pace/backoff. Only a real timed restriction creates a delayed head wake.
+
+At the storage boundary cancellation uses `state = 'paused'` plus `cancel_requested_at` and `cancelled_at`. Repository reads project `cancelling` or `cancelled`; public consumers must use that projection. SQL terminal-retention queries must include non-null `cancelled_at`. Two database triggers atomically append first-request and final-completion audit events. Existing accepted/unknown jobs and delivery-attempt records are immutable under cancellation; CSV includes cancellation fields separately from raw job status. Migration backfill retains the in-flight campaign first, then queued-time order, keeps the head's existing wake, and invalidates legacy competing follower wakes.
+
 D1 coordinates delivery per authenticated mailbox, not merely per campaign. Each mailbox has one durable expiring provider lease plus mailbox-wide `next_send_at` and `provider_backoff_until` timestamps. Every campaign provider call and self-only test send must atomically acquire that lease and create a delivery-attempt reservation before crossing the provider boundary. The attempt and lease use a cryptographically unguessable token carried through conditional transitions. A Worker process-local mutex is insufficient and is not used. Cloudflare documents that [`D1Database::batch()` executes as a transaction and rolls the sequence back when a statement fails](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch); guarded conditional batches rely on that behavior.
 
 The application reserves the full provider envelope count against an 8,000-recipient rolling 24-hour mailbox budget. To, CC, BCC, and self-only test recipients all count. Duplicate address occurrences are counted separately, including repeats across fields, so the calculation is deterministic and conservative. Accepted and ambiguous or unknown provider attempts consume their full reservation. Explicit failures that prove no provider submission and stale pre-boundary attempts release it. Budget exhaustion keeps campaign work pending, records the earliest reservation expiry as the next eligible time, and creates one bounded wake reservation rather than failing or skipping a recipient. The headroom is measured against Microsoft's documented [10,000 recipients per mailbox in a rolling 24-hour period](https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits#sending-limits).
 
-Campaign wake-up is also D1-authoritative. A runnable campaign stores no more than one effective wake token and due time. Each Queue message carries that token, and only the consumer that conditionally consumes the matching due token may advance work. Duplicate or stale Queue messages are acknowledged as no-ops. Start, resume, pacing, throttling, and recovery reserve a wake in D1 before publishing it. If publication or a Worker invocation is lost, the hourly watchdog finds runnable campaigns with eligible pending work and recreates the missing physical wake without creating a second effective wake. Queue delays are clamped because Cloudflare's [`delaySeconds` range is 0 through 86,400 seconds](https://developers.cloudflare.com/queues/configuration/javascript-apis/#queuesendoptions); longer waits are represented by another guarded wake.
+Campaign wake-up is also D1-authoritative. The runnable head of a mailbox FIFO stores no more than one effective wake token and due time. Followers store none. Each Queue message carries that token, and only the consumer that conditionally consumes the matching due token may advance work. Duplicate or stale Queue messages are acknowledged as no-ops. Start, resume, pacing, throttling, and recovery reserve a wake in D1 before publishing it. If publication or a Worker invocation is lost, the hourly watchdog finds mailbox heads with pending work and recreates the missing physical wake without creating a second effective wake. Queue delays are clamped because Cloudflare's [`delaySeconds` range is 0 through 86,400 seconds](https://developers.cloudflare.com/queues/configuration/javascript-apis/#queuesendoptions); longer waits are represented by another guarded wake.
 
 The delivery-attempt ledger distinguishes `reserved` from `provider_bound`. A crash while a job is only claimed or an attempt is only reserved is recoverable as proven pre-submission work. Once the attempt and job cross the provider boundary, stale work becomes terminal `unknown` and retains its daily-budget charge. The hourly watchdog reconciles expired mailbox leases and stale work in bounded batches, completes exhausted campaigns, and never automatically resends unknown work. User-visible scheduler messages show waiting or recovery times without exposing recipients, message content, attachments, or coordination tokens.
 
 ## Ambiguous outcomes
+
+### Manual delivery evidence (2026-09-05)
+
+An owner may explicitly mark an unknown recipient's delivery verified after checking receipt. `POST /api/campaigns/:id/jobs/:jobId/delivery-verification` requires the existing authenticated, same-origin, CSRF-protected mutation session and `{ confirmed: true, note?: string }`. Notes are trimmed, limited to 500 characters, and reject control characters. They are private owner-visible evidence, never diagnostic or audit metadata.
+
+Forward-only migration `0010_manual_delivery_verification.sql` adds a separate actor, timestamp, and optional note to recipient jobs. One conditional owner-scoped update records the first confirmation; an SQLite trigger atomically appends `recipient.delivery_verified` without the note. Replays return the original evidence, including when their note differs. The database enforces owner identity, unknown status, and immutable confirmation evidence. This action changes no provider outcome, job update timestamp, attempt count, campaign state, delivery ledger, or budget. Reads and CSV expose confirmation separately from raw `unknown`; it is member-reported receipt, not new SMTP evidence. It cannot resend mail.
+
+Diagnostics use only fixed stage and failure classifications, elapsed milliseconds, and generated correlation IDs. Raw exception messages, stacks, request paths or query strings, provider payloads, credentials, addresses, message content, and OneDrive locators are excluded. SMTP diagnostics do not change the DATA terminator ambiguity boundary, retry policy, or timeouts.
 
 Neither Graph sendMail nor SMTP submission provides a safe application idempotency key. Graph records `accepted` after `202`. SMTP records `accepted` only after the final `250` response following the terminating DATA marker. If a known response proves that no send occurred, apply the safe retry policy. If the network fails after either provider may have accepted the message, record `unknown` and stop automatic retry for that row. This favors no duplicate message over an automatic blind rerun.
 
@@ -217,7 +239,7 @@ Expected route groups:
 - `/api/attachment-sets`, `/api/attachment-sets/:id/files`, `/api/attachment-sets/:id/files/:fileId`
 - `/api/campaigns`, `/api/campaigns/:id`, `/api/campaigns/:id/jobs`
 - `/api/campaigns/:id/test-send`
-- `/api/campaigns/:id/start`, `/pause`, `/resume`
+- `/api/campaigns/:id/start`, `/pause`, `/resume`, `/cancel`
 - `/api/campaigns/:id/export.csv`
 
 All mutating routes require an authenticated session, CSRF protection, same-origin checks, Zod validation, and ownership checks.

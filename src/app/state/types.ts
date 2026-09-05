@@ -56,9 +56,14 @@ export interface FlowViewModel {
 }
 
 export type CampaignViewStatus =
-  "completed" | "paused" | "running" | "queued" | "failed";
+  "completed" | "paused" | "running" | "queued" | "failed" | "cancelling" | "cancelled";
 
 export interface CampaignViewModel {
+  readonly cancellationNote?: string;
+  readonly schedulerMessage?: string | null;
+  readonly schedulerNextAttemptAt?: string | null;
+  readonly skipped?: number;
+  readonly deliveryVerifiedCount?: number;
   readonly id: string;
   readonly name: string;
   readonly date: string;

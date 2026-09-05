@@ -1,3 +1,4 @@
+import { diagnosticMetadata } from "../diagnostics";
 import {
   MAILBOX_BUDGET_WINDOW_MS,
   MAILBOX_LEASE_MS,
@@ -91,12 +92,49 @@ export async function reserveCampaignWake(options: {
   }
 }
 
+/** Event-driven handoff. Followers never reserve periodic wakes. */
+export async function wakeMailboxHead(options: {
+  campaigns: CampaignRepository; queue: CampaignQueue; ownerUserId: string; now: Date;
+}): Promise<void> {
+  await options.campaigns.settleCancellations(options.now.toISOString(), options.ownerUserId);
+  const head = await options.campaigns.getMailboxHead(options.ownerUserId);
+  if (!head || head.wakeToken) return;
+  await reserveCampaignWake({ ...options, campaignId: head.id,
+    dueAt: laterIso(options.now.toISOString(), head.schedulerNextAttemptAt) ?? options.now.toISOString(),
+    message: head.schedulerNextAttemptAt && Date.parse(head.schedulerNextAttemptAt) > options.now.getTime() ? head.schedulerMessage ?? null : null });
+}
+
+export async function processCampaignTick(
+  message: CampaignTickMessage | string, dependencies: CampaignTickDependencies,
+): Promise<TickResult> {
+  if (typeof message === "string") return { kind: "ignored", reason: "stale_wake" };
+  const campaign = await dependencies.campaigns.getById(message.campaignId);
+  let result: TickResult | undefined;
+  try {
+    result = await advanceCampaignTick(message, dependencies);
+    return result;
+  } finally {
+    // A duplicate/stale delivery is not a handoff event. In particular it must
+    // not wake the head again while the real invocation is loading attachments.
+    if (campaign && result && result.kind !== "ignored") {
+      try {
+        await wakeMailboxHead({ campaigns: dependencies.campaigns, queue: dependencies.queue,
+          ownerUserId: campaign.ownerUserId, now: dependencies.now?.() ?? new Date() });
+        const latest = await dependencies.campaigns.getById(campaign.id);
+        if (latest?.state === "cancelled") await dependencies.attachmentCleanup(campaign.id);
+      } catch {
+        // Durable state is recovered by the bounded scheduler watchdog.
+      }
+    }
+  }
+}
+
 /**
  * Advance one due wake. D1 owns both the one-effective-wake rule and the
  * mailbox-wide provider lease, so duplicate Queue deliveries cannot submit in
  * parallel even when they run in different Worker isolates.
  */
-export async function processCampaignTick(
+async function advanceCampaignTick(
   message: CampaignTickMessage | string,
   dependencies: CampaignTickDependencies,
 ): Promise<TickResult> {
@@ -107,7 +145,7 @@ export async function processCampaignTick(
   let campaign = await dependencies.campaigns.getById(campaignId);
   if (!campaign) return { kind: "ignored", reason: "missing_campaign" };
   if (campaign.state === "paused") return { kind: "ignored", reason: "paused" };
-  if (campaign.state === "completed" || campaign.state === "failed") return { kind: "ignored", reason: "terminal" };
+  if (["completed", "failed", "cancelling", "cancelled"].includes(campaign.state)) return { kind: "ignored", reason: "terminal" };
   if (campaign.state === "draft" || campaign.state === "validated") return { kind: "ignored", reason: "not_runnable" };
   if (campaign.wakeToken !== message.wakeToken || !campaign.wakeDueAt) return { kind: "ignored", reason: "stale_wake" };
 
@@ -249,21 +287,28 @@ export async function processCampaignTick(
   });
 
   if (acquired.kind === "unavailable") {
-    const waitMessage = mailboxWaitMessage(acquired.reason, acquired.nextAvailableAt);
+    const waitingForLease = acquired.reason === "lease";
+    const retryAt = waitingForLease ? now : acquired.nextAvailableAt;
+    const waitMessage = waitingForLease
+      ? "Waiting for the current mailbox submission to finish."
+      : mailboxWaitMessage(acquired.reason, acquired.nextAvailableAt);
     await dependencies.recipientJobs.releaseClaimForWait(
       job.id,
       claimToken,
       now,
-      acquired.nextAvailableAt,
+      retryAt,
       acquired.reason === "budget" ? "mailbox_daily_budget" : "mailbox_waiting",
       waitMessage,
     );
-    await dependencies.campaigns.markSchedulerWaiting(campaign.id, acquired.nextAvailableAt, waitMessage, now);
+    await dependencies.campaigns.markSchedulerWaiting(campaign.id, retryAt, waitMessage, now);
     await safeAudit(dependencies, "campaign.mailbox_waiting", campaign, job.id, {
       reason: acquired.reason,
       nextAttemptAt: acquired.nextAvailableAt,
       envelopeRecipientCount: count,
     });
+    // A lease is released by an event, not by a five-minute follower timer.
+    if (waitingForLease) return { kind: "waiting", campaignId: campaign.id, jobId: job.id,
+      reason: acquired.reason, nextAttemptAt: acquired.nextAvailableAt, delaySeconds: 0 };
     const wake = await reserveCampaignWake({
       campaigns: dependencies.campaigns,
       queue: dependencies.queue,
@@ -389,6 +434,7 @@ export async function processCampaignTick(
     category,
     nextAttemptAt: outcome === "retry_scheduled" ? nextAttemptAt : undefined,
     envelopeRecipientCount: acquired.attempt.envelopeRecipientCount,
+    ...diagnosticMetadata(result.diagnosticId),
   });
 
   const completed = await dependencies.campaigns.completeIfExhausted(campaign.id, resultNow);

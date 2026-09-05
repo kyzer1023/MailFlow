@@ -2,6 +2,7 @@ import { CaretRight } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import type { CampaignViewModel } from "../../state/types";
 import { StatusChip } from "../common/StatusChip";
+import { completedResult, campaignActivity } from "../../lib/campaign-result";
 
 export interface CampaignTableProps {
   readonly campaigns: readonly CampaignViewModel[];
@@ -9,7 +10,7 @@ export interface CampaignTableProps {
 
 export function CampaignTable({ campaigns }: CampaignTableProps) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" tabIndex={0} role="region" aria-label="Campaign results, scroll horizontally to see all columns">
       <table>
         <thead>
           <tr>
@@ -23,7 +24,10 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
           </tr>
         </thead>
         <tbody>
-          {campaigns.map((campaign) => (
+          {campaigns.map((campaign) => {
+            const activity = campaignActivity({ ...campaign, state: campaign.status });
+            const result = completedResult(campaign.unknown, campaign.recipientFailed, campaign.skipped ?? 0, campaign.deliveryVerifiedCount ?? 0);
+            return (
             <tr key={campaign.id}>
               <td>
                 <strong>{campaign.name}</strong>
@@ -31,15 +35,16 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
               </td>
               <td>{campaign.updated}</td>
               <td>
-                <StatusChip status={campaign.status}>
-                  {campaign.status === "failed"
-                    ? "Campaign failed"
-                    : campaign.status[0].toUpperCase() +
-                      campaign.status.slice(1)}
+                <StatusChip status={campaign.status === "completed" ? result.tone : activity.tone}>
+                  {campaign.status === "completed" ? result.label : activity.label}
                 </StatusChip>
+                {campaign.status === "completed" && campaign.accepted === campaign.total && campaign.total > 0 && <small className="campaign-status-detail">All {campaign.total} emails submitted successfully to Microsoft.</small>}
+                {campaign.status !== "completed" && <small className="campaign-status-detail">{activity.detail}</small>}
+                {campaign.cancellationNote && <small className="campaign-status-detail">{campaign.cancellationNote}</small>}
               </td>
               <td className="campaign-results">
                 <strong>{campaign.accepted}</strong> accepted
+                {(campaign.skipped ?? 0) > 0 && <><br /><small>{campaign.skipped} skipped</small></>}
                 {campaign.recipientFailed > 0 && (
                   <>
                     <br />
@@ -50,9 +55,10 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
                   <>
                     <br />
                     <small>{campaign.unknown} outcome unknown</small>
+                    {(campaign.deliveryVerifiedCount ?? 0) > 0 && <><br /><small>{campaign.deliveryVerifiedCount} delivery verified manually</small></>}
                   </>
                 )}
-                {campaign.status === "failed" && (
+                {["failed", "cancelled", "cancelling"].includes(campaign.status) && (
                   <>
                     <br />
                     <small>{campaign.notSent} not sent</small>
@@ -69,7 +75,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
                 </Link>
               </td>
             </tr>
-          ))}
+          ); })}
         </tbody>
       </table>
     </div>

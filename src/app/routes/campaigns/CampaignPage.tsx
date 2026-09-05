@@ -24,15 +24,20 @@ import {
   getCampaign,
   getCampaignJobs,
   pauseCampaign,
+  cancelCampaign,
   resumeCampaign,
   type CampaignResponse,
 } from "../../api";
 import { StatusChip } from "../../components/common/StatusChip";
 import { AppShell } from "../../components/shell/AppShell";
-import { formatDate, formatSchedulerNotice } from "../../lib/format";
+import { formatTimestamp, formatSchedulerNotice } from "../../lib/format";
+import { campaignTiming, processingDuration } from "../../lib/campaign-timing";
+import { completedResult, campaignActivity, finishedWithoutCancelledRows, ineffectiveCancellationNote } from "../../lib/campaign-result";
+import { Modal } from "../../components/common/Modal";
+import { DeliveryVerification } from "../../components/common/DeliveryVerification";
 import { useApi } from "../../state/api-context";
 
-type CampaignAction = "idle" | "pause" | "resume";
+type CampaignAction = "idle" | "pause" | "resume" | "cancel";
 
 const CAMPAIGN_JOB_PAGE_SIZE = 500;
 const RECIPIENT_JOBS_PER_PAGE = 9;
@@ -46,6 +51,11 @@ export function CampaignPage() {
   const [jobs, setJobs] = useState<readonly RecipientJobRecord[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [actionState, setActionState] = useState<CampaignAction>("idle");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelConfirmed, setCancelConfirmed] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const statusRef = useRef<HTMLDivElement>(null);
+  const focusAfterCancel = useRef(false);
   const [copied, setCopied] = useState(false);
   const [jobPage, setJobPage] = useState(1);
   const loadSequence = useRef(0);
@@ -87,6 +97,13 @@ export function CampaignPage() {
     };
   }, [load, campaignId]);
 
+  useEffect(() => {
+    if (focusAfterCancel.current && ["cancelled", "cancelling"].includes(campaignState?.state ?? "")) {
+      focusAfterCancel.current = false;
+      statusRef.current?.focus();
+    }
+  }, [campaignState?.state]);
+
   if (!campaignId) {
     return (
       <AppShell>
@@ -102,7 +119,11 @@ export function CampaignPage() {
 
   const paused = campaignState?.state === "paused";
   const failedCampaign = campaignState?.state === "failed";
-  const completedCampaign = campaignState?.state === "completed";
+  const finishedAfterCancel = campaignState ? finishedWithoutCancelledRows(campaignState, counts) : false;
+  const completedCampaign = campaignState?.state === "completed" || finishedAfterCancel;
+  const cancelling = campaignState?.state === "cancelling";
+  const cancelled = campaignState?.state === "cancelled" && !finishedAfterCancel;
+  const cancellation = cancelling || cancelled;
   const attachmentAuthorizationPaused = paused && campaignState?.attachmentIssueCode === "attachment_authorization_required";
   const activeCounts = counts || { pending: 0, claimed: 0, sending: 0, accepted: 0, skipped: 0, failed: 0, unknown: 0 };
   const total = campaignState?.totalRecipients || 0;
@@ -120,13 +141,19 @@ export function CampaignPage() {
       ]
     : [
         ["Total", total, Rows],
-        ["Pending", activeCounts.pending, Clock],
+        [cancellation ? "Not sent" : "Pending", activeCounts.pending, Clock],
         ["Sending", activeCounts.sending + activeCounts.claimed, PaperPlaneTilt],
         ["Accepted", activeCounts.accepted, Check],
         ["Skipped", activeCounts.skipped, MinusCircle],
-        ["Failed", activeCounts.failed + activeCounts.unknown, WarningCircle],
+        ["Recipient failed", activeCounts.failed, WarningCircle],
+        ["Unknown", activeCounts.unknown, WarningCircle],
       ];
   const displayJobs = jobs || [];
+  const verifiedCount = displayJobs.filter(job => job.status === "unknown" && job.deliveryVerifiedAt).length;
+  const unverifiedCount = Math.max(0, activeCounts.unknown - verifiedCount);
+  const result = completedResult(activeCounts.unknown, activeCounts.failed, activeCounts.skipped, verifiedCount);
+  const resultSummary = `${activeCounts.accepted} accepted by Microsoft, ${activeCounts.failed} failed, ${activeCounts.unknown} unknown, ${activeCounts.skipped} skipped`;
+  const timing = campaignState ? campaignTiming(campaignState, displayJobs) : null;
   const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
   const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
   const visibleJobs = displayJobs.slice(firstJobIndex, firstJobIndex + RECIPIENT_JOBS_PER_PAGE);
@@ -134,42 +161,37 @@ export function CampaignPage() {
   const lastVisibleJob = Math.min(firstJobIndex + RECIPIENT_JOBS_PER_PAGE, displayJobs.length);
   const sender = campaignState?.senderAddress || user?.mailboxAddress || "Sender not available";
   const statusKind = campaignState?.state || "unknown";
-  const waiting = Boolean(campaignState?.schedulerMessage && ["queued", "running"].includes(campaignState.state));
-  const waitingMessage = campaignState?.schedulerMessage
-    ? formatSchedulerNotice(campaignState.schedulerMessage, campaignState.schedulerNextAttemptAt)
-    : "";
-  const statusLabel = statusKind === "paused"
-    ? "Paused safely"
-    : statusKind === "completed"
-      ? "Completed"
-      : statusKind === "failed"
-        ? "Campaign failed"
-        : waiting
-          ? "Waiting safely"
-          : statusKind === "queued"
-          ? "Queued"
-          : statusKind === "validated"
-            ? "Validated"
-            : statusKind === "draft"
-              ? "Draft"
-              : loadError
-                ? "Unavailable"
-                : "Loading";
+  const activity = campaignState ? campaignActivity(campaignState) : null;
+  const waiting = activity?.tone === "waiting";
+  const waitingMessage = activity?.detail ?? "";
+  const statusLabel = completedCampaign ? result.label : activity?.label ?? (loadError ? "Unavailable" : "Loading");
+  const allSubmitted = completedCampaign && total > 0 && activeCounts.accepted === total;
+
 
   const updateAction = async (action: Exclude<CampaignAction, "idle">) => {
-    if (actionState !== "idle" || !campaignId || !["queued", "running", "paused"].includes(campaignState?.state as string)) return;
+    if (actionState !== "idle" || !campaignId) return;
+    if (!["queued", "running", "paused"].includes(campaignState?.state as string)) {
+      if (action === "cancel") setCancelError("This campaign has already stopped. Close this dialog to review its latest results.");
+      return;
+    }
+    if (action === "cancel" && !cancelConfirmed) return;
     setActionState(action);
+    setCancelError("");
     setLoadError("");
     try {
-      const response = action === "pause"
+      const response = action === "cancel"
+        ? await cancelCampaign(campaignId, csrfToken)
+        : action === "pause"
         ? await pauseCampaign(campaignId, csrfToken)
         : await resumeCampaign(campaignId, csrfToken);
+      if (action === "cancel") { focusAfterCancel.current = true; setCancelOpen(false); }
       setCampaignState(response.campaign);
       void refreshDashboard();
       await load();
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "The campaign could not be updated.");
-      await load();
+      const message = error instanceof Error ? error.message : "The campaign could not be updated.";
+      if (action === "cancel") setCancelError(message);
+      else setLoadError(message);
     } finally {
       setActionState("idle");
     }
@@ -205,11 +227,11 @@ export function CampaignPage() {
         <header className="page-header campaign-header">
           <div>
             <span className="section-kicker">CAMPAIGN</span>
-            <h1>{failedCampaign ? "This campaign stopped safely." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
-            <p>{failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Accepted, failed, skipped, and unknown rows remain available for review." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
+            <h1>{cancellation ? cancelling ? "Stopping this campaign." : "This campaign was cancelled." : failedCampaign ? "This campaign stopped safely." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
+            <p>{cancellation ? "Remaining rows will not be submitted. Mail Flow cannot withdraw mail already submitted to Microsoft." : failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Processing is finished. Acceptance by Microsoft does not confirm inbox delivery." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
           </div>
           <div className="header-actions">
-            {!failedCampaign && !completedCampaign && <button
+            {!failedCampaign && !completedCampaign && !cancellation && <button
                 className="button button--outline"
                 onClick={() => void updateAction(paused ? "resume" : "pause")}
                 disabled={actionState !== "idle" || !["queued", "running", "paused"].includes(campaignState?.state as string)}
@@ -217,27 +239,47 @@ export function CampaignPage() {
                 {actionState !== "idle" ? <SpinnerGap className="spin" /> : paused ? <Play weight="fill" /> : <Pause weight="fill" />}
                 {paused ? "Resume pending rows" : "Pause campaign"}
               </button>}
+            {["queued", "running", "paused"].includes(campaignState?.state ?? "") && <button
+              className="button button--outline" disabled={actionState !== "idle"}
+              onClick={() => { setCancelConfirmed(false); setCancelError(""); setCancelOpen(true); }}
+            ><X /> Cancel campaign</button>}
             <button className="button button--outline" onClick={() => navigate("/campaigns")}>
               Campaign history <X />
             </button>
           </div>
         </header>
 
+        {cancelOpen && <Modal title="Cancel this campaign?" onClose={() => { if (actionState === "idle") setCancelOpen(false); }}>
+          <form className="delivery-verification" onSubmit={(event) => { event.preventDefault(); void updateAction("cancel"); }}>
+            <p>Cancellation permanently stops the remaining rows. An email already being submitted will finish and keep its actual result.</p>
+            <p>Mail Flow cannot withdraw submitted mail. Accepted, failed, and unknown outcomes remain in the results.</p>
+            <label className="ack"><input type="checkbox" checked={cancelConfirmed} disabled={actionState !== "idle"}
+              onChange={event => setCancelConfirmed(event.target.checked)} />I understand this campaign cannot be resumed and submitted mail cannot be withdrawn.</label>
+            {cancelError && <p role="alert">{cancelError}</p>}
+            <div className="header-actions">
+              <button type="button" className="button button--outline" disabled={actionState !== "idle"} onClick={() => setCancelOpen(false)}>Keep campaign</button>
+              <button className="button button--coral" disabled={!cancelConfirmed || actionState !== "idle"}>{actionState === "cancel" ? "Cancelling..." : "Confirm cancellation"}</button>
+            </div>
+          </form>
+        </Modal>}
         {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
+        {activeCounts.unknown > 0 && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /><span><strong>{unverifiedCount > 0 ? `${unverifiedCount} unknown ${unverifiedCount === 1 ? "outcome needs" : "outcomes need"} receipt verification.` : "Receipt has been manually verified for every unknown outcome."}</strong>{unverifiedCount > 0 && "Check receipt before considering any resend. Microsoft may already have submitted these messages. "}{verifiedCount > 0 && `${verifiedCount} manually verified; original provider outcomes remain Unknown.`}</span></div>}
         {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
         {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
+        {(campaignState?.state === "queued" || cancellation) && <div className="notice" role="status"><Clock /><span>{activity?.detail}</span></div>}
+        {finishedAfterCancel && <div className="notice" role="status"><Clock /><span>{ineffectiveCancellationNote}</span></div>}
         {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
 
-        <div className="campaign-identity">
+        <div className="campaign-identity" ref={statusRef} tabIndex={-1}>
           <span className="mini-mark"><Envelope weight="fill" /></span>
           <div>
             <h2>{campaignState?.sourceFilename || "Campaign details"}</h2>
             <code>{sender}</code>
           </div>
-          <StatusChip status={statusKind}>{statusLabel}</StatusChip>
+          <StatusChip status={completedCampaign ? result.tone : activity?.tone ?? statusKind}>{statusLabel}</StatusChip>
         </div>
 
-        <section className="panel route-summary" aria-live="polite">
+        <section className={`panel route-summary${completedCampaign || cancelled ? " route-summary--finished" : ""}`} aria-live="polite">
           <div className="route-counts">
             {routeCounts.map(([label, count, IconComponent]) => (
               <div className={`count count--${label.toLowerCase().replace(/\s+/gu, "-")}`} key={label}>
@@ -249,13 +291,18 @@ export function CampaignPage() {
           </div>
           <div className="progress-meta">
             <span>
-              {failedCampaign
+              {cancellation
+                ? `${notSent} ${notSent === 1 ? "row will" : "rows will"} not be sent${cancelling ? "; the current attempt is settling" : " because this campaign was cancelled"}`
+                : failedCampaign
                 ? `${notSent} ${notSent === 1 ? "row was" : "rows were"} not sent after the campaign stopped`
                 : completedCampaign
-                  ? "Campaign complete, all recipient outcomes are recorded"
+                  ? allSubmitted ? `All ${total} emails were submitted successfully to Microsoft.` : `Processing finished: ${resultSummary}`
                   : paused
                     ? "Paused, accepted and unknown rows remain protected"
-                    : `${campaignState?.pacePerMinute || 12} messages/min · About ${Math.max(0, Math.ceil((total - processed) / Math.max(1, campaignState?.pacePerMinute || 12)))} minutes remaining`}
+                    : waiting ? "Waiting safely; remaining time is not estimated"
+                      : timing?.remainingMinutes ? `About ${timing.remainingMinutes} ${timing.remainingMinutes === 1 ? "minute" : "minutes"} remaining at observed processing speed`
+                        : "Remaining time is not available yet"}
+              {` · ${processed} of ${total} rows processed`}
             </span>
             <strong>{progress}%</strong>
           </div>
@@ -290,19 +337,19 @@ export function CampaignPage() {
                     <tbody>
                       {visibleJobs.map((job) => {
                         const status = job.status;
-                        const stoppedBeforeSend = failedCampaign && status === "pending";
+                        const stoppedBeforeSend = (failedCampaign || cancellation) && status === "pending";
                         const pausedBeforeSend = paused && status === "pending";
-                        const visibleStatus = stoppedBeforeSend ? "not-sent" : status;
+                        const visibleStatus = stoppedBeforeSend ? cancellation ? "cancelled" : "not-sent" : status;
                         const statusText = stoppedBeforeSend
                           ? "Not sent"
                           : status === "accepted"
                             ? "Accepted by Microsoft"
                             : status[0].toUpperCase() + status.slice(1);
                         const note = stoppedBeforeSend
-                          ? "Campaign stopped before this row"
+                          ? cancellation ? "Not sent because this campaign was cancelled" : "Campaign stopped before this row"
                           : pausedBeforeSend
                             ? "Paused before send"
-                            : job.lastErrorMessage || (status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
+                            : (job.lastErrorMessage ? formatSchedulerNotice(job.lastErrorMessage) : "") || (status === "unknown" ? "Outcome unknown. Check receipt before any resend." : status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
                         return (
                           <tr key={`${job.recipient}-${job.sourceRow}`}>
                             <td><strong>{job.recipient}</strong></td>
@@ -311,8 +358,8 @@ export function CampaignPage() {
                               <StatusChip status={visibleStatus}>{statusText}</StatusChip>
                             </td>
                             <td>{job.attemptCount}</td>
-                            <td>{formatDate(job.updatedAt)}</td>
-                            <td>{note}</td>
+                            <td>{formatTimestamp(job.updatedAt)}</td>
+                            <td><div className="recipient-outcome-note"><p>{note}</p>{status === "unknown" && <DeliveryVerification job={job} csrfToken={csrfToken} onVerified={() => { void load(); void refreshDashboard(); }} />}</div></td>
                           </tr>
                         );
                       })}
@@ -354,8 +401,8 @@ export function CampaignPage() {
           <aside className="campaign-aside">
             <section className={`panel recovery-card${failedCampaign ? " recovery-card--failed" : ""}`}>
               <span className="route-dot"><FlowArrow /></span>
-              <h2>{failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
-              <p>{failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
+              <h2>{finishedAfterCancel ? "Cancellation request recorded" : cancellation ? "Cancellation is permanent" : failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
+              <p>{finishedAfterCancel ? "Every row has a recorded outcome. The cancellation request remains in the audit history." : cancellation ? "Pending rows will not be submitted, and this campaign cannot be resumed." : failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
               <strong>{failedCampaign ? `${activeCounts.failed} recipient-level ${activeCounts.failed === 1 ? "failure" : "failures"}, ${activeCounts.unknown} unknown, and ${notSent} not sent.` : "Accepted and unknown outcomes are never sent again automatically."}</strong>
               {attachmentAuthorizationPaused && <a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a>}
             </section>
@@ -377,7 +424,13 @@ export function CampaignPage() {
                 <div><dt>Source file</dt><dd>{campaignState?.sourceFilename || "Not available"}</dd></div>
                 <div><dt>Flow</dt><dd><code>{campaignState?.flowId || "Not available"}</code></dd></div>
                 <div><dt>Template version</dt><dd><code>{campaignState?.templateVersionId || "Not available"}</code></dd></div>
-                <div><dt>Started</dt><dd>{formatDate(campaignState?.startedAt)}</dd></div>
+                <div><dt>Created</dt><dd>{formatTimestamp(campaignState?.createdAt)}</dd></div>
+                <div><dt>Started</dt><dd>{formatTimestamp(campaignState?.startedAt)}</dd></div>
+                <div><dt>{cancelled ? "Cancelled" : "Processing finished"}</dt><dd>{formatTimestamp(campaignState?.completedAt)}</dd></div>
+                {campaignState?.cancelRequestedAt && <div><dt>Cancellation requested</dt><dd>{formatTimestamp(campaignState.cancelRequestedAt)}</dd></div>}
+                <div><dt>Elapsed since processing started</dt><dd>{processingDuration(timing?.elapsedSeconds ?? null)} (includes waits)</dd></div>
+                <div><dt>Configured maximum pace</dt><dd>{campaignState?.pacePerMinute ?? "Not available"} messages/min</dd></div>
+                <div><dt>Observed processing speed</dt><dd>{timing?.throughput ? `${timing.throughput.toFixed(1)} rows/min` : "Not enough completed rows"}</dd></div>
                 <div><dt>Started by</dt><dd>{user?.displayName || "USM member"}</dd></div>
               </dl>
             </section>

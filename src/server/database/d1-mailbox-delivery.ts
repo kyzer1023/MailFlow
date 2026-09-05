@@ -99,6 +99,15 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
       this.db.prepare("SELECT * FROM mailbox_send_state WHERE owner_user_id = ?1"),
       [request.ownerUserId],
     ).first<MailboxStateRow>();
+    const cancelled = await bind(this.db.prepare(`SELECT id FROM campaigns
+      WHERE id = ?1 AND owner_user_id = ?2 AND cancel_requested_at IS NOT NULL`),
+      [request.campaignId, request.ownerUserId]).first();
+    if (cancelled) return { kind: "unavailable", reason: "lease", nextAvailableAt: request.leaseExpiresAt };
+    if (request.recipientJobId) {
+      const eligible = await bind(this.db.prepare(`SELECT id FROM campaign_turn_heads WHERE id = ?1 AND owner_user_id = ?2`),
+        [request.campaignId, request.ownerUserId]).first();
+      if (!eligible) return { kind: "unavailable", reason: "lease", nextAvailableAt: request.leaseExpiresAt };
+    }
     if (!state) return { kind: "unavailable", reason: "lease", nextAvailableAt: request.leaseExpiresAt };
 
     const providerBoundLease = state.lease_attempt_id && state.lease_token
@@ -185,6 +194,8 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
            )
            AND (next_send_at IS NULL OR next_send_at <= ?4)
            AND (provider_backoff_until IS NULL OR provider_backoff_until <= ?4)
+           AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ?10 AND c.owner_user_id = ?5 AND c.cancel_requested_at IS NULL)
+           AND (?9 IS NULL OR EXISTS (SELECT 1 FROM campaign_turn_heads h WHERE h.id = ?10 AND h.owner_user_id = ?5))
            AND (?6 IS NULL OR ?6 <= ?4)
            AND (
              SELECT COALESCE(SUM(envelope_recipient_count), 0)
@@ -203,6 +214,8 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
         request.campaignNotBefore ?? null,
         request.envelopeRecipientCount,
         MAILBOX_RECIPIENT_BUDGET,
+        request.recipientJobId,
+        request.campaignId,
       ],
     );
     const insertAttempt = bind(
@@ -255,7 +268,8 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
         bind(
           this.db.prepare(
             `UPDATE delivery_attempts SET state = 'provider_bound', provider_bound_at = ?1, budget_expires_at = ?2
-             WHERE attempt_token = ?3 AND recipient_job_id = ?4 AND state = 'reserved'`,
+             WHERE attempt_token = ?3 AND recipient_job_id = ?4 AND state = 'reserved'
+               AND campaign_id IN (SELECT id FROM campaign_turn_heads WHERE state = 'running')`,
           ),
           [now, providerBudgetExpiresAt, attemptToken, recipientJobId],
         ),
@@ -290,7 +304,8 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
         bind(
           this.db.prepare(
             `UPDATE delivery_attempts SET state = 'provider_bound', provider_bound_at = ?1, budget_expires_at = ?2
-             WHERE attempt_token = ?3 AND test_send_id = ?4 AND state = 'reserved'`,
+             WHERE attempt_token = ?3 AND test_send_id = ?4 AND state = 'reserved'
+               AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = delivery_attempts.campaign_id AND c.cancel_requested_at IS NULL)`,
           ),
           [now, providerBudgetExpiresAt, attemptToken, testSendId],
         ),
@@ -375,7 +390,7 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
         guard(this.db),
         bind(this.db.prepare(
           `UPDATE campaigns SET scheduler_next_attempt_at = ?1, scheduler_message = ?2, updated_at = ?3
-           WHERE id = ?4`,
+           WHERE id = ?4 AND state = 'running'`,
         ), [nextCampaignAt, schedulerMessage, input.now, input.campaignId]),
       ]);
       return true;

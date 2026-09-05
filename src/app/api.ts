@@ -1,3 +1,4 @@
+import { formatSchedulerNotice } from "./lib/format";
 import type {
   CampaignCounts,
   CampaignRecord,
@@ -100,7 +101,7 @@ export class ApiRequestError extends Error {
     body: ApiErrorBody | null,
     fallback = "Mail Flow could not complete that request.",
   ) {
-    super(body?.error?.message || fallback);
+    super(formatSchedulerNotice(body?.error?.message || fallback));
     this.name = "ApiRequestError";
     this.status = status;
     this.code = body?.error?.code || "request_failed";
@@ -373,6 +374,12 @@ export function pauseCampaign(
   );
 }
 
+export function verifyDelivery(campaignId: string, jobId: string, note: string, csrfToken: string): Promise<{ job: RecipientJobRecord }> {
+  return apiRequest(`/api/campaigns/${encodeURIComponent(campaignId)}/jobs/${encodeURIComponent(jobId)}/delivery-verification`, {
+    method: "POST", body: { confirmed: true, note }, csrfToken,
+  });
+}
+
 export function resumeCampaign(
   campaignId: string,
   csrfToken: string,
@@ -406,5 +413,11 @@ export function logout(csrfToken: string): Promise<{ ok: true }> {
   return apiRequest<{ ok: true }>("/auth/logout", {
     method: "POST",
     csrfToken,
+  });
+}
+
+export function cancelCampaign(campaignId: string, csrfToken: string): Promise<{ campaign: CampaignResponse["campaign"] }> {
+  return apiRequest(`/api/campaigns/${encodeURIComponent(campaignId)}/cancel`, {
+    method: "POST", body: { acknowledged: true }, csrfToken,
   });
 }

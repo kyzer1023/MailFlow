@@ -55,7 +55,10 @@ export interface MailSendUnknown {
   providerRequestId?: string | null;
 }
 
-export type MailSendResult = MailSendAccepted | MailSendRetryable | MailSendFailed | MailSendUnknown;
+export type MailSendResult = (MailSendAccepted | MailSendRetryable | MailSendFailed | MailSendUnknown) & {
+  /** Generated diagnostic correlation only; never provider acceptance evidence. */
+  diagnosticId?: string;
+};
 
 /**
  * Microsoft transports are kept behind this interface. An adapter must return

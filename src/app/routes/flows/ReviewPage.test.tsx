@@ -198,6 +198,18 @@ const acceptedResult = {
 };
 
 describe("Review action feedback", () => {
+  it("retries a lost start response for the same prepared campaign and redirects", async () => {
+    mockedStartCampaign.mockRejectedValueOnce(new Error("Start response interrupted"))
+      .mockResolvedValueOnce({ campaign: { ...campaignResponse.campaign, state: "queued" } });
+    renderReview();
+    fireEvent.click(screen.getByLabelText(/I have checked the sender/));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm & start" }));
+    await screen.findByText("Start response interrupted");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm & start" }));
+    expect(await screen.findByText("Campaign route")).toBeInTheDocument();
+    expect(mockedStartCampaign.mock.calls.map(call => call[0])).toEqual(["campaign-review", "campaign-review"]);
+  });
+
   beforeEach(() => {
     mockedLogout.mockResolvedValue({ ok: true });
   });

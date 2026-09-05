@@ -285,7 +285,7 @@ export class D1AttachmentRepository implements AttachmentRepository {
            AND EXISTS (
              SELECT 1 FROM campaigns
              WHERE campaigns.id = attachment_sets.campaign_id
-               AND campaigns.state IN ('completed', 'failed')
+               AND (campaigns.state IN ('completed', 'failed') OR campaigns.cancelled_at IS NOT NULL)
            )
          )
          ORDER BY expires_at ASC LIMIT ?2`,

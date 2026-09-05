@@ -96,3 +96,50 @@ Synthetic interactions passed: XLSX import and flags, template picker/reuse, dir
 Scoped follow-up to the user's two Message screenshots: retain the existing editor and show persistent, editable column connections in the sidebar. The chosen selector remains focused after the final connection; the subject receives no programmatic focus. Green Connected states and an accessible completion message make the result explicit. Template token names remain stable.
 
 Verified in the in-app browser at 1440x900, 1024x768 and 390x844 using `renamed-columns.xlsx` and a saved workshop message. Keyboard selection, suggested-column selection, clearing/reconnecting, Review rendering and return navigation passed. Connected controls stay visible, selected values persist, and there is no horizontal overflow. Local captures are `artifacts/local/mapping-unconnected-1440.png` and `mapping-connected-{1440,1024,390}.png`. Result: passed. Chrome was unavailable; no real mail was sent.
+
+
+## 2026-09-05: Results reporting and manual delivery verification
+
+Scope: preserve the established campaign composition and Familiar Paper tokens while separating Unknown from recipient failure, adding explicit member verification, and making timing evidence readable. Source: `mock-images/06-campaign.png`; the existing application remains the source for current navigation, branding and reusable dialog controls. The old mock's example identities, decorative receipt, six-counter total and recovery copy are superseded by the accepted product requirements.
+
+Compared the source and the running implementation together at the source's 1672 x 941 viewport. Evidence: `artifacts/local/results/reference-running.png`. The source is a framed concept; the implementation is an unframed production screen with synthetic rows and an additional Unknown counter/attention notice, so this is a composition and component comparison, not a claim of identical content or pixels. Paper surfaces, Moss/Coral roles, sidebar, counter route, result table and recovery/audit sidebar remain consistent.
+
+Initial P2 finding: adding a seventh counter with column auto-placement conflicted with the existing mobile three-column rule and collapsed the first tracks. Fixed the narrow layout to use row auto-placement; `mobile-fixed.png` shows all seven readable counters. Also separated manual evidence onto its own history line, retained visible confirmation focus, and prevented the longer audit sidebar from stretching the recovery card into an empty tall panel.
+
+Functional inventory passed: running/completed Unknown and recipient-failed counters; processed-row feedback; configured maximum pace versus observed throughput; completed/failed/paused states without a remaining-time promise; Not sent rows; exact MYT timestamps; explicit receipt checkbox gating; optional note; failure/retry; Escape cancellation and opener focus; fresh confirmation required after reopening; saved-evidence focus; preserved Unknown and attempt count after verification; history evidence; reduced motion and console checks.
+
+Final captures in `artifacts/local/results/`: `completed-desktop-final.png` (1440 x 900), `failed-tablet-final.png` (1024 x 768), `mobile-fixed.png` and `dialog-mobile-error.png` (390 x 844), `running-wide-final.png` (1920 x 1080), `history-desktop-final.png`, and `history-mobile-final.png`. Earlier desktop/dialog/saved-state captures are retained locally. Long-page screenshots include the existing fixed support footer at its viewport position; actual scrolling and horizontal result-table access were exercised. No document overflow was observed at the required sizes. Browser console warnings/errors were empty. Viewport and reduced-motion overrides were cleared.
+
+The in-app browser was used with synthetic browser-only API interception; fixture source lives in ignored `tmp/` and `.local-preview.html` and is absent from production imports. No provider-bound action ran. No new raster assets or redesign were needed. Earlier workflow QA above remains unchanged.
+
+final result: passed
+
+### 2026-09-06 - Campaign result feedback
+- Source: user attachment codex-clipboard-74fe6967-2ee3-489c-9350-3243760074d2.png (1682x868). Implementation: artifacts/local/results/ui-fix-desktop.png (1682x868 CSS viewport), ui-fix-mobile.png (390x844). Browser captures use normal density. Source omits app navigation/header; comparison targets the shared identity, counts and recipient-note regions using synthetic identities and mixed terminal outcomes.
+- Compared source and loaded implementation together. Fixed P2 inline verification button colliding with prose using a spaced grid; fixed misleading green Completed presentation using derived result wording and existing semantic tokens; removed finished Sending highlight.
+- Typography and assets retain the existing fonts, logo and Phosphor icons. Paper/Moss colors and panel rhythm retained. Note wrapping, separate action alignment and explicit outcome copy inspected; mobile has no document overflow. Existing horizontally scrollable recipient table is retained. No new image assets are needed.
+- Confirmation remains disabled until checked; saving preserves Unknown and changes the summary to recipient failures when failures remain. Browser warning/error logs empty. No remaining actionable P0/P1/P2 findings for this scoped correction.
+- final result: passed
+
+### 2026-09-06 - Status pill size
+- Source: supplied codex-clipboard-fd2fc147-769d-465d-94ae-f4a21af16906.png, a cropped status column. Compared it together with the synthetic history capture at 1440x900; focus is the badge region, not the unmatched full-page crop. Implementation: artifacts/local/results/status-pills-desktop.png and status-pills-mobile.png (390x844); normal browser density.
+- Retained existing typeface, weights, palette, dots and assets; centralized larger badge size and padding. Replaced Processing finished with Accepted by Microsoft for fully accepted campaigns. Browser DOM confirms 13px type and 32px height; longer labels can wrap without overlap.
+- P2 mobile overlap found in first capture: fixed-width history columns squeezed enlarged labels. Corrected with a horizontally scrolling 640px table minimum and focusable named region. Reinspection confirms short labels remain one line and long labels have readable wraps, with no document overflow. No remaining P0/P1/P2 findings for this scoped change.
+- final result: passed
+
+
+### 2026-09-06 - FIFO status clarity and campaign cancellation
+
+- Grounding: approved `mock-images/06-campaign.png` (1672 x 941) plus the user's accepted campaign-result and larger-pill feedback. Compared the reference and `artifacts/local/fifo/running-reference.png` at the matching CSS viewport. The accepted production shell, synthetic identities, Unknown column, explicit cancellation action, and truthful result labels intentionally differ from the older framed mock. Paper/Moss/Coral surfaces, the counter route, recipient table, recovery/audit sidebar, existing logo, fonts, and Phosphor icons remain consistent. No new raster assets or layout redesign were needed.
+- Shared history/detail labels are Queued, Sending, Waiting with its reason, Paused, Cancelling, and Cancelled. The clean completed monitor has Completed plus the successful Microsoft-submission summary; recipient acceptance remains separate. Routine pacing uses the active Coral status. Cancellation confirmation, unsent rows, original Unknown verification, and terminal action removal were inspected.
+- Captures in `artifacts/local/fifo/`: running and cancellation desktop (1440 x 900), running-reference (1672 x 941), completed-wide (1920 x 1080), waiting-tablet (1024 x 768), queued-mobile, cancelling-mobile, cancel-error-mobile, history-mobile and history-mobile-scroll (390 x 844), and waiting-new-york. History details wrap without overlap. All required sizes had no horizontal document overflow. The mobile history region is keyboard-focusable and scrolled 80px with ArrowRight, independently of the document.
+- Cancellation checkbox starts unchecked and Confirm stays disabled. Escape closes the dialog and returns focus to Cancel campaign. An injected failure stays visible and allows retry. Success closes the dialog, focuses the campaign identity/status, shows Cancelling and then Cancelled, removes pause/resume/cancel actions, and preserves the original row evidence. Confirmed with synthetic browser-only API interception; no provider action ran.
+- Both the campaign waiting notice and persisted recipient note displayed GMT-4 during America/New_York emulation. Reduced-motion emulation and console checks passed; warnings/errors were empty. Timezone, reduced-motion, and viewport overrides were cleared. The synthetic fixture remains ignored and outside production imports.
+- No remaining actionable P0/P1/P2 issue for this scoped change.
+- final result: passed
+
+### 2026-09-06 - Final-submission cancellation result
+
+- Compared the supplied all-accepted/Cancelled screenshot with the corrected synthetic state. Preserved the existing page layout and tokens; changed the badge, outcome summary, cancellation note and recovery copy to agree with the recorded outcomes.
+- Detail and history both show Completed with all rows accepted and a secondary cancellation note. The cancellation request remains visible in audit details. At 1440, 1024 and 390px, the note wraps within the existing layout; mobile history retains its horizontal table scrolling. Viewport overrides reset.
+- Automated coverage retains genuine cancellation, unsettled/incomplete data and mixed-outcome warnings. No layout redesign, provider action or campaign data edit occurred.

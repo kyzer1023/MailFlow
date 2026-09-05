@@ -94,6 +94,9 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       },
     } as MailboxLeaseDecision,
     campaigns: {
+      getMailboxHead: async () => null,
+      cancel: async () => false,
+      settleCancellations: async () => [],
       getById: async () => state.campaign,
       getByIdForOwner: async () => state.campaign,
       getByIdempotencyKey: async () => state.campaign,
@@ -161,6 +164,7 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
       completeExhaustedBatch: async () => [],
     },
     recipientJobs: {
+      verifyDelivery: async () => null,
       getById: async () => state.job,
       getByCampaignAndSourceRow: async () => state.job,
       listByCampaign: async () => [state.job],
@@ -219,6 +223,15 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
 }
 
 describe("campaign tick", () => {
+  it("waits for lease release without scheduling a five-minute wake", async () => {
+    const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
+    deps.mailboxDecision = { kind: "unavailable", reason: "lease", nextAvailableAt: "2026-08-31T00:06:00.000Z" };
+    const result = await processCampaignTick(TICK, deps);
+    expect(result).toMatchObject({ kind: "waiting", reason: "lease", delaySeconds: 0 });
+    expect(deps.state.campaign.wakeToken).toBeNull();
+    expect(deps.state.job.status).toBe("pending");
+    expect(deps.state.sends).toBe(0);
+  });
   it("rejects non-minimal or oversized Queue payloads", async () => {
     const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
     await expect(handleCampaignQueueMessage({ ...TICK, rows: [] }, deps)).resolves.toEqual({ kind: "ignored", reason: "not_runnable" });
@@ -246,6 +259,17 @@ describe("campaign tick", () => {
     expect(deps.state.job.status).toBe("accepted");
     expect(deps.mailboxDecision.kind === "acquired" && deps.mailboxDecision.attempt.envelopeRecipientCount).toBe(3);
     expect(deps.state.campaign.schedulerMessage).toContain("Mailbox pacing is active");
+  });
+
+  it("links an unknown outcome to sanitized diagnostics without inventing provider evidence", async () => {
+    const diagnosticId = "12345678-1234-4123-8123-123456789abc";
+    const deps = dependencies({ send: async () => ({ kind: "unknown", category: "ambiguous", message: "Submission acknowledgement lost", diagnosticId }) });
+    await processCampaignTick(TICK, deps);
+    expect(deps.state.job.status).toBe("unknown");
+    expect(deps.state.job.providerRequestId).toBeNull();
+    expect(deps.state.audits.find(event => event.eventType === "recipient.unknown")?.metadata).toMatchObject({ diagnosticId, category: "ambiguous" });
+    await processCampaignTick(TICK, deps);
+    expect(deps.state.sends).toBe(1);
   });
 
   it("keeps a budget-blocked job pending and schedules the exact release time", async () => {

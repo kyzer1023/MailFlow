@@ -25,6 +25,8 @@ export interface MailFlowBindings {
 }
 
 export interface MailFlowVariables {
+  diagnosticRequestId: string;
+  diagnosticStartedAt: number;
   user: import("../auth/contracts").AuthenticatedUser;
   sessionToken: string;
   csrfToken: string;

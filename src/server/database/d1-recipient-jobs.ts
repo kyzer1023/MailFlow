@@ -9,6 +9,9 @@ import { MAX_RECIPIENT_SNAPSHOT_BYTES } from "../../domain/campaign-limits";
 import { bind, changes, json, parseJson } from "./d1-helpers";
 
 interface RecipientJobRow {
+  delivery_verified_by: string | null;
+  delivery_verified_at: string | null;
+  delivery_verification_note: string | null;
   id: string;
   campaign_id: string;
   source_row: number;
@@ -38,6 +41,9 @@ interface RecipientJobRow {
 
 function toRecipientJob(row: RecipientJobRow): RecipientJobRecord {
   return {
+    deliveryVerifiedBy: row.delivery_verified_by ?? null,
+    deliveryVerifiedAt: row.delivery_verified_at ?? null,
+    deliveryVerificationNote: row.delivery_verification_note ?? null,
     id: row.id,
     campaignId: row.campaign_id,
     sourceRow: row.source_row,
@@ -145,6 +151,22 @@ export function buildRecipientJobInserts(db: D1Database, jobs: readonly Recipien
 export class D1RecipientJobRepository implements RecipientJobRepository {
   constructor(private readonly db: D1Database) {}
 
+  async verifyDelivery(id: string, campaignId: string, ownerUserId: string, now: string, note: string | null): Promise<RecipientJobRecord | null> {
+    if (note !== null && (note.length > 500 || /[\u0000-\u001f\u007f]/u.test(note))) throw new Error("Invalid verification note");
+    // The audit trigger is part of this statement's transaction. First write wins.
+    await bind(this.db.prepare(`UPDATE recipient_jobs
+      SET delivery_verified_by = ?1, delivery_verified_at = ?2, delivery_verification_note = ?3
+      WHERE id = ?4 AND campaign_id = ?5 AND status = 'unknown' AND delivery_verified_at IS NULL
+      AND EXISTS (SELECT 1 FROM campaigns WHERE id = ?5 AND owner_user_id = ?1)`),
+    [ownerUserId, now, note, id, campaignId]).run();
+    const row = await bind(this.db.prepare(`SELECT jobs.* FROM recipient_jobs jobs
+      JOIN campaigns c ON c.id = jobs.campaign_id
+      WHERE jobs.id = ?1 AND c.id = ?2 AND c.owner_user_id = ?3
+      AND jobs.status = 'unknown' AND jobs.delivery_verified_at IS NOT NULL`),
+    [id, campaignId, ownerUserId]).first<RecipientJobRow>();
+    return row ? toRecipientJob(row) : null;
+  }
+
   async getById(id: string): Promise<RecipientJobRecord | null> {
     const row = await bind(this.db.prepare("SELECT * FROM recipient_jobs WHERE id = ?1"), [id]).first<RecipientJobRow>();
     return row ? toRecipientJob(row) : null;
@@ -181,6 +203,7 @@ export class D1RecipientJobRepository implements RecipientJobRepository {
            SELECT jobs.id FROM recipient_jobs AS jobs
            INNER JOIN campaigns AS campaigns ON campaigns.id = jobs.campaign_id
            WHERE jobs.campaign_id = ?3 AND campaigns.state = 'running'
+             AND campaigns.id IN (SELECT id FROM campaign_turn_heads)
              AND jobs.status = 'pending'
              AND (jobs.next_attempt_at IS NULL OR jobs.next_attempt_at <= ?2)
            ORDER BY jobs.source_row ASC LIMIT 1

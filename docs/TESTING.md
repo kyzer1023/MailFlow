@@ -27,6 +27,16 @@
 
 ### Integration
 
+- Exercise campaign lifecycle against the actual local Cloudflare D1 binding, including FIFO and audit triggers. SQLite test adapters must report the `total_changes()` delta for D1 `meta.changes`, not direct `changes()`. Verify an acknowledged start replay recovers a missing queued wake without changing FIFO order, publishing duplicate running ticks, or restarting cancelled/paused campaigns.
+
+- FIFO turns preserve start order across campaigns from one mailbox and permit independent mailboxes to progress. Followers cannot reserve wakes, claim recipients, or become provider-bound. Completing, pausing, cancelling, or terminally failing the head hands off promptly while preserving pace/backoff.
+- Resume joins the back, including a pause/resume race with an existing provider call. Cancellation before submission releases only proven pre-submission reservations. Cancellation during accepted, unknown, or safely retryable outcomes waits for settlement, preserves evidence/budget, prevents another attempt, and produces one request and one completion audit.
+- Cancellation requires ownership, authenticated same-origin CSRF protection, and explicit acknowledgement. Missing/forged confirmations fail. Replays retain first-write timestamps, audit failure rolls back the cancellation request, and cancelled campaigns cannot resume or test-send.
+- Migration from 0010 preserves the in-flight head, its effective wake and ledger, and invalidates competing follower wakes. Scheduled recovery repairs a lost handoff and finalizes a cancelled stale provider-bound attempt as Unknown without resending it.
+
+- Manual delivery verification enforces owner, campaign, Unknown status, authentication, same-origin and CSRF checks. First-write evidence survives concurrent/repeated actions; audit failure rolls back confirmation. Original outcome, timestamps, attempt count, delivery-attempt ledger and budget remain unchanged. Bounded notes reject controls, remain outside audit/diagnostic logs, and receive CSV formula protection.
+- SMTP diagnostics distinguish acknowledgement timeout, socket closure, and socket failure from pre-terminator failures. Correlation IDs join to audits without changing provider evidence or retry suppression. API diagnostic redaction excludes arbitrary exception fields, URLs and payloads, including database error details.
+
 - D1 migrations from an empty database.
 - Flow and template version repositories.
 - Campaign creation and recipient-job insertion.
@@ -53,6 +63,9 @@
 - Scheduled expiry cleanup drains full OAuth-state, session, rate-counter, and stale test-claim batches while retaining a hard per-run bound.
 
 ### Frontend
+
+- History/detail agree on Queued, Sending, Waiting with a local-time reason, Paused, Cancelling, and Cancelled. Normal pace is Sending. Clean completed campaigns have a clear Completed badge and successful-submission summary without claiming inbox delivery.
+- Cancel confirmation is gated by acknowledgement; dismissal sends no request, failure permits retry, and successful cancellation restores focus to the campaign status. Cancelled campaigns have no pause/resume/cancel action, keep in-flight and original outcomes visible, and label pending rows Not sent. Legacy recipient waiting timestamps display in the member's browser timezone.
 
 - Wizard navigation and prerequisite gating.
 - `.csv` and `.xlsx` import.

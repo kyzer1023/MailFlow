@@ -2,12 +2,16 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAILBOX_BUDGET_WINDOW_MS, envelopeRecipientCount } from "../../domain/mailbox-scheduler";
 import type { D1Database, D1PreparedStatement, D1RunResult, D1Value } from "./contracts";
 import { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 import { D1CampaignRepository } from "./d1-campaigns";
 import { D1RecipientJobRepository } from "./d1-recipient-jobs";
+import { AttachmentError } from "../attachments";
+import { processCampaignTick, wakeMailboxHead } from "../queue/campaign-tick";
+import type { CampaignTickDependencies, CampaignTickMessage } from "../queue/contracts";
+import type { MailSendResult } from "../../domain/mail-provider";
 import { processSchedulerWatchdog } from "../api/worker-runtime";
 
 type SqliteValue = string | number | bigint | null | Uint8Array;
@@ -38,8 +42,10 @@ class SqliteStatement implements D1PreparedStatement {
   }
 
   async run(): Promise<D1RunResult> {
+    const before = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
     const result = this.database.prepare(this.query).run(...sqliteValues(this.values));
-    return { success: true, meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } };
+    const after = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
+    return { success: true, meta: { changes: after - before, last_row_id: Number(result.lastInsertRowid) } };
   }
 }
 
@@ -68,10 +74,10 @@ class SqliteD1 implements D1Database {
   }
 }
 
-function migratedDatabase(): SqliteD1 {
+function migratedDatabase(lastMigration = 9999): SqliteD1 {
   const db = new SqliteD1();
   const migrations = readdirSync(resolve(process.cwd(), "migrations"))
-    .filter((filename) => /^\d{4}_.+\.sql$/u.test(filename))
+    .filter((filename) => /^\d{4}_.+\.sql$/u.test(filename) && Number(filename.slice(0, 4)) <= lastMigration)
     .sort();
   for (const filename of migrations) {
     db.database.exec(readFileSync(resolve(process.cwd(), "migrations", filename), "utf8"));
@@ -234,6 +240,7 @@ describe("D1 mailbox delivery coordination", () => {
         "Reconnect OneDrive, then resume from the pending rows.",
       )).toBe(true);
       expect(await campaigns.resume(ids.campaignId, ids.userId, "2026-09-05T00:00:02.000Z")).toBe(true);
+      await campaigns.markRunningIfQueued(ids.campaignId, "2026-09-05T00:01:00.000Z");
       const claimed = await jobs.claimNextPending(ids.campaignId, "2026-09-05T00:00:03.000Z", "claim-resumed");
 
       expect(claimed?.id).toBe(`${ids.jobId}-3`);
@@ -465,5 +472,344 @@ describe("D1 mailbox delivery coordination", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+
+function fifoHarness(db: SqliteD1) {
+  const campaigns = new D1CampaignRepository(db);
+  const messages: { message: CampaignTickMessage; dueAt: number }[] = [];
+  let clock = Date.parse("2026-09-05T00:00:00.000Z");
+  const send = vi.fn(async (): Promise<MailSendResult> => ({ kind: "accepted" }));
+  const dependencies: CampaignTickDependencies = {
+    campaigns, recipientJobs: new D1RecipientJobRepository(db), mailboxDelivery: new D1MailboxDeliveryRepository(db),
+    audit: { append: async () => {}, listByCampaign: async () => [] },
+    queue: { enqueue: async (message, options) => { messages.push({ message, dueAt: clock + (options?.delaySeconds ?? 0) * 1000 }); } },
+    attachmentLoader: async () => [], attachmentCleanup: async () => {}, mailProvider: { send }, now: () => new Date(clock),
+  };
+  return {
+    campaigns, dependencies, messages, send,
+    now: () => new Date(clock).toISOString(),
+    wake: (ownerUserId: string) => wakeMailboxHead({ campaigns, queue: dependencies.queue, ownerUserId, now: new Date(clock) }),
+    next: async () => {
+      const next = messages.shift();
+      if (!next) throw new Error("No effective wake was published");
+      clock = Math.max(clock, next.dueAt);
+      return processCampaignTick(next.message, dependencies);
+    },
+  };
+}
+
+function queueFixture(db: SqliteD1, suffix: string, owner?: { userId: string; mailboxAddress: string }, rows = 1) {
+  const ids = seedCampaign(db, suffix, owner, rows);
+  run(db, "UPDATE recipient_jobs SET status = 'pending', claim_token = NULL, claimed_at = NULL, attempt_count = 0 WHERE campaign_id = ?", ids.campaignId);
+  run(db, "UPDATE campaigns SET state = 'queued', started_at = NULL WHERE id = ?", ids.campaignId);
+  return ids;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+describe("FIFO campaign turns and cancellation", () => {
+  it("recognizes a trigger-backed start and resume, while rejected transitions remain false", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "start-result");
+      run(db, "UPDATE campaigns SET state = 'validated' WHERE id = ?", a.campaignId);
+      const h = fifoHarness(db);
+      expect(await h.campaigns.queue(a.campaignId, "other-owner", h.now())).toBe(false);
+      expect(await h.campaigns.queue(a.campaignId, a.userId, h.now())).toBe(true);
+      expect(await h.campaigns.queue(a.campaignId, a.userId, h.now())).toBe(false);
+      await h.wake(a.userId);
+      expect(h.messages).toHaveLength(1);
+      expect(await h.campaigns.pause(a.campaignId, a.userId, h.now(), "Member pause")).toBe(true);
+      expect(await h.campaigns.pause(a.campaignId, a.userId, h.now(), "Member pause")).toBe(false);
+      expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(true);
+      expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(false);
+      h.messages.length = 0;
+      await h.wake(a.userId);
+      expect(await h.next()).toMatchObject({ kind: "completed", campaignId: a.campaignId });
+      expect(h.send).toHaveBeenCalledTimes(1);
+    } finally { db.close(); }
+  });
+
+  it("a duplicate tick and watchdog do not wake an invocation still loading attachments", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "duplicate-loading");
+      const h = fifoHarness(db);
+      const entered = deferred<void>(); const loaded = deferred<[]>();
+      h.dependencies.attachmentLoader = async () => { entered.resolve(); return loaded.promise; };
+      await h.wake(a.userId);
+      const original = h.messages[0].message;
+      const tick = h.next(); await entered.promise;
+      expect(await processCampaignTick(original, h.dependencies)).toMatchObject({ kind: "ignored", reason: "stale_wake" });
+      const send = vi.fn(async () => {});
+      await processSchedulerWatchdog({ DB: db, CAMPAIGN_QUEUE: { send }, ASSETS: { fetch: async () => new Response() } }, new Date(h.now()));
+      expect(send).not.toHaveBeenCalled();
+      expect(h.messages).toHaveLength(0);
+      loaded.resolve([]); await tick;
+      expect(h.send).toHaveBeenCalledTimes(1);
+      expect(h.messages).toHaveLength(0);
+    } finally { db.close(); }
+  });
+
+  it("migrates legacy competing campaigns while preserving the in-flight head, effective wake, and budget evidence", async () => {
+    const db = migratedDatabase(10);
+    try {
+      const a = seedCampaign(db, "legacy-a");
+      const b = seedCampaign(db, "legacy-b", { userId: a.userId, mailboxAddress: "member-legacy-a@example.test" });
+      const now = "2026-09-05T00:00:00.000Z";
+      run(db, "UPDATE campaigns SET wake_token = ?, wake_due_at = ?, scheduler_next_attempt_at = ? WHERE id = ?", "old-a", "2026-09-05T00:05:00.000Z", "2026-09-05T00:05:00.000Z", a.campaignId);
+      run(db, "UPDATE campaigns SET wake_token = ?, wake_due_at = ? WHERE id = ?", "old-b", "2026-09-05T00:00:05.000Z", b.campaignId);
+      run(db, "UPDATE recipient_jobs SET status = 'sending', sending_at = ? WHERE id = ?", now, b.jobId);
+      run(db, `INSERT INTO delivery_attempts(id, owner_user_id, campaign_id, recipient_job_id, attempt_token,
+        envelope_recipient_count, state, reserved_at, provider_bound_at, budget_expires_at)
+        VALUES ('legacy-attempt', ?, ?, ?, 'legacy-token', 1, 'provider_bound', ?, ?, '2026-09-06T00:00:00.000Z')`,
+        a.userId, b.campaignId, b.jobId, now, now);
+      const before = db.database.prepare("SELECT * FROM delivery_attempts").all();
+      db.database.exec(readFileSync(resolve(process.cwd(), "migrations/0011_campaign_turns_cancellation.sql"), "utf8"));
+      const campaigns = new D1CampaignRepository(db);
+      expect((await campaigns.getById(a.campaignId))).toMatchObject({ state: "queued", wakeToken: null, schedulerNextAttemptAt: null });
+      expect((await campaigns.getById(b.campaignId))).toMatchObject({ state: "running", wakeToken: "old-b", wakeDueAt: "2026-09-05T00:00:05.000Z" });
+      expect(db.database.prepare("SELECT campaign_id FROM campaign_turns ORDER BY sequence").all().map(row => row.campaign_id)).toEqual([b.campaignId, a.campaignId]);
+      expect(db.database.prepare("SELECT * FROM delivery_attempts").all()).toEqual(before);
+      expect((await new D1RecipientJobRepository(db).getById(b.jobId))?.status).toBe("sending");
+      expect((await new D1RecipientJobRepository(db).getById(a.jobId))).toMatchObject({ status: "pending", claimToken: null, attemptCount: 1 });
+    } finally { db.close(); }
+  });
+
+  it("a cancelled campaign cannot acquire a new test-send reservation", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "cancelled-test");
+      const h = fifoHarness(db);
+      await h.campaigns.cancel(a.campaignId, a.userId, h.now());
+      const result = await h.dependencies.mailboxDelivery.acquire({ ...leaseRequest(a, "late-test"), recipientJobId: null, testSendId: "late-test" });
+      expect(result.kind).toBe("unavailable");
+      expect(db.database.prepare("SELECT COUNT(*) AS n FROM delivery_attempts").get()?.n).toBe(0);
+    } finally { db.close(); }
+  });
+
+  it("preserves existing accepted, unknown, manual verification, and budget evidence when cancelling remaining work", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "preserve", undefined, 3);
+      const h = fifoHarness(db);
+      h.send.mockResolvedValueOnce({ kind: "accepted", providerRequestId: "provider-accepted" });
+      h.send.mockResolvedValueOnce({ kind: "unknown", category: "ambiguous", message: "Acknowledgement lost" });
+      await h.wake(a.userId); await h.next(); await h.next();
+      await h.dependencies.recipientJobs.verifyDelivery(`${a.jobId}-2`, a.campaignId, a.userId, h.now(), "Receipt checked");
+      const evidence = db.database.prepare("SELECT * FROM recipient_jobs WHERE status IN ('accepted', 'unknown') ORDER BY id").all();
+      const ledger = db.database.prepare("SELECT * FROM delivery_attempts ORDER BY id").all();
+      await h.campaigns.cancel(a.campaignId, a.userId, h.now());
+      expect(db.database.prepare("SELECT * FROM recipient_jobs WHERE status IN ('accepted', 'unknown') ORDER BY id").all()).toEqual(evidence);
+      expect(db.database.prepare("SELECT * FROM delivery_attempts ORDER BY id").all()).toEqual(ledger);
+      expect((await h.dependencies.recipientJobs.getById(`${a.jobId}-3`))?.attemptCount).toBe(0);
+      await h.next(); // An already-published wake is now stale.
+      expect(h.send).toHaveBeenCalledTimes(2);
+      expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(false);
+    } finally { db.close(); }
+  });
+
+  it("watchdog settles cancellation after a crashed provider-bound attempt as Unknown without resending it", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = seedCampaign(db, "crashed-cancel");
+      const b = queueFixture(db, "after-crash", { userId: a.userId, mailboxAddress: "member-crashed-cancel@example.test" });
+      const h = fifoHarness(db);
+      await h.dependencies.mailboxDelivery.acquire(leaseRequest(a, "crash"));
+      await h.dependencies.mailboxDelivery.markCampaignProviderBound("attempt-crash", a.jobId, "claim-crashed-cancel", h.now(), "2026-09-05T00:05:00.000Z");
+      await h.campaigns.cancel(a.campaignId, a.userId, h.now());
+      const send = vi.fn(async () => {});
+      const result = await processSchedulerWatchdog({ DB: db, CAMPAIGN_QUEUE: { send }, ASSETS: { fetch: async () => new Response() } }, new Date("2026-09-05T00:15:00.000Z"));
+      expect(result.completedCampaignIds).toContain(a.campaignId);
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("cancelled");
+      expect((await h.dependencies.recipientJobs.getById(a.jobId))?.status).toBe("unknown");
+      expect(db.database.prepare("SELECT state, envelope_recipient_count FROM delivery_attempts").get()).toMatchObject({ state: "unknown", envelope_recipient_count: 1 });
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ campaignId: b.campaignId }), { delaySeconds: 0 });
+    } finally { db.close(); }
+  });
+
+  it("hands off after terminal attachment failure without claiming or submitting a recipient", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "attachment-stop");
+      const b = queueFixture(db, "after-attachment", { userId: a.userId, mailboxAddress: "member-attachment-stop@example.test" });
+      const h = fifoHarness(db);
+      h.dependencies.attachmentLoader = async () => { throw new AttachmentError("missing_object", "Missing reviewed attachment"); };
+      await h.wake(a.userId); await h.next();
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("failed");
+      expect((await h.dependencies.recipientJobs.getById(a.jobId))?.attemptCount).toBe(0);
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([b.campaignId]);
+      expect(h.send).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+
+  it("keeps followers dormant and hands off in order at mailbox pace", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "fifo-a", undefined, 2);
+      const owner = { userId: a.userId, mailboxAddress: "member-fifo-a@example.test" };
+      const b = queueFixture(db, "fifo-b", owner);
+      const c = queueFixture(db, "fifo-c", owner);
+      const h = fifoHarness(db);
+      expect(await h.campaigns.reserveWake(b.campaignId, "forged-follower-wake", h.now(), null, h.now())).toBe(false);
+      expect(await h.campaigns.markRunningIfQueued(b.campaignId, h.now())).toBe(false);
+      expect(await h.dependencies.recipientJobs.claimNextPending(b.campaignId, h.now(), "follower-claim")).toBeNull();
+      await h.wake(a.userId);
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([a.campaignId]);
+      await h.next();
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([a.campaignId]);
+      expect((await h.campaigns.getById(b.campaignId))?.state).toBe("queued");
+      expect((await h.campaigns.getById(c.campaignId))?.wakeToken).toBeNull();
+      expect(await h.next()).toMatchObject({ kind: "completed", campaignId: a.campaignId });
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([b.campaignId]);
+      expect(h.messages[0].dueAt - Date.parse(h.now())).toBe(5000);
+      await h.next();
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([c.campaignId]);
+      await h.next();
+      expect(h.send).toHaveBeenCalledTimes(4);
+      expect(h.messages).toHaveLength(0);
+      expect(db.database.prepare("SELECT COUNT(*) AS n FROM campaign_turns").get()?.n).toBe(0);
+    } finally { db.close(); }
+  });
+
+  it("lets a separate mailbox progress without waiting for another owner's turn", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "owner-a");
+      const b = queueFixture(db, "owner-b");
+      const h = fifoHarness(db);
+      await h.wake(a.userId); await h.wake(b.userId);
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([a.campaignId, b.campaignId]);
+      await h.next(); await h.next();
+      expect(h.send).toHaveBeenCalledTimes(2);
+    } finally { db.close(); }
+  });
+
+  it.each(["pause", "cancel"] as const)("%s releases a pre-submission reservation and blocks the old provider boundary", async action => {
+    const db = migratedDatabase();
+    try {
+      const a = seedCampaign(db, `pre-${action}`);
+      const b = queueFixture(db, `next-${action}`, { userId: a.userId, mailboxAddress: `member-pre-${action}@example.test` });
+      const h = fifoHarness(db);
+      expect((await h.dependencies.mailboxDelivery.acquire(leaseRequest(a, action))).kind).toBe("acquired");
+      const command = action === "pause"
+        ? h.campaigns.pause(a.campaignId, a.userId, h.now(), "Paused by member")
+        : h.campaigns.cancel(a.campaignId, a.userId, h.now());
+      expect(await command).toBe(true);
+      expect(await h.dependencies.mailboxDelivery.markCampaignProviderBound(`attempt-${action}`, a.jobId, `claim-pre-${action}`, h.now(), "2026-09-05T00:05:00.000Z")).toBe(false);
+      expect((await h.dependencies.recipientJobs.getById(a.jobId))?.status).toBe("pending");
+      expect(db.database.prepare("SELECT state FROM delivery_attempts").get()?.state).toBe("not_submitted");
+      await h.wake(a.userId);
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([b.campaignId]);
+      if (action === "cancel") {
+        expect((await h.campaigns.getById(a.campaignId))?.state).toBe("cancelled");
+        expect(await h.campaigns.resume(a.campaignId, a.userId, h.now())).toBe(false);
+      }
+    } finally { db.close(); }
+  });
+
+  it.each(["accepted", "unknown", "retry"] as const)("cancellation during submission preserves a %s result and settles before handoff", async outcome => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, `bound-${outcome}`, undefined, 2);
+      const b = queueFixture(db, `follower-${outcome}`, { userId: a.userId, mailboxAddress: `member-bound-${outcome}@example.test` });
+      const h = fifoHarness(db);
+      const entered = deferred<void>(); const result = deferred<MailSendResult>();
+      h.send.mockImplementationOnce(async () => { entered.resolve(); return result.promise; });
+      await h.wake(a.userId);
+      const tick = h.next(); await entered.promise;
+      expect(await h.campaigns.cancel(a.campaignId, a.userId, h.now())).toBe(true);
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("cancelling");
+      await h.wake(a.userId);
+      expect(h.messages).toHaveLength(0);
+      result.resolve(outcome === "accepted" ? { kind: "accepted" } : outcome === "unknown"
+        ? { kind: "unknown", category: "ambiguous", message: "Acknowledgement lost" }
+        : { kind: "retryable", category: "throttle", safeToRetry: true, retryAfter: 120, message: "Throttled before submission" });
+      await tick;
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("cancelled");
+      expect((await h.dependencies.recipientJobs.getById(a.jobId))?.status).toBe(outcome === "retry" ? "pending" : outcome);
+      expect((await h.dependencies.recipientJobs.getById(`${a.jobId}-2`))?.attemptCount).toBe(0);
+      const attempt = db.database.prepare("SELECT state, envelope_recipient_count FROM delivery_attempts").get();
+      expect(attempt).toMatchObject({ state: outcome === "retry" ? "not_submitted" : outcome, envelope_recipient_count: 1 });
+      expect(h.messages.map(m => m.message.campaignId)).toEqual([b.campaignId]);
+      expect(h.messages[0].dueAt - Date.parse(h.now())).toBe(outcome === "retry" ? 120000 : 5000);
+      expect(h.send).toHaveBeenCalledTimes(1);
+    } finally { db.close(); }
+  });
+
+  it("resume joins the back even while a paused campaign's provider call is settling", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "resume-a", undefined, 2);
+      const owner = { userId: a.userId, mailboxAddress: "member-resume-a@example.test" };
+      const b = queueFixture(db, "resume-b", owner);
+      const c = queueFixture(db, "resume-c", owner);
+      const h = fifoHarness(db);
+      const entered = deferred<void>(); const result = deferred<MailSendResult>();
+      h.send.mockImplementationOnce(async () => { entered.resolve(); return result.promise; });
+      await h.wake(a.userId); const tick = h.next(); await entered.promise;
+      await h.campaigns.pause(a.campaignId, a.userId, h.now(), "Paused by member");
+      await h.campaigns.resume(a.campaignId, a.userId, h.now());
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("queued");
+      expect(db.database.prepare("SELECT campaign_id FROM campaign_turns ORDER BY sequence").all().map(row => row.campaign_id)).toEqual([b.campaignId, c.campaignId, a.campaignId]);
+      await h.wake(a.userId); expect(h.messages).toHaveLength(0);
+      result.resolve({ kind: "accepted" }); await tick;
+      expect(h.messages[0].message.campaignId).toBe(b.campaignId);
+      await h.next(); await h.next(); await h.next();
+      expect(h.send).toHaveBeenCalledTimes(4);
+      expect((await h.dependencies.recipientJobs.getById(a.jobId))?.attemptCount).toBe(1);
+    } finally { db.close(); }
+  });
+
+  it("audits first cancellation once, rejects other owners, and rolls back if its audit cannot persist", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "audit-cancel");
+      const h = fifoHarness(db);
+      expect(await h.campaigns.cancel(a.campaignId, "other-owner", h.now())).toBe(false);
+      db.database.exec(`CREATE TRIGGER reject_cancel_audit BEFORE INSERT ON audit_events
+        WHEN NEW.event_type = 'campaign.cancel_requested' BEGIN SELECT RAISE(ABORT, 'unavailable'); END`);
+      await expect(h.campaigns.cancel(a.campaignId, a.userId, h.now())).rejects.toThrow();
+      expect((await h.campaigns.getById(a.campaignId))?.state).toBe("queued");
+      expect(db.database.prepare("SELECT COUNT(*) AS n FROM campaign_turns").get()?.n).toBe(1);
+      db.database.exec("DROP TRIGGER reject_cancel_audit");
+      expect(await Promise.all([
+        h.campaigns.cancel(a.campaignId, a.userId, h.now()),
+        h.campaigns.cancel(a.campaignId, a.userId, "2026-09-05T00:01:00.000Z"),
+      ])).toEqual([true, true]);
+      const original = await h.campaigns.getById(a.campaignId);
+      expect(original?.cancelRequestedAt).toBe(h.now());
+      expect(db.database.prepare("SELECT event_type FROM audit_events ORDER BY event_type").all().map(row => row.event_type)).toEqual(["campaign.cancel_requested", "campaign.cancelled"]);
+      expect(() => run(db, "UPDATE campaigns SET state = 'queued' WHERE id = ?", a.campaignId)).toThrow("irreversible");
+      expect(await h.campaigns.cancel(a.campaignId, a.userId, "2026-09-06T00:00:00.000Z")).toBe(true);
+      expect(await h.campaigns.getById(a.campaignId)).toEqual(original);
+    } finally { db.close(); }
+  });
+
+  it("recovers a missed handoff without publishing follower polling wakes", async () => {
+    const db = migratedDatabase();
+    try {
+      const a = queueFixture(db, "recover-a");
+      const owner = { userId: a.userId, mailboxAddress: "member-recover-a@example.test" };
+      const b = queueFixture(db, "recover-b", owner);
+      const c = queueFixture(db, "recover-c", owner);
+      const h = fifoHarness(db);
+      await h.campaigns.cancel(a.campaignId, a.userId, h.now());
+      // Simulate an invocation lost after committing the stop but before publishing.
+      const send = vi.fn(async () => {});
+      await processSchedulerWatchdog({ DB: db, CAMPAIGN_QUEUE: { send }, ASSETS: { fetch: async () => new Response() } }, new Date("2026-09-05T00:15:00.000Z"));
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ campaignId: b.campaignId }), { delaySeconds: 0 });
+      expect((await h.campaigns.getById(c.campaignId))?.wakeToken).toBeNull();
+      await processSchedulerWatchdog({ DB: db, CAMPAIGN_QUEUE: { send }, ASSETS: { fetch: async () => new Response() } }, new Date("2026-09-05T00:15:01.000Z"));
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally { db.close(); }
   });
 });

@@ -1,7 +1,8 @@
 import type { CampaignCounts, CampaignRecord, FlowRecord } from "../../domain/types";
 import type { SpreadsheetTable } from "../../client/types";
 import type { CampaignViewModel, CampaignViewStatus, DynamicFieldOption, FlowViewModel } from "../state/types";
-import { formatDate } from "./format";
+import { formatDate, formatTimestamp } from "./format";
+import { finishedWithoutCancelledRows, ineffectiveCancellationNote } from "./campaign-result";
 
 export function columnOptions(table: SpreadsheetTable | null | undefined): readonly DynamicFieldOption[] {
   return table ? table.columns.map((column) => ({ value: column.key, label: column.label || column.key })) : [];
@@ -31,21 +32,27 @@ export function displayCampaign(
   counts: CampaignCounts | null | undefined,
   flowName = "",
 ): CampaignViewModel {
-  const status = campaign.state;
-  const visibleStatuses: readonly CampaignViewStatus[] = ["completed", "paused", "running", "queued", "failed"];
+  const finishedAfterCancel = finishedWithoutCancelledRows(campaign, counts);
+  const status = finishedAfterCancel ? "completed" : campaign.state;
+  const visibleStatuses: readonly CampaignViewStatus[] = ["completed", "paused", "running", "queued", "failed", "cancelling", "cancelled"];
   const resolvedStatus: CampaignViewStatus = visibleStatuses.includes(status as CampaignViewStatus)
     ? status as CampaignViewStatus
     : "queued";
   return {
     id: campaign.id,
     name: flowName.trim() || campaign.sourceFilename || "Campaign",
-    date: formatDate(campaign.createdAt),
-    updated: formatDate(campaign.updatedAt),
+    date: formatTimestamp(campaign.createdAt),
+    updated: formatTimestamp(campaign.updatedAt),
     status: resolvedStatus,
+    cancellationNote: finishedAfterCancel ? ineffectiveCancellationNote : undefined,
+    schedulerMessage: campaign.schedulerMessage,
+    schedulerNextAttemptAt: campaign.schedulerNextAttemptAt,
     accepted: counts?.accepted ?? 0,
+    skipped: counts?.skipped ?? 0,
+    deliveryVerifiedCount: campaign.deliveryVerifiedCount ?? 0,
     recipientFailed: counts?.failed ?? 0,
     unknown: counts?.unknown ?? 0,
-    notSent: resolvedStatus === "failed"
+    notSent: ["failed", "cancelling", "cancelled"].includes(resolvedStatus)
       ? counts?.pending ?? 0
       : 0,
     total: campaign.totalRecipients,
