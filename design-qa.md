@@ -86,3 +86,8 @@ Evidence includes `chrome-message-wide-final.png`, `chrome-review-wide-final.png
 All identified P0/P1/P2 issues in this refinement are resolved. No new blocking question remains. Real Microsoft delivery was not part of this visual test. Existing bundle-size warnings remain an engineering follow-up.
 
 final result: passed
+# Code-quality cleanup verification, 2026-09-05
+
+Compared the approved current frontend before and after stylesheet consolidation in Chrome at 1920x1080, 1440x900, 1024x768 and 390x844. Recipients, Message and Review retain layout, typography and responsive behavior; the empty recipient screen and save dialog also match. A mobile inactive-label regression was corrected and recaptured. The 1920px Message baseline was recaptured after viewport settling to avoid comparing a stale 1440px surface. Remaining image differences are hover/focus and draft-title state, not layout changes. Ignored local captures are named `artifacts/local/cleanup-before-*` and `cleanup-after-*`.
+
+Synthetic interactions passed: XLSX import and flags, template picker/reuse, direct template edit, duplicate-name error and Escape dismissal, two ready attachments with matching Review names and bytes, sample selection, skipping flagged rows, and disabled final confirmation before acknowledgement. Reduced-motion emulation yielded a 0.00001s button transition. No document-level overflow was present at the checked editor size. Current post-reload browser diagnostics were clean. No provider submission ran.

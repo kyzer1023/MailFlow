@@ -3,13 +3,10 @@
 @import "./landing.css";
 @import "./shell.css";
 @import "./overview.css";
-@import "./wizard-base.css";
 @import "./data.css";
 @import "./recipients.css";
+@import "./message.css";
+@import "./attachments.css";
 @import "./review.css";
-@import "./campaign-base.css";
-@import "./responsive.css";
-@import "./wizard.css";
 @import "./campaign.css";
-@import "./visual-polish.css";
-@import "./refinement.css";
+@import "./wizard.css";

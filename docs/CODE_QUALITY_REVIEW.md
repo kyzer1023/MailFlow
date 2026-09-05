@@ -1,6 +1,6 @@
 # Code quality review, 2026-09-05
 
-Status: reviewed; cleanup proposed, not implemented.
+Status: cleanup items 1 through 6 implemented on `chore/code-quality-cleanup`; behavior and performance follow-ups in item 7 remain separate. Findings below preserve the original review and its source locations.
 
 Reviewed checkout: `feat/frontend-refinement`, HEAD `dc1a0ebdae86074d97dbd52771b49e2573506ce4`. Its latest staging runtime is `812ab2bd4f5bacf6a47cf75923c8720e3ace46cc`. This review covers application and Worker entry points, draft state, editor/import/review/results flows, client utilities, API orchestration, validation, persistence, mail/queue adapters, styles and tests. Reference searches include `src/`, `worker/` and `scripts/`; searches identify candidates, followed by reading the declarations and actual callers. This is a maintainability review, not an exhaustive security audit or a formal dead-code proof.
 
@@ -72,4 +72,12 @@ No new framework, repository abstraction, hook hierarchy or broad backend rewrit
 
 - `npm run test:unit`: passed, 29 files and 226 tests (2026-09-05).
 - No application code changed. No new build/deployment claim is made; the previous staging check remains recorded in PROGRESS.md.
-- Cleanup, exact deletion counts and bundle improvements remain proposals until implemented and verified.
+- The original review made no implementation or bundle-improvement claim.
+
+## Implementation checkpoint, 2026-09-05
+
+- Removed unused client/export/template paths and relocated CSV quoting, formula protection, pagination and ownership assertions onto the real Worker export route. Kept runtime rendering, legacy-record and delivery safeguards.
+- Required provider-owned draft safety state, removed obsolete draft fields and redundant mapping/edit requests, unified JSON/multipart request handling, and mapped only the typed attachment response. Shared runtime-neutral validation primitives retain the client/server parsing distinction.
+- Consolidated CSS into component and route owners, removed unused selector families and the hidden step-count element, reconciled duplicate accessibility rules, and formatted touched presentation components. Tokens remain centralized. Responsive rules retain existing appearance, including the existing 641-680px compact-label behavior.
+- `npm run check:staging` passed TypeScript, both builds, all 222 tests across 29 files, both Wrangler dry runs and isolated staging configuration validation. The count changes reflect obsolete-path test removal plus new runtime-path regressions.
+- Chrome synthetic-file verification and before/after layout comparisons passed at 1920, 1440, 1024 and 390px. See `design-qa.md` and `docs/PROGRESS.md` for scope and deployment evidence. No real-mail test was performed in this cleanup.

@@ -61,9 +61,6 @@ export function WizardStepper({ current }: WizardStepperProps) {
           );
         })}
       </ol>
-      <span className="wizard-count" aria-hidden="true">
-        {current + 1} of {steps.length}
-      </span>
     </div>
   );
 }

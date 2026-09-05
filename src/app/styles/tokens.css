@@ -56,3 +56,18 @@
   font-family: var(--font-display);
   font-synthesis: none;
 }
+@media (max-width: 1180px) {
+  :root {
+    --sidebar: 224px;
+  }
+}
+@media (max-width: 900px) {
+  :root {
+    --sidebar: 74px;
+  }
+}
+@media (max-width: 680px) {
+  :root {
+    --sidebar: 0px;
+  }
+}

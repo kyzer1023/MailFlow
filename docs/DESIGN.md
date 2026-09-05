@@ -81,3 +81,7 @@ For the main path, implement:
 - Mobile: 390 x 844.
 
 Design QA is complete only after reference and implementation screenshots are compared at the same viewport and visible state.
+
+## Stylesheet ownership
+
+`src/app/styles/index.css` loads centralized tokens and shared controls, then landing, shell, overview, data, recipients, message, attachments, review and campaign styles. The final wizard stylesheet owns the shared three-step send layout and its responsive sizing. Component styles keep their related breakpoint rules in the same file. Add styles to the appropriate owner instead of creating another visual-polish or refinement override layer.
