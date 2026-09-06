@@ -1,10 +1,9 @@
 // @vitest-environment node
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { MAILBOX_BUDGET_WINDOW_MS, envelopeRecipientCount } from "../../domain/mailbox-scheduler";
-import type { D1Database, D1PreparedStatement, D1RunResult, D1Value } from "./contracts";
+import { SqliteD1, type SqliteValue } from "../../../tests/helpers/sqlite-d1";
 import { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 import { D1CampaignRepository } from "./d1-campaigns";
 import { D1RecipientJobRepository } from "./d1-recipient-jobs";
@@ -14,74 +13,9 @@ import type { CampaignTickDependencies, CampaignTickMessage } from "../queue/con
 import type { MailSendResult } from "../../domain/mail-provider";
 import { processSchedulerWatchdog } from "../api/worker-runtime";
 
-type SqliteValue = string | number | bigint | null | Uint8Array;
-
-function sqliteValues(values: readonly D1Value[]): SqliteValue[] {
-  return values.map((value) => value instanceof ArrayBuffer ? new Uint8Array(value) : value as SqliteValue);
-}
-
-class SqliteStatement implements D1PreparedStatement {
-  constructor(
-    private readonly database: DatabaseSync,
-    readonly query: string,
-    private readonly values: readonly D1Value[] = [],
-  ) {}
-
-  bind(...values: D1Value[]): D1PreparedStatement {
-    return new SqliteStatement(this.database, this.query, values);
-  }
-
-  async first<T = unknown>(columnName?: string): Promise<T | null> {
-    const row = this.database.prepare(this.query).get(...sqliteValues(this.values)) as Record<string, unknown> | undefined;
-    if (!row) return null;
-    return (columnName ? row[columnName] : row) as T;
-  }
-
-  async all<T = unknown>(): Promise<{ results: T[] }> {
-    return { results: this.database.prepare(this.query).all(...sqliteValues(this.values)) as T[] };
-  }
-
-  async run(): Promise<D1RunResult> {
-    const before = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
-    const result = this.database.prepare(this.query).run(...sqliteValues(this.values));
-    const after = Number(this.database.prepare("SELECT total_changes() AS count").get()?.count);
-    return { success: true, meta: { changes: after - before, last_row_id: Number(result.lastInsertRowid) } };
-  }
-}
-
-class SqliteD1 implements D1Database {
-  readonly database = new DatabaseSync(":memory:");
-
-  prepare(query: string): D1PreparedStatement {
-    return new SqliteStatement(this.database, query);
-  }
-
-  async batch(statements: D1PreparedStatement[]): Promise<D1RunResult[]> {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const results: D1RunResult[] = [];
-      for (const statement of statements as SqliteStatement[]) results.push(await statement.run());
-      this.database.exec("COMMIT");
-      return results;
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  close(): void {
-    this.database.close();
-  }
-}
-
 function migratedDatabase(lastMigration = 9999): SqliteD1 {
   const db = new SqliteD1();
-  const migrations = readdirSync(resolve(process.cwd(), "migrations"))
-    .filter((filename) => /^\d{4}_.+\.sql$/u.test(filename) && Number(filename.slice(0, 4)) <= lastMigration)
-    .sort();
-  for (const filename of migrations) {
-    db.database.exec(readFileSync(resolve(process.cwd(), "migrations", filename), "utf8"));
-  }
+  db.migrate(1, lastMigration);
   return db;
 }
 

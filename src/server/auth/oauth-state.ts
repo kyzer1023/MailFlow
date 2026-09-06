@@ -122,6 +122,3 @@ export async function consumeOAuthState(options: OAuthStateConsumeOptions): Prom
 export function clearOAuthStateCookie(secure = true): string {
   return clearCookie(OAUTH_STATE_COOKIE_NAME, { secure, sameSite: "Lax", path: "/" });
 }
-
-/** Alias for route code that prefers a verb naming the one-time operation. */
-export const validateAndConsumeOAuthState = consumeOAuthState;

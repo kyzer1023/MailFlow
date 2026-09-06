@@ -304,6 +304,7 @@ describe("safe template rendering and representative previews", () => {
     expect(rendered.bodyHtml).not.toContain("<img src=x onerror");
     expect(escapeMergeValue("<&\"' >")).toBe("&lt;&amp;&quot;&#39; &gt;");
     expect(sanitizeTemplateHtml("<svg><script>alert(1)</script></svg>")).toBe("");
+    expect(renderTemplate("Hello {{name}}", "<p>{{missing}}</p>", { name: "Ada" }).missingPlaceholders).toEqual(["missing"]);
   });
 
   it("preserves email-safe table formatting and cleans preview-only CSS hazards", () => {
@@ -397,7 +398,7 @@ describe("campaign payload and result export", () => {
     expect(result.rejected.map((item) => item.code)).toEqual(["empty", "unsupported", "duplicate"]);
   });
 
-  it("enforces five files and a two MiB combined raw limit", () => {
+  it("enforces five files and a 20 MiB combined raw limit", () => {
     const existing = Array.from({ length: ATTACHMENT_MAX_FILES - 1 }, (_, index) => ({
       id: `file-${index}`,
       name: `file-${index}.txt`,

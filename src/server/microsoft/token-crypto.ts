@@ -47,7 +47,3 @@ export async function rotateRefreshToken(
   return encryptRefreshToken(plaintext, nextSecret);
 }
 
-/** Aliases retained for repository adapters that use sealed-token terminology. */
-export const sealRefreshToken = encryptRefreshToken;
-export const openRefreshToken = decryptRefreshToken;
-

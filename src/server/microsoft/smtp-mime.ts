@@ -1,13 +1,12 @@
 import { isValidEmail } from "../../domain/validation";
 import { Buffer } from "node:buffer";
 import type { MailAttachment, MailMessage } from "../../domain/mail-provider";
+import { ATTACHMENT_MAX_FILES, ATTACHMENT_MAX_BYTES } from "../../domain/attachment-policy";
 import { sha256Hex } from "../auth/crypto";
 
 const encoder = new TextEncoder();
 const BASE64_INPUT_CHUNK_BYTES = 57 * 1024;
 
-export const MAX_SMTP_ATTACHMENTS = 5;
-export const MAX_SMTP_RAW_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 export const MAX_SMTP_HTML_BODY_BYTES = 1024 * 1024;
 export const MAX_SMTP_SUBJECT_BYTES = 4 * 1024;
 export const MAX_SMTP_MIME_CHUNK_BYTES = 80 * 1024;
@@ -131,11 +130,11 @@ function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): Pr
     throw new Error("The HTML body exceeds MailFlow's MIME safety limit");
   }
   const sourceAttachments = [...(message.attachments ?? [])];
-  if (sourceAttachments.length > MAX_SMTP_ATTACHMENTS) {
-    throw new Error(`A message can contain at most ${MAX_SMTP_ATTACHMENTS} attachments`);
+  if (sourceAttachments.length > ATTACHMENT_MAX_FILES) {
+    throw new Error(`A message can contain at most ${ATTACHMENT_MAX_FILES} attachments`);
   }
   const rawAttachmentBytes = sourceAttachments.reduce((total, attachment) => total + attachment.content.byteLength, 0);
-  if (rawAttachmentBytes > MAX_SMTP_RAW_ATTACHMENT_BYTES) {
+  if (rawAttachmentBytes > ATTACHMENT_MAX_BYTES) {
     throw new Error("Combined attachments exceed MailFlow's 20 MiB safety limit");
   }
   const boundary = options.boundary ?? `mailflow_${crypto.randomUUID().replaceAll("-", "")}`;

@@ -108,6 +108,3 @@ export function delegatedGraphMailProvider(
     },
   };
 }
-
-/** Alias emphasizing that Graph's `/me` endpoint determines the sender. */
-export const createDelegatedGraphMailProvider = delegatedGraphMailProvider;

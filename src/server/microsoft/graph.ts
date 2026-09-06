@@ -193,10 +193,3 @@ export class GraphMailProvider implements GraphMailProviderContract {
     };
   }
 }
-
-export function createGraphMailProvider(options: GraphProviderOptions = {}): GraphMailProvider {
-  return new GraphMailProvider(options);
-}
-
-/** Alias for adapters that use the shorter MicrosoftGraphProvider name. */
-export const MicrosoftGraphProvider = GraphMailProvider;
