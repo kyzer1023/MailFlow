@@ -5,27 +5,12 @@ import {
   AttachmentError,
   type AttachmentBytes,
 } from "./contracts";
+import { ATTACHMENT_MIME_BY_EXTENSION } from "../../domain/attachments";
 
-const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
-  ".pdf": "application/pdf",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".csv": "text/csv",
-  ".txt": "text/plain",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-};
-
-const ALLOWED_MIME_TYPES = new Set(Object.values(MIME_BY_EXTENSION));
+const ALLOWED_MIME_TYPES = new Set(Object.values(ATTACHMENT_MIME_BY_EXTENSION));
 
 const MIME_ALIASES: Readonly<Record<string, string>> = {
   "application/csv": "text/csv",
-  "application/vnd.ms-excel": "application/vnd.ms-excel",
   "image/jpg": "image/jpeg",
   "image/pjpeg": "image/jpeg",
 };
@@ -73,7 +58,7 @@ function extensionOf(filename: string): string {
  */
 export function normalizeAttachmentContentType(filename: string, declaredType?: string | null): string {
   const extension = extensionOf(filename);
-  const inferred = MIME_BY_EXTENSION[extension];
+  const inferred = ATTACHMENT_MIME_BY_EXTENSION[extension];
   if (!inferred) throw new AttachmentError("unsupported_type", "This attachment type is not supported");
 
   const declared = (declaredType ?? "").split(";", 1)[0].trim().toLowerCase();
@@ -85,9 +70,8 @@ export function normalizeAttachmentContentType(filename: string, declaredType?: 
 
   // Word, Excel, and PowerPoint legacy/new MIME pairs are extension-specific.
   // CSV and JPEG aliases are normalized above.
-  const extensionMime = inferred;
   if (extension === ".csv" && normalized === "application/vnd.ms-excel") return "text/csv";
-  if (normalized !== extensionMime) {
+  if (normalized !== inferred) {
     throw new AttachmentError("unsupported_type", "The filename extension and media type do not match");
   }
   return normalized;

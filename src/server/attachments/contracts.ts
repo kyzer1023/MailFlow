@@ -6,14 +6,9 @@
  * domain or attachment policy modules.
  */
 
-export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+export { ATTACHMENT_MAX_FILES, ATTACHMENT_MAX_BYTES } from "../../domain/attachments";
 export const ATTACHMENT_ORPHAN_TTL_MS = 24 * 60 * 60 * 1000;
 export const ATTACHMENT_MAX_FILENAME_LENGTH = 120;
-
-// Descriptive aliases make the limits easy to discover at call sites.
-export const MAX_ATTACHMENT_FILES = ATTACHMENT_MAX_FILES;
-export const MAX_ATTACHMENT_BYTES = ATTACHMENT_MAX_BYTES;
 
 export type AttachmentSetState = "open" | "locked" | "deleted";
 

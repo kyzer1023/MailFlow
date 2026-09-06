@@ -4,6 +4,7 @@ import {
   validatePacePerMinute,
 } from "../domain/pacing";
 import type { AddressSeparator } from "../domain/types";
+import { DEFAULT_CAMPAIGN_LIMIT, extractPlaceholders, isValidEmail, normalizeEmail } from "../domain/validation";
 import { sanitizeTemplateHtml } from "./template";
 import type {
   ClientValidationIssue,
@@ -13,10 +14,7 @@ import type {
   NormalizedRecipientRow,
 } from "./types";
 
-export const DEFAULT_CLIENT_CAMPAIGN_LIMIT = 300;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
-const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*\}\}/gu;
+export { extractPlaceholders, isValidEmail, normalizeEmail } from "../domain/validation";
 
 export type AddressValue = string | readonly string[] | null | undefined;
 
@@ -40,15 +38,6 @@ export interface ClientCampaignValidationInput {
   readonly maxRecipients?: number;
   readonly pacePerMinute?: number;
   readonly mappingIssues?: readonly MappingIssue[];
-}
-
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-export function isValidEmail(value: string): boolean {
-  const normalized = normalizeEmail(value);
-  return normalized.length <= 320 && EMAIL_PATTERN.test(normalized);
 }
 
 function splitPattern(separator: AddressSeparator): RegExp {
@@ -99,21 +88,10 @@ export function validateAddressList(
   }
   for (const invalidPart of parsed.invalidParts) {
     issues.push({ code: "malformed_address", field, row, message: `${field} contains an invalid email address.` });
-    // One issue per cell is enough for the UI. Keep the parsed part only in
-    // the internal result to avoid exposing potentially sensitive content.
+    // Keep invalid address text out of user-facing diagnostics.
     void invalidPart;
   }
   return { addresses: parsed.addresses, issues };
-}
-
-/** Extract unique, valid placeholders from subject and body templates. */
-export function extractPlaceholders(subjectTemplate: string, bodyHtml: string): readonly string[] {
-  const placeholders = new Set<string>();
-  for (const source of [subjectTemplate, bodyHtml]) {
-    PLACEHOLDER_PATTERN.lastIndex = 0;
-    for (const match of source.matchAll(PLACEHOLDER_PATTERN)) placeholders.add(match[1]);
-  }
-  return [...placeholders].sort((left, right) => left.localeCompare(right));
 }
 
 function normalizedMergeData(row: MappedRecipientRow): Readonly<Record<string, string>> {
@@ -209,7 +187,7 @@ function mappingIssueToValidationIssue(issue: MappingIssue): ClientValidationIss
  */
 export function validateClientCampaign(input: ClientCampaignValidationInput): ClientValidationSummary {
   const issues: ClientValidationIssue[] = (input.mappingIssues ?? []).map(mappingIssueToValidationIssue);
-  const limit = input.maxRecipients ?? DEFAULT_CLIENT_CAMPAIGN_LIMIT;
+  const limit = input.maxRecipients ?? DEFAULT_CAMPAIGN_LIMIT;
   const pace = input.pacePerMinute ?? DEFAULT_PACE_PER_MINUTE;
   const senderAddress = normalizeEmail(input.senderAddress);
 
@@ -290,6 +268,3 @@ export function validateClientCampaign(input: ClientCampaignValidationInput): Cl
       : 0,
   };
 }
-
-/** Alias used by UI view-models. */
-export const validateCampaignData = validateClientCampaign;

@@ -5,7 +5,6 @@ import type {
   MappedRecipientRow,
   MappingIssue,
   MappingResult,
-  SpreadsheetColumn,
   SpreadsheetTable,
 } from "./types";
 
@@ -168,24 +167,6 @@ export function recipientConfigurationToClientMapping(
     separator: configuration.separator ?? "auto",
     placeholders: { ...(configuration.placeholderMappings ?? {}) },
   };
-}
-
-/** Safe source-to-placeholder mapping used by template rendering. */
-export function normalizePlaceholderMapping(
-  placeholders: readonly string[],
-  mapping: ClientMapping,
-): Readonly<Record<string, string>> {
-  const result: Record<string, string> = {};
-  for (const placeholder of placeholders) {
-    const field = mapping.placeholders?.[placeholder];
-    if (field !== undefined) result[placeholder] = field.trim();
-  }
-  return result;
-}
-
-/** Return a compact list useful for mapping controls. */
-export function mappingColumnOptions(columns: readonly SpreadsheetColumn[]): readonly { key: string; label: string }[] {
-  return columns.map((column) => ({ key: column.key, label: column.label || column.key }));
 }
 
 /**

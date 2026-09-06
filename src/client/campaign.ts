@@ -2,6 +2,7 @@ import type { ClientMapping } from "./types";
 import { mappingToRecipientConfiguration } from "./mapping";
 import { renderTemplate } from "./template";
 import { validateClientCampaign } from "./validation";
+import { ATTACHMENT_MIME_BY_EXTENSION } from "../domain/attachments";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_FILES,
@@ -15,24 +16,8 @@ import type {
   MessagePreview,
   MappedRecipientRow,
   NormalizedRecipientRow,
-  PreviewPosition,
   RepresentativeRow,
 } from "./types";
-
-const ATTACHMENT_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
-  ".pdf": "application/pdf",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".csv": "text/csv",
-  ".txt": "text/plain",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-};
 
 const ATTACHMENT_ALLOWED_MIMES = new Set(Object.values(ATTACHMENT_MIME_BY_EXTENSION));
 
@@ -175,9 +160,6 @@ export function representativeRows(rows: readonly NormalizedRecipientRow[]): rea
   ];
 }
 
-/** Alias used by the review step. */
-export const getRepresentativeRows = representativeRows;
-
 /** Resolve representative rows into safe, isolated preview models. */
 export function buildMessagePreviews(input: RepresentativePreviewInput): readonly MessagePreview[] {
   return representativeRows(input.rows).map(({ position, row }) => {
@@ -273,18 +255,6 @@ export function createCampaignPayload(input: CreateCampaignPayloadInput): Campai
 
 /** Alias describing the endpoint-oriented operation. */
 export const createCampaignRequest = createCampaignPayload;
-
-/** Convert an arbitrary position into a stable display label. */
-export function previewPositionLabel(position: PreviewPosition): string {
-  switch (position) {
-    case "first":
-      return "First valid row";
-    case "middle":
-      return "Middle valid row";
-    case "last":
-      return "Last valid row";
-  }
-}
 
 // Exporting this helper keeps integration code from importing the validation
 // module solely to create the pre-flight summary.

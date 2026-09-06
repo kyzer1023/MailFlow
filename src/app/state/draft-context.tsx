@@ -14,7 +14,6 @@ import type {
   CampaignAttachment,
   ClientMapping,
   ClientValidationSummary,
-  MappedRecipientRow,
   ParsedSpreadsheet,
   SpreadsheetTable,
 } from "../../client/types";
@@ -96,8 +95,10 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       placeholders: draft.mappings,
     };
   }, [draft]);
-  const mappedRows = useMemo<readonly MappedRecipientRow[]>(() => table ? mapSpreadsheetRows(table, mapping).rows : [], [table, mapping]);
-  const mappingIssues = useMemo(() => table ? mapSpreadsheetRows(table, mapping).issues : [], [table, mapping]);
+  const { rows: mappedRows, issues: mappingIssues } = useMemo(
+    () => table ? mapSpreadsheetRows(table, mapping) : { rows: [], issues: [] },
+    [table, mapping],
+  );
   const validation = useMemo<ClientValidationSummary | null>(() => table ? validateClientCampaign({
     senderAddress: user?.mailboxAddress || user?.principalName || "",
     subjectTemplate: draft.subject,

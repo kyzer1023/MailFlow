@@ -75,6 +75,10 @@ The Data step sidebar should explain mappings in plain language: identify the re
 
 In Sending rules, CC, BCC, Reply-to, and Importance each occupy their own full-width row. Do not pair these inputs into two-column groups.
 
+2026-09-05 frontend direction: the user requested an overhaul/refinement centered on a more intuitive experience for nontechnical members. Evaluate the workflow and terminology as well as visual styling. After comparing Image Gen concepts, the user preferred the first displayed mock, Familiar Paper, preserving the Paper/Moss/Coral identity. Its selected recipient-screen reference is `mock-images/refinement/01-recipients-familiar-paper.png`. The default New send journey imports recipients first, then lets the member choose a saved template or write a message, then reviews and confirms. A saved-template reuse shortcut remains a proposal; do not remove template management or require a spreadsheet merely to edit a saved template. The scope and proposed backend stability boundary are recorded in `docs/FRONTEND_REFINEMENT_PLAN.md`; the backend freeze remains a recommendation, not a finalized decision.
+
+The user also accepted the Message-screen continuation at `mock-images/refinement/02-message-familiar-paper.png` and requested clarification of save, reuse, and missing-field interactions. The corresponding save dialog, template picker, and field-resolution designs remain proposals described in the refinement plan.
+
 ## Secret handling
 
 - Do not print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, or source files.

@@ -4,6 +4,5 @@ export * from "./mail-provider";
 export * from "./mailbox-scheduler";
 export * from "./pacing";
 export * from "./state";
-export * from "./template";
 export * from "./types";
 export * from "./validation";

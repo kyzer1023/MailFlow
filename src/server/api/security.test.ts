@@ -2,8 +2,31 @@ import { describe, expect, it } from "vitest";
 import { isCampaignTickMessage } from "./contracts";
 import { safeSourceFilename, validateTemplateHtml, validateTemplateSubject } from "./security";
 import { attachmentSetCreateSchema, campaignCreateSchema, recipientConfigurationSchema, testSendSchema } from "./schemas";
+import { jobCsv } from "./helpers";
+import type { RecipientJobRecord } from "../../domain/types";
 
 describe("Worker API security boundaries", () => {
+  it("exports result rows with quoting and formula-injection protection", () => {
+    const job: RecipientJobRecord = {
+      id: "job-1", campaignId: "campaign-1", sourceRow: 2,
+      recipient: "a@example.com", cc: [], bcc: [], replyTo: [], mergeData: {},
+      renderedSubject: "Hello", renderedBodyHtml: "<p>Hello</p>", sendKey: "campaign-1:2",
+      status: "accepted", attemptCount: 1, claimToken: null,
+      createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:01.000Z",
+      claimedAt: null, sendingAt: null, acceptedAt: "2026-08-31T00:00:01.000Z",
+      nextAttemptAt: null, lastErrorCategory: null, lastErrorMessage: 'line 1, "line 2"',
+      providerMessageId: null, providerRequestId: null,
+    };
+    const csv = jobCsv([
+      job,
+      { ...job, id: "job-2", sourceRow: 3, sendKey: "campaign-1:3", status: "failed",
+        recipient: '=HYPERLINK("https://bad")', acceptedAt: null, lastErrorMessage: null },
+    ]);
+    expect(csv.split("\r\n")[0]).toBe("row_number,recipient,status,attempt_count,created_at,claimed_at,sending_at,accepted_at,last_error_category,last_error_message");
+    expect(csv).toContain('"line 1, ""line 2"""');
+    expect(csv).toContain("'=HYPERLINK");
+  });
+
   it("rejects active HTML and accepts a simple email template", () => {
     expect(validateTemplateHtml("<p>Hello {{name}}</p>")).toEqual({ ok: true, html: "<p>Hello {{name}}</p>" });
     expect(validateTemplateHtml('<p onclick="alert(1)">Hello</p>')).toMatchObject({ ok: false });

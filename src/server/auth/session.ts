@@ -100,9 +100,6 @@ export async function hashSessionToken(token: string): Promise<string> {
   return sha256Base64Url(token);
 }
 
-/** Alias used by repository adapters that call opaque values token hashes. */
-export const hashToken = hashSessionToken;
-
 export async function startSession(
   store: SessionStore,
   userId: string,

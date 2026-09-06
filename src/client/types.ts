@@ -1,27 +1,13 @@
 import type { AddressSeparator, MailImportance } from "../domain/types";
+import { ATTACHMENT_MIME_BY_EXTENSION } from "../domain/attachments";
+
+export { ATTACHMENT_MAX_FILES, ATTACHMENT_MAX_BYTES } from "../domain/attachments";
 
 /** File formats accepted by the browser import step. */
 export type SpreadsheetFormat = "csv" | "xlsx";
 
-/** Limits for the first campaign attachment delivery path. */
-export const ATTACHMENT_MAX_FILES = 5;
-export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
-
 /** File types accepted by the browser attachment picker. */
-export const ATTACHMENT_ACCEPT = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".csv",
-  ".txt",
-  ".png",
-  ".jpg",
-  ".jpeg",
-].join(",");
+export const ATTACHMENT_ACCEPT = Object.keys(ATTACHMENT_MIME_BY_EXTENSION).join(",");
 
 export type AttachmentUploadStatus = "uploading" | "ready" | "error";
 
@@ -241,17 +227,4 @@ export interface CampaignCreatePayload {
   readonly validRecipients: number;
   readonly skippedRecipients: number;
   readonly rows: readonly CampaignRecipientPayload[];
-}
-
-export interface ResultExportRow {
-  readonly sourceRow: number;
-  readonly recipient: string;
-  readonly status: string;
-  readonly attemptCount: number;
-  readonly createdAt?: string | null;
-  readonly claimedAt?: string | null;
-  readonly sendingAt?: string | null;
-  readonly acceptedAt?: string | null;
-  readonly lastErrorCategory?: string | null;
-  readonly lastErrorMessage?: string | null;
 }

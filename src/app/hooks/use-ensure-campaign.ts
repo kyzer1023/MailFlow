@@ -29,18 +29,15 @@ export function useEnsureCampaign(): () => Promise<CampaignResponse | null> {
     // creation time. A draft saved before the workbook was selected may have
     // used a placeholder column, so reusing it could make the server reject a
     // valid campaign as changed.
-    let currentVersionId: string | null = null;
     const recipientConfiguration = mappingToRecipientConfiguration(draftState.mapping);
-    if (!currentVersionId) {
-      const versionResponse = await createTemplateVersionRequest(currentFlowId, {
-        subjectTemplate: draftState.draft.subject,
-        bodyHtml: draftState.campaignValidation.sanitizedBodyHtml,
-        placeholderManifest: draftState.campaignValidation.placeholders,
-        recipientConfiguration,
-      }, api.csrfToken);
-      currentVersionId = versionResponse.version.id;
-      draftState.setTemplateVersionId(currentVersionId);
-    }
+    const versionResponse = await createTemplateVersionRequest(currentFlowId, {
+      subjectTemplate: draftState.draft.subject,
+      bodyHtml: draftState.campaignValidation.sanitizedBodyHtml,
+      placeholderManifest: draftState.campaignValidation.placeholders,
+      recipientConfiguration,
+    }, api.csrfToken);
+    const currentVersionId = versionResponse.version.id;
+    draftState.setTemplateVersionId(currentVersionId);
     const payload = createCampaignPayload({
       idempotencyKey: draftState.campaignRequestKey,
       attachmentSetId,
