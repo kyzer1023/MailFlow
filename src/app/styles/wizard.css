@@ -2,7 +2,7 @@
 .wizard-page {
   width: 100%;
   max-width: none;
-  padding-inline: 32px;
+  padding-inline: var(--space-32);
 }
 .stepper-wrap {
   min-height: 86px;
@@ -34,7 +34,7 @@
   content: "";
   height: 1px;
   position: absolute;
-  z-index: 0;
+  z-index: var(--z-base);
   left: 50%;
   right: -50%;
   top: 18px;
@@ -46,7 +46,7 @@
 .stepper a,
 .stepper-future {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-raised);
   padding-right: clamp(0.45rem, 1vw, 0.9rem);
   display: inline-grid;
   grid-template-columns: 36px auto;
@@ -72,10 +72,10 @@
 .stepper-node {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   display: grid;
   place-items: center;
-  border: 1px solid #aeb5af;
+  border: 1px solid var(--step-border);
   background: var(--paper-bright);
   color: var(--step-muted);
   font: 700 0.74rem/1 var(--font-mono);
@@ -102,7 +102,7 @@
   border-color: var(--coral);
   box-shadow:
     0 0 0 5px var(--coral-soft),
-    0 3px 10px rgba(112, 62, 50, 0.12);
+    0 3px 10px var(--step-shadow-color);
 }
 .wizard-page {
   padding-top: 34px;
@@ -126,7 +126,7 @@
   }
   .stepper-wrap {
     min-height: 74px;
-    padding-inline: 12px;
+    padding-inline: var(--space-12);
     gap: 10px;
   }
   .stepper {
@@ -163,7 +163,7 @@
     box-shadow: 0 0 0 4px var(--coral-soft);
   }
   .wizard-page {
-    padding-top: 24px;
+    padding-top: var(--space-24);
   }
 }
 @media (min-width: 641px) and (max-width: 680px) {

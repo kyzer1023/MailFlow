@@ -48,6 +48,14 @@ Cloudflare Worker
 
 Domain modules must have no Cloudflare imports. Adapters depend on domain contracts, not the reverse.
 
+### Browser loading and draft ownership
+
+- The public landing entry loads session state and public controls. Product routes and their shared `ProductLayout` load on demand after the session gate.
+- `ProductLayout` owns one `DraftProvider` across product navigation. Its inner route boundary isolates loading failures so a failed screen does not discard the draft. Reload recovery explicitly warns that unsaved work will be cleared.
+- The draft provider coordinates editable state, saved-template hydration, and immutable review/request lifecycle. `useDraftValidation` derives mappings and validation; `useDraftAttachments` owns file references, serialized uploads, retries, and generation-based reset protection.
+- CSV parsing stays synchronous in the browser. XLSX parsing imports ExcelJS only after size and package checks. No workbook parsing moves to the Worker.
+- `npm run check:client-bundle` traverses the production manifest's static imports, checks route/ExcelJS boundaries, and enforces a 110 kB gzip initial JavaScript budget. `npm test` includes this check after building.
+
 ## Microsoft authorization
 
 - Single-tenant Entra application.

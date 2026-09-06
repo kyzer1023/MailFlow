@@ -9,17 +9,17 @@
   position: sticky;
   top: 0;
   height: 100dvh;
-  color: #e8eee9;
-  padding: 28px 22px 20px;
+  color: var(--sidebar-ink);
+  padding: var(--space-28) 22px var(--space-20);
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  z-index: var(--z-sidebar);
 }
 .sidebar-brand {
   width: 180px;
   margin: 0 auto 14px;
   padding: 9px 11px;
-  border-radius: 11px;
+  border-radius: var(--radius-upload);
   background: var(--paper);
 }
 .sidebar .brand {
@@ -29,7 +29,7 @@
 .sidebar .society-name {
   margin: 0 0 34px;
   text-align: center;
-  color: #aebbb3;
+  color: var(--sidebar-caption);
   font-size: 0.78rem;
 }
 .sidebar nav {
@@ -41,15 +41,15 @@
   align-items: center;
   gap: 0.8rem;
   text-decoration: none;
-  color: #bcc8c0;
+  color: var(--sidebar-muted);
 }
 .sidebar nav a:hover {
-  background: rgba(255, 255, 255, 0.055);
-  color: white;
+  background: var(--sidebar-hover);
+  color: var(--white);
 }
 .sidebar nav a.active {
-  background: #405247;
-  color: white;
+  background: var(--sidebar-active);
+  color: var(--white);
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -57,7 +57,7 @@
   gap: 0.8rem;
 }
 .member-card {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--sidebar-line);
   padding-top: 1rem;
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 36px;
@@ -75,23 +75,23 @@
 }
 .member-card small {
   margin-top: 0.2rem;
-  color: #9aa89f;
+  color: var(--sidebar-mailbox);
   font-size: 0.68rem;
 }
 .member-card > button {
   width: 36px;
   height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
+  border: 1px solid var(--sidebar-control-border);
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   background: transparent;
-  color: #bcc8c0;
+  color: var(--sidebar-muted);
   cursor: pointer;
 }
 .member-card > button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
+  background: var(--sidebar-control-hover);
+  color: var(--white);
 }
 .member-card > button:disabled {
   cursor: wait;
@@ -99,7 +99,7 @@
 }
 .sidebar-error {
   margin: 0;
-  color: #ffd4cc;
+  color: var(--sidebar-error);
   font-size: 0.7rem;
   line-height: 1.35;
 }
@@ -111,16 +111,16 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  border-radius: 7px;
+  border-radius: var(--radius-inset);
 }
 .avatar {
   width: 38px;
   height: 38px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   display: grid;
   place-items: center;
   background: var(--coral);
-  color: white;
+  color: var(--white);
   font-size: 0.72rem;
   font-weight: 800;
 }
@@ -146,17 +146,17 @@
 }
 .support-footer {
   position: fixed;
-  z-index: 8;
+  z-index: var(--z-footer);
   left: var(--sidebar);
   right: 0;
   bottom: 0;
   min-height: 46px;
-  padding: 12px 24px;
+  padding: var(--space-12) var(--space-24);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(244, 240, 232, 0.97);
-  border-top: 1px solid rgba(81, 106, 89, 0.14);
+  background: var(--footer-surface);
+  border-top: 1px solid var(--shell-divider);
   color: var(--muted);
   font-size: 0.74rem;
   backdrop-filter: blur(8px);
@@ -169,11 +169,11 @@
 .page {
   width: min(100%, 1480px);
   margin-inline: auto;
-  padding: 38px clamp(28px, 4.2vw, 68px) 82px;
+  padding: 38px clamp(var(--space-28), 4.2vw, 68px) 82px;
 }
 .campaign-page {
   width: 100%;
-  padding-inline: 40px;
+  padding-inline: var(--space-40);
 }
 .page-header {
   min-height: 96px;
@@ -203,7 +203,7 @@
 .panel {
   background: var(--paper-bright);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
 }
 .empty-state {
   padding: 1.2rem 1.35rem;
@@ -232,7 +232,7 @@
   width: 56px;
   height: 56px;
   margin-bottom: 1rem;
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
   display: grid;
   place-items: center;
   background: var(--mist);
@@ -276,7 +276,7 @@
   width: 1rem;
 }
 .route-card {
-  padding: 20px 22px;
+  padding: var(--space-20) 22px;
   position: relative;
   overflow: hidden;
 }
@@ -294,7 +294,7 @@
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
-  background: #eeece6;
+  background: var(--shell-inset-surface);
   color: var(--muted);
   font-size: 0.7rem;
 }
@@ -303,7 +303,7 @@
 }
 @media (max-width: 900px) {
   .sidebar {
-    padding-inline: 12px;
+    padding-inline: var(--space-12);
   }
   .sidebar-brand {
     width: 50px;
@@ -336,7 +336,7 @@
     position: static;
     width: 100%;
     height: 66px;
-    padding: 0 16px;
+    padding: 0 var(--space-16);
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
@@ -376,7 +376,7 @@
     padding: 10px 14px;
   }
   .page {
-    padding: 24px 17px 38px;
+    padding: var(--space-24) 17px 38px;
   }
   .page-header {
     min-height: auto;
@@ -428,12 +428,12 @@
 .campaign-page .jobs-panel td:first-child {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: var(--z-sticky-column);
   background: var(--paper-bright);
   box-shadow: 7px 0 0 -6px var(--line);
 }
 .campaign-page .jobs-panel thead th:first-child {
-  z-index: 3;
+  z-index: var(--z-sticky-header);
 }
 .campaign-page .jobs-panel {
   display: flex;
@@ -467,9 +467,9 @@
 @media (max-width: 900px) {
   .campaign-page .route-counts {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 15px 8px;
+    gap: 15px var(--space-8);
     overflow-x: visible;
-    padding: 16px 14px 14px;
+    padding: var(--space-16) 14px 14px;
   }
 
   .campaign-page .route-counts .count {
@@ -504,8 +504,8 @@
 
   .campaign-page .route-counts {
     width: 100%;
-    gap: 13px 4px;
-    padding: 15px 8px 13px;
+    gap: 13px var(--space-4);
+    padding: 15px var(--space-8) 13px;
   }
 
   .campaign-page .route-counts .count > span {
@@ -571,7 +571,7 @@
 @media (max-width: 900px) {
   .campaign-page .jobs-panel .table-wrap {
     overflow-x: scroll;
-    box-shadow: inset -18px 0 18px -18px rgba(18, 34, 31, 0.45);
+    box-shadow: var(--shadow-table-scroll);
   }
 
   .campaign-page .jobs-panel .table-wrap::before {
@@ -581,7 +581,7 @@
     display: block;
     width: max-content;
     max-width: calc(100vw - 76px);
-    padding: 0 18px 8px;
+    padding: 0 18px var(--space-8);
     color: var(--muted);
     font: 650 0.64rem/1.35 var(--font-mono);
   }
@@ -619,7 +619,7 @@
 @media (max-width: 1180px) {
   .app-frame {
     --send-rail: 190px;
-    --send-gap: 24px;
+    --send-gap: var(--space-24);
     --send-gutter: 24px;
   }
 }

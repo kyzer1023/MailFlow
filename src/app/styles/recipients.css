@@ -6,7 +6,7 @@
   gap: 0.45rem;
 }
 .recipient-rule > label {
-  color: #48534d;
+  color: var(--label-ink);
   font-size: 0.73rem;
   font-weight: 760;
 }
@@ -20,16 +20,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 42px;
   align-items: stretch;
-  border: 1px solid #bfc1bc;
-  border-radius: 8px;
-  background: #fffefa;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-surface);
 }
 .address-chip-input:hover {
-  border-color: #929891;
+  border-color: var(--control-border-hover);
 }
 .address-chip-input:focus-within {
   border-color: var(--moss);
-  box-shadow: 0 0 0 3px rgba(81, 106, 89, 0.15);
+  box-shadow: 0 0 0 3px var(--focus-ring-color);
 }
 .address-chip-values {
   min-width: 0;
@@ -46,7 +46,7 @@
   min-height: 32px;
   padding: 0.2rem 0.28rem;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   box-shadow: none;
 }
@@ -60,11 +60,11 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .address-chip {
   padding: 0.22rem 0.3rem 0.22rem 0.22rem;
-  background: #edf0ed;
+  background: var(--chip-surface);
   color: var(--ink);
   font-size: 0.76rem;
 }
@@ -74,9 +74,9 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--moss);
-  color: white;
+  color: var(--white);
   font-size: 0.68rem;
   font-weight: 800;
 }
@@ -94,14 +94,14 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--send-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 .address-chip button:hover,
 .selected-dynamic-value button:hover {
-  background: rgba(23, 33, 31, 0.08);
+  background: var(--control-hover-overlay);
   color: var(--ink);
 }
 .address-chip button svg,
@@ -123,7 +123,7 @@
   align-self: stretch;
   border: 0;
   border-left: 1px solid var(--line);
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 var(--radius-inset) var(--radius-inset) 0;
   background: transparent;
   color: var(--moss-dark);
   cursor: pointer;
@@ -138,7 +138,7 @@
 }
 .dynamic-value-menu {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-menu);
   top: calc(100% - 1.1rem);
   right: 0;
   width: min(310px, 100%);
@@ -148,9 +148,9 @@
   display: grid;
   gap: 0.22rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--paper-bright);
-  box-shadow: 0 14px 32px rgba(23, 33, 31, 0.14);
+  box-shadow: var(--shadow-menu);
 }
 .dynamic-value-menu > div:first-child {
   padding: 0.45rem 0.48rem 0.55rem;
@@ -178,14 +178,14 @@
   justify-content: space-between;
   gap: 0.5rem;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-inset);
   background: transparent;
   text-align: left;
   cursor: pointer;
 }
 .dynamic-value-menu > button:hover,
 .dynamic-value-menu > button[aria-selected="true"] {
-  background: #f0f3ef;
+  background: var(--menu-item-hover);
 }
 .dynamic-value-menu > button > svg {
   width: 1rem;

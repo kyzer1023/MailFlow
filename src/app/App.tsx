@@ -1,73 +1,88 @@
-import type { ReactElement } from "react";
+import { lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppDataProvider } from "./state/api-context";
-import { DraftProvider } from "./state/draft-context";
+import { RouteBoundary } from "./routing/RouteBoundary";
 import { RequireProductSession } from "./routing/RequireProductSession";
 import { LandingPage } from "./routes/public/LandingPage";
-import { CampaignsPage } from "./routes/overview/CampaignsPage";
-import { DashboardPage } from "./routes/overview/DashboardPage";
-import { FlowsPage } from "./routes/overview/FlowsPage";
-import { DataFirstPage } from "./routes/flows/DataFirstPage";
-import {
-  EditFlowTemplatePage,
-  TemplatePage,
-} from "./routes/flows/TemplatePage";
-
-import { ReviewPage } from "./routes/flows/ReviewPage";
-import { CampaignPage } from "./routes/campaigns/CampaignPage";
+const ProductLayout = lazy(() => import("./routing/ProductLayout"));
+const CampaignsPage = lazy(() =>
+  import("./routes/overview/CampaignsPage").then((module) => ({
+    default: module.CampaignsPage,
+  })),
+);
+const DashboardPage = lazy(() =>
+  import("./routes/overview/DashboardPage").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
+const FlowsPage = lazy(() =>
+  import("./routes/overview/FlowsPage").then((module) => ({
+    default: module.FlowsPage,
+  })),
+);
+const DataFirstPage = lazy(() =>
+  import("./routes/flows/DataFirstPage").then((module) => ({
+    default: module.DataFirstPage,
+  })),
+);
+const TemplatePage = lazy(() =>
+  import("./routes/flows/TemplatePage").then((module) => ({
+    default: module.TemplatePage,
+  })),
+);
+const EditFlowTemplatePage = lazy(() =>
+  import("./routes/flows/TemplatePage").then((module) => ({
+    default: module.EditFlowTemplatePage,
+  })),
+);
+const ReviewPage = lazy(() =>
+  import("./routes/flows/ReviewPage").then((module) => ({
+    default: module.ReviewPage,
+  })),
+);
+const CampaignPage = lazy(() =>
+  import("./routes/campaigns/CampaignPage").then((module) => ({
+    default: module.CampaignPage,
+  })),
+);
 
 export function App() {
-  const protectedRoute = (element: ReactElement): ReactElement => (
-    <RequireProductSession>{element}</RequireProductSession>
-  );
   return (
     <BrowserRouter>
       <AppDataProvider>
-        <DraftProvider>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route
-              path="/dashboard"
-              element={protectedRoute(<DashboardPage />)}
-            />
-            <Route path="/flows" element={protectedRoute(<FlowsPage />)} />
-            <Route
-              path="/flows/new/data"
-              element={protectedRoute(<DataFirstPage />)}
-            />
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route
+            element={
+              <RequireProductSession>
+                <RouteBoundary>
+                  <ProductLayout />
+                </RouteBoundary>
+              </RequireProductSession>
+            }
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/flows" element={<FlowsPage />} />
+            <Route path="/flows/new/data" element={<DataFirstPage />} />
             <Route
               path="/flows/new/saved-template"
-              element={protectedRoute(<TemplatePage standalone />)}
+              element={<TemplatePage standalone />}
             />
-            <Route
-              path="/flows/new/template"
-              element={protectedRoute(<TemplatePage />)}
-            />
+            <Route path="/flows/new/template" element={<TemplatePage />} />
             <Route
               path="/flows/:flowId/edit/template"
-              element={protectedRoute(<EditFlowTemplatePage />)}
+              element={<EditFlowTemplatePage />}
             />
             <Route
               path="/flows/new/recipients"
-              element={protectedRoute(
-                <Navigate to="/flows/new/template" replace />,
-              )}
+              element={<Navigate to="/flows/new/template" replace />}
             />
-            <Route
-              path="/flows/new/review"
-              element={protectedRoute(<ReviewPage />)}
-            />
-            <Route
-              path="/campaigns"
-              element={protectedRoute(<CampaignsPage />)}
-            />
-            <Route
-              path="/campaigns/:campaignId"
-              element={protectedRoute(<CampaignPage />)}
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </DraftProvider>
+            <Route path="/flows/new/review" element={<ReviewPage />} />
+            <Route path="/campaigns" element={<CampaignsPage />} />
+            <Route path="/campaigns/:campaignId" element={<CampaignPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </AppDataProvider>
     </BrowserRouter>
   );

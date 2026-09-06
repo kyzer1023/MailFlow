@@ -4,10 +4,10 @@
   grid-template-columns: 58px minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
-  border: 1px dashed #a8b2aa;
-  border-radius: 11px;
-  padding: 16px;
-  background: #f7f6f0;
+  border: 1px dashed var(--data-upload-border);
+  border-radius: var(--radius-upload);
+  padding: var(--space-16);
+  background: var(--data-upload-surface);
 }
 .upload-card h2 {
   margin: 0;
@@ -21,7 +21,7 @@
 .upload-icon {
   width: 54px;
   height: 54px;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   display: grid;
   place-items: center;
   background: var(--mist);
@@ -55,14 +55,14 @@
 }
 .preview-table {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-badge);
   overflow: auto;
 }
 .preview-table table {
   min-width: 720px;
 }
 .preview-table .row-error {
-  background: #fff0ec;
+  background: var(--data-invalid-surface);
 }
 .preview-table td svg {
   color: var(--danger);
@@ -75,9 +75,9 @@
   place-content: center;
   justify-items: center;
   text-align: center;
-  padding: 32px;
+  padding: var(--space-32);
   border: 1px dashed var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
 }
 .upload-empty h3 {
   margin: 0 0 0.55rem;
@@ -103,7 +103,7 @@
 }
 .detected-field-name {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-inset);
   background: var(--paper);
   color: var(--moss-dark);
   padding: 0.4rem 0.55rem;

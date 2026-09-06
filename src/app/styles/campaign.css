@@ -34,10 +34,10 @@
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  padding: 16px 24px;
+  padding: var(--space-16) var(--space-24);
   background: var(--paper-bright);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
 }
 .count {
   text-align: center;
@@ -49,31 +49,31 @@
   top: 22px;
   left: calc(50% + 25px);
   right: calc(-50% + 25px);
-  border-top: 1px dashed #aab1ab;
+  border-top: 1px dashed var(--progress-step-line);
 }
 .count > span {
   width: 46px;
   height: 46px;
   margin: 0 auto 0.4rem;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   display: grid;
   place-items: center;
-  background: #e9e8e2;
-  color: #66716b;
+  background: var(--progress-step-surface);
+  color: var(--progress-step-ink);
   position: relative;
-  z-index: 1;
+  z-index: var(--z-raised);
 }
 .count--sending > span {
   background: var(--coral);
-  color: white;
-  box-shadow: 0 0 0 5px #f8ddd6;
+  color: var(--white);
+  box-shadow: 0 0 0 5px var(--progress-active-ring);
 }
 .count--accepted > span {
   background: var(--moss);
-  color: white;
+  color: var(--white);
 }
 .count--failed > span {
-  background: #f3d9d4;
+  background: var(--progress-error-surface);
   color: var(--danger);
 }
 .count--recipient-failed > span,
@@ -108,8 +108,8 @@
 .progress-track {
   height: 7px;
   margin-top: 0.55rem;
-  border-radius: 99px;
-  background: #deded8;
+  border-radius: var(--radius-pill);
+  background: var(--progress-track);
   overflow: hidden;
 }
 .progress-track i {
@@ -120,10 +120,10 @@
   transition: width 0.3s ease;
 }
 .campaign-lower {
-  margin-top: 20px;
+  margin-top: var(--space-20);
   display: grid;
   grid-template-columns: minmax(0, 2.1fr) minmax(290px, 0.78fr);
-  gap: 20px;
+  gap: var(--space-20);
   align-items: start;
 }
 .jobs-panel {
@@ -131,7 +131,7 @@
   overflow: hidden;
 }
 .jobs-panel > .section-heading {
-  padding: 0 20px 12px;
+  padding: 0 var(--space-20) var(--space-12);
 }
 .jobs-panel .table-wrap {
   overflow-x: auto;
@@ -141,7 +141,7 @@
 }
 .campaign-aside {
   display: grid;
-  gap: 20px;
+  gap: var(--space-20);
 }
 .recovery-card {
   padding: 14px 18px;
@@ -179,7 +179,7 @@
   flex: 0 0 auto;
 }
 .campaign-details {
-  padding: 20px;
+  padding: var(--space-20);
 }
 .campaign-details h2 {
   margin: 0.35rem 0 0;
@@ -242,9 +242,9 @@
   .campaign-header .header-actions {
     position: sticky;
     top: 6px;
-    z-index: 5;
+    z-index: var(--z-mobile-action);
     background: var(--paper);
-    padding: 6px 0;
+    padding: var(--space-6) 0;
   }
   .campaign-identity {
     grid-template-columns: 42px minmax(0, 1fr);
@@ -254,10 +254,10 @@
     justify-self: start;
   }
   .route-summary {
-    padding-inline: 12px;
+    padding-inline: var(--space-12);
   }
   .campaign-lower {
-    gap: 12px;
+    gap: var(--space-12);
   }
 }
 @media (min-width: 1181px) and (max-height: 950px) {
@@ -294,11 +294,11 @@
   }
 
   .jobs-panel {
-    padding-top: 12px;
+    padding-top: var(--space-12);
   }
 
   .jobs-panel > .section-heading {
-    padding-bottom: 8px;
+    padding-bottom: var(--space-8);
   }
 }
 

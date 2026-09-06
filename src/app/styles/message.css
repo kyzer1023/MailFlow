@@ -14,23 +14,23 @@
 .editor-toolbar {
   min-height: 44px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 4px;
-  background: #f1eee7;
+  padding: var(--space-4);
+  background: var(--editor-tabs-surface);
 }
 .editor-toolbar .mode {
   height: 34px;
   padding: 0.55rem 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.72rem;
   font-weight: 700;
 }
 .editor-toolbar .mode.active {
   background: var(--ink);
-  color: white;
+  color: var(--white);
 }
 .editor-toolbar select {
   min-height: 34px;
@@ -47,9 +47,9 @@
 }
 .token-message-editor {
   width: 100%;
-  border: 1px solid #bfc1bc;
-  border-radius: 8px;
-  background: #fffefa;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-surface);
   color: var(--ink);
   padding: 0.82rem;
   white-space: normal;
@@ -58,33 +58,33 @@
   cursor: text;
 }
 .token-message-editor:hover {
-  border-color: #929891;
+  border-color: var(--control-border-hover);
 }
 .token-message-editor:focus {
   border-color: var(--moss);
-  outline: 3px solid rgba(81, 106, 89, 0.15);
+  outline: 3px solid var(--focus-ring-color);
 }
 .token-message-editor:empty::before {
   content: attr(data-placeholder);
-  color: #7e8781;
+  color: var(--control-placeholder);
   pointer-events: none;
 }
 .html-message-composer {
   width: 100%;
   overflow: hidden;
-  border: 1px solid #bfc1bc;
-  border-radius: 8px;
-  background: #fffefa;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-surface);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 .html-message-composer:hover {
-  border-color: #929891;
+  border-color: var(--control-border-hover);
 }
 .html-message-composer:focus-within {
   border-color: var(--moss);
-  box-shadow: 0 0 0 3px rgba(81, 106, 89, 0.15);
+  box-shadow: 0 0 0 3px var(--focus-ring-color);
 }
 .html-message-composer .editor-toolbar {
   min-width: 0;
@@ -92,17 +92,17 @@
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   flex-wrap: wrap;
-  background: #f4f1ea;
+  background: var(--editor-toolbar-surface);
 }
 .html-message-composer .editor-toolbar select {
   width: auto;
   min-height: 32px;
   padding: 0.25rem 0.38rem;
-  border-radius: 5px;
+  border-radius: var(--send-radius);
   color: var(--ink);
 }
 .html-message-composer .editor-toolbar select:hover {
-  background: #fffefa;
+  background: var(--control-surface);
 }
 .html-message-composer .editor-toolbar button {
   width: 32px;
@@ -112,13 +112,13 @@
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--send-radius);
   background: transparent;
-  color: #34413b;
+  color: var(--editor-toolbar-ink);
   cursor: pointer;
 }
 .html-message-composer .editor-toolbar button:hover {
-  background: #fffefa;
+  background: var(--control-surface);
   color: var(--ink);
 }
 .html-message-composer .editor-toolbar button:focus-visible {
@@ -151,11 +151,11 @@
 .html-message-composer .editor-toolbar .editor-source-toggle {
   margin-left: auto;
   border-left: 1px solid var(--line);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
 }
 .html-message-composer .editor-toolbar .editor-source-toggle.active {
   background: var(--ink);
-  color: white;
+  color: var(--white);
 }
 .html-message-composer .token-message-editor,
 .html-source-editor {
@@ -174,9 +174,9 @@
 .html-source-editor {
   display: block;
   width: 100%;
-  padding: 14px 16px;
+  padding: 14px var(--space-16);
   resize: vertical;
-  background: #fffefa;
+  background: var(--control-surface);
   color: var(--ink);
   font: 500 0.78rem/1.6 var(--font-mono);
   white-space: pre;
@@ -189,13 +189,13 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background: #edf3ee;
+  background: var(--upload-hover);
   color: var(--moss-dark);
   font-size: 0.7rem;
 }
 .html-source-status--cleaned {
-  background: #fff3df;
-  color: #705326;
+  background: var(--editor-warning-surface);
+  color: var(--editor-warning-ink);
 }
 .html-source-status svg {
   width: 0.95rem;
@@ -232,7 +232,7 @@
   gap: 0.32rem;
   max-width: 100%;
   border: 1px solid var(--token-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--token-bg);
   color: var(--token-text);
   font: 700 0.74rem/1.2 var(--font-display);
@@ -267,7 +267,7 @@
 }
 @media (min-width: 1181px) and (max-height: 950px) {
   .data-layout {
-    gap: 16px;
+    gap: var(--space-16);
   }
 }
 .template-layout.familiar-layout,
@@ -476,7 +476,7 @@
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);
   border: 1px solid var(--line);
-  border-radius: var(--send-space-sm);
+  border-radius: var(--radius-large-control);
   padding: var(--send-space-lg);
   color: var(--ink);
   background: var(--send-surface);
