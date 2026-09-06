@@ -114,6 +114,7 @@ export interface CampaignRecord {
   pacePerMinute: number;
   state: CampaignState;
   pauseReason: string | null;
+  mailIssueCode?: "mail_authorization_required" | null;
   idempotencyKey: string;
   /** Server hash of the normalized create request. Null only for legacy rows. */
   requestFingerprint?: string | null;
@@ -176,6 +177,7 @@ export type AuditEventType =
   | "campaign.queued"
   | "campaign.started"
   | "campaign.paused"
+  | "campaign.mail_authorization_required"
   | "campaign.resumed"
   | "campaign.completed"
   | "campaign.failed"

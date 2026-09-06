@@ -1,10 +1,11 @@
 import { safeErrorKind } from "../diagnostics";
 import type { MailMessage, MailProvider, MailSendResult } from "../../domain/mail-provider";
-import { OAuthProviderError } from "./oauth";
+import { prepareMailAuthorization, reconnectRequired } from "./mail-authorization";
 import { ExchangeOnlineSmtpClient, SmtpProviderError } from "./smtp";
 import type { AccessTokenSource } from "./adapter";
 
 function smtpErrorResult(error: SmtpProviderError): MailSendResult {
+  if (error.category === "authentication" || error.category === "permission") return reconnectRequired(error.category);
   if (error.category === "ambiguous") return { kind: "unknown", category: "ambiguous", message: error.message };
   if (error.category === "network" && !error.safeToRetry) return { kind: "unknown", category: "transport", message: error.message };
   if (error.safeToRetry) {
@@ -15,11 +16,7 @@ function smtpErrorResult(error: SmtpProviderError): MailSendResult {
       message: error.message,
     };
   }
-  const category = error.category === "authentication"
-    ? "authentication"
-    : error.category === "permission"
-      ? "permission"
-      : error.category === "invalid_recipient"
+  const category = error.category === "invalid_recipient"
         ? "invalid_recipient"
         : error.category === "invalid_message"
           ? "invalid_message"
@@ -34,23 +31,17 @@ export function delegatedSmtpMailProvider(
   accessToken: AccessTokenSource,
   mailboxAddress: string,
 ): MailProvider {
+  const authorization = prepareMailAuthorization(accessToken);
   return {
+    prepare: () => authorization.prepare(),
     async send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult> {
+      const failure = await authorization.prepare();
+      if (failure) return failure;
       try {
-        const bearer = typeof accessToken === "function" ? await accessToken() : accessToken;
-        await smtp.send(bearer, mailboxAddress, message, { sendKey: options?.sendKey });
+        await smtp.send(authorization.token, mailboxAddress, message, { sendKey: options?.sendKey });
         return { kind: "accepted", providerMessageId: null, providerRequestId: null };
       } catch (error) {
         if (error instanceof SmtpProviderError) return { ...smtpErrorResult(error), diagnosticId: error.diagnosticId };
-        if (error instanceof OAuthProviderError) {
-          if (error.category === "network" || error.category === "temporarily_unavailable") {
-            return { kind: "retryable", safeToRetry: true, category: "pre_send_temporary", message: error.message };
-          }
-          return { kind: "failed", category: "authentication", message: error.message };
-        }
-        if (error && typeof error === "object" && "code" in error && error.code === "refresh_token_crypto_failed") {
-          return { kind: "failed", category: "authentication", message: "Reconnect Microsoft before sending this campaign" };
-        }
         console.warn("Unexpected SMTP adapter failure", {
           classification: safeErrorKind(error),
         });

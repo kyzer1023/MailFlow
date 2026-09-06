@@ -359,3 +359,26 @@ describe("test-send public controls", () => {
     await expect(consumeOAuthStartLimit(store, "secret", "203.0.113.250", 1_000)).resolves.toMatchObject({ allowed: false });
   });
 });
+
+it("prepares a test before reserving the mailbox and safely reuses the key after preparation failure", async () => {
+  const store = new MemoryPublicControlStore();
+  const mailbox = new MemoryMailboxDelivery(store);
+  let acquisitions = 0;
+  const acquire = mailbox.acquire.bind(mailbox);
+  mailbox.acquire = async input => { acquisitions += 1; return acquire(input); };
+  let preparations = 0;
+  let sends = 0;
+  const options = { store, mailboxDelivery: mailbox, input: baseInput,
+    prepare: async () => { preparations += 1; if (preparations === 1) throw new Error("Credential unavailable"); },
+    send: async () => { sends += 1; return result; }, audit: async () => {}, classifyFailure,
+    now: () => 1000, createId: () => "preparation-test" };
+  await expect(executeControlledTestSend(options)).rejects.toBeInstanceOf(ControlledTestSendError);
+  expect(acquisitions).toBe(0);
+  expect(sends).toBe(0);
+  expect(await store.findTestSend(baseInput.ownerUserId, baseInput.idempotencyKey)).toBeNull();
+  await executeControlledTestSend(options);
+  await executeControlledTestSend(options);
+  expect(acquisitions).toBe(1);
+  expect(preparations).toBe(2);
+  expect(sends).toBe(1);
+});

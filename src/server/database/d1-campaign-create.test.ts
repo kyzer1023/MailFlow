@@ -309,3 +309,66 @@ describe("manual delivery verification", () => {
     } finally { db.close(); }
   });
 });
+
+describe("atomic template publication", () => {
+  it("allocates unpublished versions without changing the saved pointer, and rejects stale publication atomically", async () => {
+    const { D1TemplateVersionRepository, TemplatePublicationConflict } = await import("./d1-template-versions");
+    const db = new SqliteD1();
+    try {
+      db.migrate();
+      const owner = seedOwnerFlowTemplate(db);
+      run(db, "UPDATE flows SET current_template_version_id = ? WHERE id = ?", owner.templateId, owner.flowId);
+      const repo = new D1TemplateVersionRepository(db);
+      const original = (await repo.getById(owner.templateId))!;
+      const unpublished = await repo.create({ ...original, id: "snapshot", subjectTemplate: "One send" });
+      expect(unpublished.version).toBe(2);
+      expect(db.database.prepare("SELECT current_template_version_id FROM flows WHERE id = ?").get(owner.flowId)?.current_template_version_id).toBe(owner.templateId);
+      const saved = await repo.create({ ...original, id: "published", subjectTemplate: "Reusable" }, { ownerUserId: owner.userId, expectedVersionId: owner.templateId, name: "Renamed" });
+      expect(saved.version).toBe(3);
+      await expect(repo.create({ ...original, id: "stale" }, { ownerUserId: owner.userId, expectedVersionId: owner.templateId, name: "Stale rename" })).rejects.toBeInstanceOf(TemplatePublicationConflict);
+      expect(await repo.getById("stale")).toBeNull();
+      expect(db.database.prepare("SELECT name, current_template_version_id FROM flows WHERE id = ?").get(owner.flowId)).toMatchObject({ name: "Renamed", current_template_version_id: "published" });
+      expect((await repo.getById(owner.templateId))?.subjectTemplate).toBe("Subject");
+    } finally { db.close(); }
+  });
+  it("rolls back version creation on an invalid owner, archived flow, or rejected rename", async () => {
+    const { D1TemplateVersionRepository } = await import("./d1-template-versions");
+    const db = new SqliteD1();
+    try {
+      db.migrate();
+      const owner = seedOwnerFlowTemplate(db);
+      const repo = new D1TemplateVersionRepository(db);
+      const original = (await repo.getById(owner.templateId))!;
+      await expect(repo.create({ ...original, id: "other-owner" }, { ownerUserId: "wrong", expectedVersionId: null })).rejects.toThrow();
+      expect(await repo.getById("other-owner")).toBeNull();
+      db.database.exec("CREATE TRIGGER reject_template_rename BEFORE UPDATE OF name ON flows WHEN NEW.name = 'Rejected' BEGIN SELECT RAISE(ABORT, 'rejected name'); END");
+      await expect(repo.create({ ...original, id: "bad-name" }, { ownerUserId: owner.userId, expectedVersionId: null, name: "Rejected" })).rejects.toThrow();
+      expect(await repo.getById("bad-name")).toBeNull();
+      run(db, "UPDATE flows SET state = 'archived' WHERE id = ?", owner.flowId);
+      await expect(repo.create({ ...original, id: "archived" }, { ownerUserId: owner.userId, expectedVersionId: null })).rejects.toThrow();
+      expect(await repo.getById("archived")).toBeNull();
+    } finally { db.close(); }
+  });
+});
+
+it("paginates owner history through tied timestamps without duplicates when newer campaigns arrive", async () => {
+  const db = new SqliteD1();
+  try {
+    db.migrate();
+    const owner = seedOwnerFlowTemplate(db);
+    const other = seedOwnerFlowTemplate(db, "2");
+    const repo = new D1CampaignRepository(db);
+    for (let index = 0; index < 6; index += 1) {
+      const value = campaign(index === 5 ? other : owner, 1, `page-${index}`);
+      await repo.create(value, jobs(value.id, 1).map(job => ({ ...job, id: `page-job-${index}`, sendKey: `page-send-${index}` })));
+    }
+    const first = await repo.listByOwner(owner.userId, 2);
+    expect(first.map(c => c.id)).toEqual(["campaign-page-4", "campaign-page-3"]);
+    const newer = { ...campaign(owner, 1, "newer"), createdAt: "2026-09-06T00:00:00.000Z" };
+    await repo.create(newer, jobs(newer.id, 1).map(job => ({ ...job, id: "newer-job", sendKey: "newer-send" })));
+    const second = await repo.listByOwner(owner.userId, 2, first[1]);
+    const last = await repo.listByOwner(owner.userId, 2, second[1]);
+    expect([...first, ...second, ...last].map(c => c.id)).toEqual(["campaign-page-4", "campaign-page-3", "campaign-page-2", "campaign-page-1", "campaign-page-0"]);
+    expect(last[0].counts.pending).toBe(1);
+  } finally { db.close(); }
+});

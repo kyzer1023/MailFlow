@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import type { RecipientJobRecord } from "../../../domain/types";
 import type { MailFlowAppEnv } from "../context";
 import { integerEnv, repositories } from "../dependencies";
+import { historyCursor, parseHistoryCursor } from "../campaign-pagination";
 import {
   jobCsv,
   publicCampaign,
@@ -16,10 +17,16 @@ export function registerCampaignListRoute(app: Hono<MailFlowAppEnv>): void {
   app.get("/api/campaigns", async (context) => {
     const authenticated = await requireSession(context);
     if (authenticated instanceof Response) return authenticated;
-    const rawLimit = new URL(context.req.url).searchParams.get("limit");
+    const params = new URL(context.req.url).searchParams;
+    const rawLimit = params.get("limit");
     const limit = rawLimit ? integerEnv(rawLimit, 50, 1, 200) : 50;
-    const campaigns = await repositories(context).campaigns.listByOwner(authenticated.user.id, limit);
-    return context.json({ campaigns: campaigns.map(publicCampaign) });
+    let before;
+    try { before = parseHistoryCursor(params.get("before")); }
+    catch { return responseError(context, 400, "invalid_history_cursor", "Reload campaign history and try again."); }
+    const candidates = await repositories(context).campaigns.listByOwner(authenticated.user.id, limit + 1, before);
+    const campaigns = candidates.slice(0, limit);
+    return context.json({ campaigns: campaigns.map(publicCampaign),
+      nextCursor: candidates.length > limit ? historyCursor(campaigns[campaigns.length - 1]) : null });
   });
 }
 

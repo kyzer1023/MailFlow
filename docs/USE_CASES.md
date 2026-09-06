@@ -189,6 +189,7 @@ A member can cancel a queued, sending, or paused campaign after confirming that 
 Examples include:
 
 - Sign-in expired. Sign in again, then resume from the first unsent row.
+- Microsoft mail authorization is missing or revoked. Pause the campaign, reconnect the same account, then resume pending rows. Token acquisition happens before claiming or charging a recipient. A proven authorization rejection releases its reservation atomically; accepted and unknown rows remain unchanged. Temporary token-service failures retry from preparation.
 - USM has not approved this application's mail permission. No messages were sent.
 - Microsoft requested a temporary pause. Sending will continue at the displayed time.
 - The daily mailbox allowance is temporarily full. Sending will continue automatically at the displayed rolling-window release time.

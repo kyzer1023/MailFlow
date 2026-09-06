@@ -23,6 +23,7 @@ import { useDraftAttachments } from "./use-draft-attachments";
 import { useDraftValidation } from "./use-draft-validation";
 
 export const emptyDraft = (): DraftState => ({
+  publishedTemplateVersionId: null,
   name: "",
   subject: "",
   cc: "",
@@ -141,6 +142,7 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
       setDraft({
         ...emptyDraft(),
         name: flow.name,
+        publishedTemplateVersionId: templateVersion?.id ?? null,
         subject: templateVersion?.subjectTemplate || "",
         body: templateVersion?.bodyHtml || "",
         cc: cc.fixed,

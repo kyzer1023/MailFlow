@@ -345,7 +345,7 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
          WHERE id = ?5 AND status = 'sending' AND claim_token = ?6`,
       ), [category, message, input.providerRequestId ?? null, input.now, input.recipientJobId, input.claimToken]);
       attemptState = "unknown";
-    } else if (input.outcome === "retry") {
+    } else if (input.outcome === "retry" || input.outcome === "pause") {
       job = bind(this.db.prepare(
         `UPDATE recipient_jobs SET status = 'pending', claim_token = NULL, claimed_at = NULL,
            sending_at = NULL, next_attempt_at = ?1, last_error_category = ?2,
@@ -392,6 +392,12 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
           `UPDATE campaigns SET scheduler_next_attempt_at = ?1, scheduler_message = ?2, updated_at = ?3
            WHERE id = ?4 AND state = 'running'`,
         ), [nextCampaignAt, schedulerMessage, input.now, input.campaignId]),
+        ...(input.outcome === "pause" ? [bind(this.db.prepare(`UPDATE campaigns
+          SET state = 'paused', pause_reason = ?1, mail_issue_code = 'mail_authorization_required',
+            wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL,
+            scheduler_message = NULL, updated_at = ?2
+          WHERE id = ?3 AND owner_user_id = ?4 AND state IN ('queued', 'running') AND cancel_requested_at IS NULL`),
+        [message, input.now, input.campaignId, input.ownerUserId])] : []),
       ]);
       return true;
     } catch {

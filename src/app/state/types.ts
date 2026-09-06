@@ -1,6 +1,5 @@
 import type {
   CampaignCounts,
-  CampaignRecord,
   FlowRecord,
   TemplateVersionRecord,
   MailImportance,
@@ -14,12 +13,13 @@ import type {
   ParsedSpreadsheet,
   SpreadsheetTable,
 } from "../../client/types";
-import type { ApiConfig, ApiUser, CampaignResponse } from "../api";
+import type { ApiConfig, ApiUser, CampaignResponse, PublicCampaignRecord } from "../api";
 import type { sendCampaignTest } from "../api";
 
 export type AddressRuleMode = "fixed" | "column";
 
 export interface DraftState {
+  readonly publishedTemplateVersionId?: string | null;
   readonly name: string;
   readonly subject: string;
   readonly cc: string;
@@ -77,7 +77,7 @@ export interface CampaignViewModel {
 }
 
 export interface DashboardCampaignEntry {
-  readonly campaign: Omit<CampaignRecord, "idempotencyKey">;
+  readonly campaign: PublicCampaignRecord;
   readonly counts: CampaignCounts;
   readonly flowName: string;
 }
@@ -186,6 +186,7 @@ export interface DraftContextValue {
 export type DashboardStatus = "idle" | "loading" | "ready" | "error";
 
 export interface DashboardState {
+  readonly nextCampaignCursor?: string | null;
   readonly status: DashboardStatus;
   readonly flows: readonly FlowRecord[] | null;
   readonly campaigns: readonly DashboardCampaignEntry[] | null;

@@ -67,14 +67,16 @@ export interface FlowRepository {
 export interface TemplateVersionRepository {
   getById(id: string): Promise<TemplateVersionRecord | null>;
   listByFlow(flowId: string): Promise<TemplateVersionRecord[]>;
-  create(version: TemplateVersionRecord): Promise<void>;
+  create(version: Omit<TemplateVersionRecord, "version">, publication?: {
+    ownerUserId: string; expectedVersionId: string | null; name?: string;
+  }): Promise<TemplateVersionRecord>;
 }
 
 export interface CampaignRepository {
   getById(id: string): Promise<CampaignRecord | null>;
   getByIdForOwner(id: string, ownerUserId: string): Promise<CampaignRecord | null>;
   getByIdempotencyKey(ownerUserId: string, idempotencyKey: string): Promise<CampaignRecord | null>;
-  listByOwner(ownerUserId: string, limit?: number): Promise<(CampaignRecord & { counts: CampaignCounts })[]>;
+  listByOwner(ownerUserId: string, limit?: number, before?: { createdAt: string; id: string } | null): Promise<(CampaignRecord & { counts: CampaignCounts })[]>;
   /**
    * Creates and validates the campaign snapshot, recipient jobs, creation
    * audits, and optional owner-matching attachment association in one batch.
@@ -96,6 +98,7 @@ export interface CampaignRepository {
   resume(id: string, ownerUserId: string, now: string): Promise<boolean>;
   fail(id: string, now: string, reason: string, attachmentIssueCode?: CampaignAttachmentIssueCode | null): Promise<boolean>;
   pauseForAttachmentAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean>;
+  pauseForMailAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean>;
   markAttachmentRetry(id: string, nextAttemptAt: string, message: string, now: string): Promise<boolean>;
   clearAttachmentIssue(id: string, now: string): Promise<boolean>;
   completeIfExhausted(id: string, now: string): Promise<boolean>;
@@ -184,7 +187,7 @@ export interface CampaignAttemptCompletion {
   readonly now: string;
   readonly nextSendAt: string;
   readonly providerBackoffUntil?: string | null;
-  readonly outcome: "accepted" | "unknown" | "failed" | "retry";
+  readonly outcome: "accepted" | "unknown" | "failed" | "retry" | "pause";
   readonly retryAt?: string | null;
   readonly category?: string | null;
   readonly message?: string | null;

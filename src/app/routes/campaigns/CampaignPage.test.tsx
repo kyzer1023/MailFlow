@@ -89,6 +89,17 @@ function mount() {
 }
 
 describe("campaign outcome reporting", () => {
+  it("offers same-account Microsoft recovery without treating pending rows as failed", async () => {
+    mocks.campaign.state = "paused";
+    mocks.campaign.mailIssueCode = "mail_authorization_required";
+    mocks.counts = { ...mocks.counts, pending: 1, failed: 0 };
+    mount();
+    const reconnect = await screen.findByRole("link", { name: "Reconnect Microsoft" });
+    expect(reconnect).toHaveAttribute("href", "/auth/microsoft/start?returnTo=%2Fcampaigns%2Fsynthetic");
+    expect(screen.getByText(/Reconnect the same Microsoft account/)).toHaveTextContent("Accepted and unknown rows will not be sent again");
+    expect(screen.getByRole("button", { name: "Resume pending rows" })).toBeEnabled();
+    expect(screen.queryByText("Campaign-level failure")).not.toBeInTheDocument();
+  });
   it.each(["running", "completed"] as const)(
     "keeps Unknown separate from Failed when %s",
     async (state) => {

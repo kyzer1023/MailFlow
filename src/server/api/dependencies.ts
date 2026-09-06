@@ -17,6 +17,8 @@ import {
   type AttachmentService,
 } from "../attachments";
 import type { MailFlowContext } from "./context";
+import type { MailFlowBindings } from "./contracts";
+import { safeErrorKind } from "../diagnostics";
 
 export function textEnv(value: string | undefined, fallback = ""): string {
   return value?.trim() || fallback;
@@ -71,15 +73,19 @@ export interface MailFlowServices {
  * uses the same transport and resource-specific OAuth configuration.
  */
 export function configFor(context: MailFlowContext, redirectOrigin?: string): MailFlowServices {
-  const tenantId = textEnv(context.env.ENTRA_TENANT_ID);
-  const clientId = textEnv(context.env.ENTRA_CLIENT_ID);
-  const clientSecret = textEnv(context.env.ENTRA_CLIENT_SECRET);
-  const tokenSecret = textEnv(context.env.TOKEN_ENCRYPTION_KEY_B64);
-  const sessionSecret = textEnv(context.env.SESSION_SECRET);
+  return createMailFlowServices(context.env, redirectOrigin ?? applicationOrigin(context), new URL(context.req.url).protocol === "https:");
+}
+
+export function createMailFlowServices(bindings: MailFlowBindings, origin = textEnv(bindings.PUBLIC_ORIGIN), secureCookies = true): MailFlowServices {
+  const tenantId = textEnv(bindings.ENTRA_TENANT_ID);
+  const clientId = textEnv(bindings.ENTRA_CLIENT_ID);
+  const clientSecret = textEnv(bindings.ENTRA_CLIENT_SECRET);
+  const tokenSecret = textEnv(bindings.TOKEN_ENCRYPTION_KEY_B64);
+  const sessionSecret = textEnv(bindings.SESSION_SECRET);
   if (!tenantId || !clientId || !clientSecret || !tokenSecret || !sessionSecret) throw new Error("Microsoft sign-in is not configured on this Worker");
-  const origin = redirectOrigin ?? applicationOrigin(context);
+
   const redirectUri = new URL("/auth/microsoft/callback", origin).toString();
-  const mailTransport = resolveMailTransport(context.env.MAIL_TRANSPORT);
+  const mailTransport = resolveMailTransport(bindings.MAIL_TRANSPORT);
   const config = {
     tenantId,
     clientId,
@@ -89,7 +95,7 @@ export function configFor(context: MailFlowContext, redirectOrigin?: string): Ma
   };
   const graph = new GraphMailProvider({ requestTimeoutMs: 30_000 });
   const smtp = new ExchangeOnlineSmtpClient({ timeoutMs: 30_000 });
-  const stores = createD1AuthStores(context.env.DB);
+  const stores = createD1AuthStores(bindings.DB);
   const auth = new MicrosoftAuthService(config, mailTransport === "graph" ? graph : null, {
     userStore: stores.userStore,
     sessionStore: stores.sessionStore,
@@ -97,9 +103,9 @@ export function configFor(context: MailFlowContext, redirectOrigin?: string): Ma
     stateStore: stores.stateStore,
     stateSecret: sessionSecret,
     tokenEncryptionSecret: tokenSecret,
-    secureCookies: new URL(context.req.url).protocol === "https:",
+    secureCookies,
     sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
-    sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
+    sessionCookie: { secure: secureCookies, sameSite: "Lax", path: "/" },
   });
   const storageAuth = new MicrosoftAuthService({
     tenantId,
@@ -114,9 +120,9 @@ export function configFor(context: MailFlowContext, redirectOrigin?: string): Ma
     stateStore: stores.stateStore,
     stateSecret: sessionSecret,
     tokenEncryptionSecret: tokenSecret,
-    secureCookies: new URL(context.req.url).protocol === "https:",
+    secureCookies,
     sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
-    sessionCookie: { secure: new URL(context.req.url).protocol === "https:", sameSite: "Lax", path: "/" },
+    sessionCookie: { secure: secureCookies, sameSite: "Lax", path: "/" },
   });
   return { graph, smtp, auth, storageAuth, mailTransport };
 }
@@ -132,8 +138,7 @@ export function attachmentServiceFor(context: MailFlowContext, repo = repositori
         return (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken;
       } catch (error) {
         console.warn("OneDrive token refresh failed", {
-          name: error instanceof Error ? error.name : "unknown",
-          code: error && typeof error === "object" && "code" in error ? String(error.code) : undefined,
+          classification: safeErrorKind(error),
         });
         throw error;
       }

@@ -1,3 +1,4 @@
+import { mailPreparationFailure } from "../../microsoft/mail-authorization";
 import type { Hono } from "hono";
 import { AuthFlowError } from "../../auth/service";
 import {
@@ -172,6 +173,9 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     }
     const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
     try {
+      const { auth, graph, smtp, mailTransport } = configFor(context);
+      let attachments: readonly MailAttachment[] = [];
+      let accessToken = "";
       const controlled = await executeControlledTestSend({
         store: createD1PublicControlStore(context.env.DB),
         mailboxDelivery: repo.mailboxDelivery,
@@ -191,8 +195,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
         }),
         classifyFailure: testSendFailure,
         pacePerMinute: integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600),
-        send: async (sendKey) => {
-          let attachments: readonly MailAttachment[] = [];
+        prepare: async () => {
           if (attachmentSet) {
             const service = attachmentServiceFor(context, repo);
             if (!service) {
@@ -204,8 +207,9 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
             }
             attachments = await loadCampaignAttachments(repo, service, campaign);
           }
-          const { auth, graph, smtp, mailTransport } = configFor(context);
-          const tokens = await auth.refreshUserAccessToken(authenticated.user.id);
+          accessToken = (await auth.refreshUserAccessToken(authenticated.user.id)).accessToken;
+        },
+        send: async (sendKey) => {
           const inputValue = {
             subject: recipientJob.renderedSubject,
             bodyHtml: recipientJob.renderedBodyHtml,
@@ -214,12 +218,12 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
           };
           return mailTransport === "smtp"
             ? sendProviderTestToSelf(
-                delegatedSmtpMailProvider(smtp, tokens.accessToken, authenticated.user.mailboxAddress),
+                delegatedSmtpMailProvider(smtp, accessToken, authenticated.user.mailboxAddress),
                 authenticated.user.mailboxAddress,
                 inputValue,
                 sendKey,
               )
-            : sendTestToSelf(graph, tokens.accessToken, inputValue);
+            : sendTestToSelf(graph, accessToken, inputValue);
         },
       });
       return context.json(controlled);
@@ -282,6 +286,15 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     const campaign = await repo.campaigns.getByIdForOwner(routeParam(context, "id"), authenticated.user.id);
     if (!campaign) return responseError(context, 404, "campaign_not_found", "That campaign is not available.");
     if (campaign.state !== "paused") return responseError(context, 409, "campaign_changed", "Only a paused campaign can be resumed.");
+    if (campaign.mailIssueCode === "mail_authorization_required") {
+      try {
+        await configFor(context).auth.refreshUserAccessToken(authenticated.user.id);
+      } catch (error) {
+        const failure = mailPreparationFailure(error);
+        return responseError(context, failure.kind === "reconnect_required" ? 409 : 503,
+          failure.kind === "reconnect_required" ? "mail_reconnect_required" : "mail_authorization_unavailable", failure.message);
+      }
+    }
     const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
     if (attachmentSet) {
       if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp" || !(await smtpAuthorizedFor(context, authenticated.user.id))) {

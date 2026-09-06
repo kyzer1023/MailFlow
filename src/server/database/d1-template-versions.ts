@@ -1,6 +1,10 @@
 import type { TemplateVersionRecord } from "../../domain/types";
-import type { D1Database, TemplateVersionRepository } from "./contracts";
+import type { D1Database, D1PreparedStatement, TemplateVersionRepository } from "./contracts";
 import { bind, json, parseJson } from "./d1-helpers";
+
+export class TemplatePublicationConflict extends Error {
+  constructor() { super("This template changed in another session. Reload it or save as a new template."); }
+}
 
 interface TemplateVersionRow {
   id: string;
@@ -48,23 +52,42 @@ export class D1TemplateVersionRepository implements TemplateVersionRepository {
     return result.results.map(toTemplateVersion);
   }
 
-  async create(version: TemplateVersionRecord): Promise<void> {
-    await bind(
+  async create(version: Omit<TemplateVersionRecord, "version">, publication?: {
+    ownerUserId: string; expectedVersionId: string | null; name?: string;
+  }): Promise<TemplateVersionRecord> {
+    const insert = bind(
       this.db.prepare(
         `INSERT INTO template_versions
          (id, flow_id, version, subject_template, body_html, recipient_configuration_json, placeholder_manifest_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+         SELECT ?1, ?2, COALESCE(MAX(version), 0) + 1, ?3, ?4, ?5, ?6, ?7
+         FROM template_versions WHERE flow_id = ?2`,
       ),
       [
         version.id,
         version.flowId,
-        version.version,
         version.subjectTemplate,
         version.bodyHtml,
         json(version.recipientConfiguration),
         json(version.placeholderManifest),
         version.createdAt,
       ],
-    ).run();
+    );
+    const statements: D1PreparedStatement[] = [insert];
+    if (publication) {
+      statements.push(bind(this.db.prepare(`UPDATE flows
+        SET current_template_version_id = ?1, updated_at = ?2, name = COALESCE(?3, name)
+        WHERE id = ?4 AND owner_user_id = ?5 AND state = 'active' AND current_template_version_id IS ?6`),
+      [version.id, version.createdAt, publication.name ?? null, version.flowId, publication.ownerUserId, publication.expectedVersionId]),
+      this.db.prepare("INSERT INTO mailbox_coordination_guard(singleton) SELECT 1 WHERE changes() != 1"));
+    }
+    try {
+      await this.db.batch(statements);
+    } catch (error) {
+      if (publication && error instanceof Error && /mailbox_coordination_guard/iu.test(error.message)) throw new TemplatePublicationConflict();
+      throw error;
+    }
+    const saved = await this.getById(version.id);
+    if (!saved) throw new Error("Template persistence could not be confirmed");
+    return saved;
   }
 }

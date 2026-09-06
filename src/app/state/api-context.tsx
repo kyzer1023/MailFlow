@@ -54,7 +54,7 @@ export function AppDataProvider({ children }: { readonly children: ReactNode }) 
         campaign, counts, flowName: flowNames.get(campaign.flowId) || "",
       }));
       if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
-      setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, error: "" });
+      setDashboard({ status: "ready", flows: flowsResponse.flows, campaigns, nextCampaignCursor: campaignsResponse.nextCursor ?? null, error: "" });
     } catch (error) {
       if (requestId !== dashboardRequestRef.current || activeUserIdRef.current !== userId) return;
       setDashboard({ status: "error", flows: null, campaigns: null, error: error instanceof Error ? error.message : "The dashboard could not be loaded." });

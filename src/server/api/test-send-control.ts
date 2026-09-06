@@ -99,6 +99,7 @@ export async function executeControlledTestSend(options: {
   readonly store: PublicControlStore;
   readonly mailboxDelivery: MailboxDeliveryRepository;
   readonly input: ControlledTestSendInput;
+  readonly prepare?: () => Promise<void>;
   readonly send: (sendKey: string) => Promise<StoredTestSendResult>;
   readonly audit: TestSendAudit;
   readonly classifyFailure: TestSendFailureClassifier;
@@ -163,6 +164,17 @@ export async function executeControlledTestSend(options: {
   } catch (error) {
     const classified = options.classifyFailure(error);
     await options.store.removePendingTestSend(testSendId);
+    throw new ControlledTestSendError(classified.failure);
+  }
+
+  // Storage and credential failures here cannot consume a provider attempt.
+  try {
+    await options.prepare?.();
+  } catch (error) {
+    const classified = options.classifyFailure(error);
+    await options.store.removePendingTestSend(testSendId);
+    await safeAudit(options.audit, { eventType: "test_send.failed", campaignId: options.input.campaignId,
+      actorUserId: options.input.ownerUserId, metadata: { code: classified.failure.code, safeToRetry: true } });
     throw new ControlledTestSendError(classified.failure);
   }
 

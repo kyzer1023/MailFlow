@@ -747,3 +747,116 @@ describe("FIFO campaign turns and cancellation", () => {
     } finally { db.close(); }
   });
 });
+
+describe("mail authorization recovery", () => {
+  it("starts mailbox reservations after slow preparation finishes", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = queueFixture(db, "slow-preparation");
+      const h = fifoHarness(db);
+      let clock = new Date(h.now());
+      h.dependencies.now = () => clock;
+      h.dependencies.attachmentLoader = async () => { clock = new Date(clock.getTime() + 6 * 60_000); return []; };
+      await h.wake(ids.userId);
+      expect(await h.next()).toMatchObject({ kind: "completed" });
+      expect(h.send).toHaveBeenCalledOnce();
+      const attempt = db.database.prepare("SELECT reserved_at, budget_expires_at, state FROM delivery_attempts WHERE campaign_id = ?").get(ids.campaignId)!;
+      expect(attempt.reserved_at).toBe(clock.toISOString());
+      expect(attempt.budget_expires_at).toBe(new Date(clock.getTime() + MAILBOX_BUDGET_WINDOW_MS).toISOString());
+      expect(attempt.state).toBe("accepted");
+    } finally { db.close(); }
+  });
+  it("reports aggregate recovery health without exporting recipient or coordination data", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = queueFixture(db, "health");
+      const campaigns = new D1CampaignRepository(db);
+      await campaigns.pauseForMailAuthorization(ids.campaignId, ids.userId, "2026-09-06T00:00:00.000Z", "Reconnect Microsoft");
+      const health = db.database.prepare(readFileSync(resolve("scripts/operations-health.sql"), "utf8")).get()!;
+      expect(health).toMatchObject({ active_mailboxes: 0, runnable_campaigns: 0, mail_reconnect_pauses: 1, eligible_cleanup_sets: 0 });
+      expect(Object.values(health).every(value => typeof value === "number")).toBe(true);
+    } finally { db.close(); }
+  });
+  it.each(["missing", "revoked"])("pauses a %s grant before any claim and hands off the mailbox", async kind => {
+    const { delegatedSmtpMailProvider } = await import("../microsoft/smtp-adapter");
+    const { ExchangeOnlineSmtpClient } = await import("../microsoft/smtp");
+    const { AuthFlowError } = await import("../auth/service");
+    const { OAuthProviderError } = await import("../microsoft/oauth");
+    const db = migratedDatabase();
+    try {
+      const first = queueFixture(db, "auth-first", undefined, 3);
+      const second = queueFixture(db, "auth-second", { userId: first.userId, mailboxAddress: "member-auth-first@example.test" });
+      run(db, "UPDATE recipient_jobs SET status = 'accepted' WHERE id = ?", `${first.jobId}-2`);
+      run(db, "UPDATE recipient_jobs SET status = 'unknown' WHERE id = ?", `${first.jobId}-3`);
+      const h = fifoHarness(db);
+      const smtp = new ExchangeOnlineSmtpClient();
+      const submit = vi.spyOn(smtp, "send");
+      h.dependencies.mailProvider = delegatedSmtpMailProvider(smtp, async () => {
+        throw kind === "missing" ? new AuthFlowError("token", "Missing grant") : new OAuthProviderError("invalid_grant", "Revoked grant");
+      }, "member-auth-first@example.test");
+      await h.wake(first.userId);
+      expect(await h.next()).toMatchObject({ kind: "paused", reason: "mail_authorization" });
+      expect(submit).not.toHaveBeenCalled();
+      expect((await h.campaigns.getById(first.campaignId))).toMatchObject({ state: "paused", mailIssueCode: "mail_authorization_required" });
+      expect(await h.dependencies.recipientJobs.getById(first.jobId)).toMatchObject({ status: "pending", attemptCount: 0 });
+      expect(db.database.prepare("SELECT COUNT(*) AS n FROM delivery_attempts").get()?.n).toBe(0);
+      expect(h.messages.map(entry => entry.message.campaignId)).toEqual([second.campaignId]);
+      h.dependencies.mailProvider = { send: h.send };
+      await h.next();
+      expect(await h.campaigns.resume(first.campaignId, first.userId, h.now())).toBe(true);
+      await h.wake(first.userId); await h.next();
+      expect(h.send).toHaveBeenCalledTimes(2);
+      expect(await h.dependencies.recipientJobs.getById(`${first.jobId}-2`)).toMatchObject({ status: "accepted" });
+      expect(await h.dependencies.recipientJobs.getById(`${first.jobId}-3`)).toMatchObject({ status: "unknown" });
+      expect((await h.campaigns.getById(first.campaignId))?.mailIssueCode).toBeNull();
+    } finally { vi.restoreAllMocks(); db.close(); }
+  });
+
+  it("retries a temporary token failure without claiming, budget charges or unknown evidence", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = queueFixture(db, "token-outage");
+      const h = fifoHarness(db);
+      h.dependencies.mailProvider = { prepare: async () => { throw new Error("private token store failure"); }, send: h.send };
+      await h.wake(ids.userId);
+      expect(await h.next()).toMatchObject({ kind: "waiting", reason: "authorization_retry", delaySeconds: 30 });
+      expect(h.send).not.toHaveBeenCalled();
+      expect(await h.dependencies.recipientJobs.getById(ids.jobId)).toMatchObject({ status: "pending", attemptCount: 0 });
+      expect(db.database.prepare("SELECT COUNT(*) AS n FROM delivery_attempts").get()?.n).toBe(0);
+      expect(h.messages).toHaveLength(1);
+    } finally { db.close(); }
+  });
+
+  it.each([false, true])("settles provider authorization rejection atomically, cancellation=%s", async cancel => {
+    const db = migratedDatabase();
+    try {
+      const ids = queueFixture(db, "smtp-denied", undefined, 2);
+      const h = fifoHarness(db);
+      h.send.mockImplementationOnce(async () => {
+        if (cancel) await h.campaigns.cancel(ids.campaignId, ids.userId, h.now());
+        return { kind: "reconnect_required", safeToRetry: true, category: "authentication", message: "Reconnect Microsoft" };
+      });
+      await h.wake(ids.userId); await h.next();
+      expect((await h.campaigns.getById(ids.campaignId))?.state).toBe(cancel ? "cancelled" : "paused");
+      expect(await h.dependencies.recipientJobs.getById(ids.jobId)).toMatchObject({ status: "pending", attemptCount: 1 });
+      expect(db.database.prepare("SELECT state FROM delivery_attempts").get()).toMatchObject({ state: "not_submitted" });
+      expect(db.database.prepare("SELECT lease_token FROM mailbox_send_state").get()).toMatchObject({ lease_token: null });
+      expect(h.messages).toHaveLength(0);
+    } finally { db.close(); }
+  });
+
+  it("rolls back a rejected-authorization settlement if persisting the pause fails", async () => {
+    const db = migratedDatabase();
+    try {
+      const ids = seedCampaign(db, "pause-rollback");
+      const repo = new D1MailboxDeliveryRepository(db);
+      await repo.acquire(leaseRequest(ids, "pause-rollback"));
+      await repo.markCampaignProviderBound("attempt-pause-rollback", ids.jobId, "claim-pause-rollback", "2026-09-05T00:00:00.000Z", "2026-09-05T00:05:00.000Z");
+      db.database.exec("CREATE TRIGGER fail_mail_pause BEFORE UPDATE OF mail_issue_code ON campaigns BEGIN SELECT RAISE(ABORT, 'pause unavailable'); END");
+      expect(await repo.completeCampaignAttempt({ attemptToken: "attempt-pause-rollback", ownerUserId: ids.userId, campaignId: ids.campaignId,
+        recipientJobId: ids.jobId, claimToken: "claim-pause-rollback", now: "2026-09-05T00:00:01.000Z", nextSendAt: "2026-09-05T00:00:06.000Z", outcome: "pause" })).toBe(false);
+      expect(db.database.prepare("SELECT status FROM recipient_jobs WHERE id = ?").get(ids.jobId)?.status).toBe("sending");
+      expect(db.database.prepare("SELECT state FROM delivery_attempts").get()?.state).toBe("provider_bound");
+    } finally { db.close(); }
+  });
+});

@@ -25,6 +25,7 @@ interface CampaignRow {
   pace_per_minute: number;
   state: CampaignRecord["state"];
   pause_reason: string | null;
+  mail_issue_code: CampaignRecord["mailIssueCode"];
   idempotency_key: string;
   request_fingerprint: string | null;
   created_at: string;
@@ -57,6 +58,7 @@ function toCampaign(row: CampaignRow): CampaignRecord {
     cancelRequestedAt: row.cancel_requested_at ?? null,
     cancelledAt: row.cancelled_at ?? null,
     pauseReason: row.pause_reason ?? null,
+    mailIssueCode: row.mail_issue_code ?? null,
     idempotencyKey: row.idempotency_key,
     requestFingerprint: row.request_fingerprint ?? null,
     createdAt: row.created_at,
@@ -79,6 +81,15 @@ export class D1CampaignRepository implements CampaignRepository {
   // not exactly one. A failed conditional update still reports zero.
   constructor(private readonly db: D1Database) {}
 
+  async pauseForMailAuthorization(id: string, ownerUserId: string, now: string, reason: string): Promise<boolean> {
+    return changes(await bind(this.db.prepare(`UPDATE campaigns
+      SET state = 'paused', pause_reason = ?1, mail_issue_code = 'mail_authorization_required',
+        wake_token = NULL, wake_due_at = NULL, scheduler_next_attempt_at = NULL,
+        scheduler_message = NULL, updated_at = ?2
+      WHERE id = ?3 AND owner_user_id = ?4 AND state IN ('queued', 'running') AND cancel_requested_at IS NULL`),
+    [reason, now, id, ownerUserId]).run()) > 0;
+  }
+
   async getById(id: string): Promise<CampaignRecord | null> {
     const row = await bind(this.db.prepare("SELECT * FROM campaigns WHERE id = ?1"), [id]).first<CampaignRow>();
     return row ? toCampaign(row) : null;
@@ -97,8 +108,8 @@ export class D1CampaignRepository implements CampaignRepository {
     return row ? toCampaign(row) : null;
   }
 
-  async listByOwner(ownerUserId: string, limit = 50): Promise<(CampaignRecord & { counts: CampaignCounts })[]> {
-    const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  async listByOwner(ownerUserId: string, limit = 50, before?: { createdAt: string; id: string } | null): Promise<(CampaignRecord & { counts: CampaignCounts })[]> {
+    const safeLimit = Math.max(1, Math.min(201, Math.floor(limit)));
     const result = await bind(
       this.db.prepare(`SELECT campaigns.*, (
         SELECT json_group_object(status, total) FROM (
@@ -107,8 +118,10 @@ export class D1CampaignRepository implements CampaignRepository {
         )
       ) AS counts_json,
       (SELECT COUNT(*) FROM recipient_jobs WHERE campaign_id = campaigns.id AND delivery_verified_at IS NOT NULL) AS delivery_verified_count
-      FROM campaigns WHERE owner_user_id = ?1 ORDER BY created_at DESC LIMIT ?2`),
-      [ownerUserId, safeLimit],
+      FROM campaigns WHERE owner_user_id = ?1
+        AND (?3 IS NULL OR created_at < ?3 OR (created_at = ?3 AND id < ?4))
+      ORDER BY created_at DESC, id DESC LIMIT ?2`),
+      [ownerUserId, safeLimit, before?.createdAt ?? null, before?.id ?? null],
     ).all<CampaignRow & { counts_json: string }>();
     return result.results.map((row) => ({
       ...toCampaign(row),
@@ -299,7 +312,7 @@ export class D1CampaignRepository implements CampaignRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE campaigns SET state = 'queued', pause_reason = NULL,
+          `UPDATE campaigns SET state = 'queued', pause_reason = NULL, mail_issue_code = NULL,
              queued_at = ?1, wake_token = NULL, wake_due_at = NULL, scheduler_message = NULL, scheduler_next_attempt_at = NULL,
              attachment_issue_code = NULL, attachment_retry_count = 0,
              updated_at = ?1

@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import type { FlowRecord, TemplateVersionRecord } from "../../../domain/types";
 import type { MailFlowAppEnv, MailFlowContext } from "../context";
 import { repositories } from "../dependencies";
+import { TemplatePublicationConflict } from "../../database/d1-template-versions";
 import {
   createTemplateVersion,
   id,
@@ -108,7 +109,12 @@ export function registerFlowRoutes(app: Hono<MailFlowAppEnv>): void {
         recipientConfiguration: versionConfigFromInput(input.recipientConfiguration),
       });
       return context.json({ version }, 201);
-    } catch {
+    } catch (error) {
+      if (error instanceof TemplatePublicationConflict) return responseError(context, 409, "template_changed", error.message);
+      if (input.name !== undefined) {
+        const sameName = await repo.flows.getByNameForOwner(authenticated.user.id, input.name);
+        if (sameName && sameName.id !== flow.id) return responseError(context, 409, "flow_name_conflict", "Choose a different template name. Template names must be unique.");
+      }
       const message = "The template could not be saved. Try again shortly.";
       return responseError(context, 422, "invalid_template", message);
     }

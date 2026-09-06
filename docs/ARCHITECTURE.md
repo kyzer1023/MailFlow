@@ -38,6 +38,12 @@ Cloudflare Worker
 
 ## Module boundaries
 
+### 2026-09-07 foundation completion
+
+The approved implementation keeps the existing immutable prepared-send lifecycle, explicit template publication, FIFO mailbox turns, cancellation and manual delivery evidence. Mail adapters expose an optional pre-submission preparation step. Token preparation completes before recipient claims and before test-send lease acquisition. A reconnect-required result pauses unsent campaign work; a rejection during SMTP/Graph authorization returns a claimed row to pending and releases its attempt reservation in the same transaction as the pause. It never changes historical accepted or unknown evidence. `mail_issue_code` records this recovery separately from attachment recovery. Resume verifies current mail authorization before rejoining the mailbox queue.
+
+Reusable template publication inserts a version and conditionally advances only the current-version pointer in one D1 transaction. The browser supplies its expected published version so stale editors receive a conflict rather than overwriting another publication. Unpublished campaign snapshots allocate versions without advancing that pointer. Campaign history uses an owner-scoped `(created_at, id)` cursor, avoiding offset drift when newer campaigns arrive. HTTP and background handlers construct resource services from bindings and origin without synthetic HTTP contexts.
+
 - `client`: routing, view models, browser-side workbook parsing, attachment selection, sanitization, preview, and user interaction.
 - `api`: HTTP routes, input validation, session checks, and orchestration.
 - `domain`: pure campaign states, validation rules, template rendering, pace calculations, and contracts.

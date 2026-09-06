@@ -35,8 +35,11 @@ vi.mock("./dependencies", async (original) => ({
         memory.versions.find((version) => version.id === id) || null,
       listByFlow: async () =>
         [...memory.versions].sort((a, b) => b.version - a.version),
-      create: async (version: TemplateVersionRecord) => {
+      create: async (input: Omit<TemplateVersionRecord, "version">, publication?: { ownerUserId: string; expectedVersionId: string | null }) => {
+        const version = { ...input, version: memory.versions.length + 1 };
         memory.versions.push(version);
+        if (publication && memory.flow) { memory.flow.currentTemplateVersionId = version.id; memory.updates += 1; }
+        return version;
       },
     },
     campaigns: {

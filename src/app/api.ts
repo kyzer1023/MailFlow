@@ -1,7 +1,8 @@
 import { formatSchedulerNotice } from "./lib/format";
+import type { PublicCampaignRecord } from "../domain/public-campaign";
+export type { PublicCampaignRecord } from "../domain/public-campaign";
 import type {
   CampaignCounts,
-  CampaignRecord,
   FlowRecord,
   RecipientConfiguration,
   RecipientJobRecord,
@@ -43,10 +44,6 @@ export interface FlowResponse {
   readonly templateVersion: TemplateVersionRecord | null;
 }
 
-export type PublicCampaignRecord = Omit<
-  CampaignRecord,
-  "idempotencyKey" | "wakeToken" | "wakeDueAt"
->;
 
 export interface CampaignResponse {
   readonly campaign: PublicCampaignRecord;
@@ -193,6 +190,8 @@ export function createFlow(
 export function createTemplateVersion(
   flowId: string,
   payload: {
+    readonly expectedTemplateVersionId?: string | null;
+    readonly name?: string;
     readonly subjectTemplate: string;
     readonly bodyHtml: string;
     readonly placeholderManifest?: readonly string[];
@@ -239,12 +238,11 @@ export function updateFlow(
   );
 }
 
-export function getCampaigns(): Promise<{
+export function getCampaigns(before?: string): Promise<{
   campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[];
+  nextCursor?: string | null;
 }> {
-  return apiRequest<{
-    campaigns: readonly (PublicCampaignRecord & { counts: CampaignCounts })[];
-  }>("/api/campaigns");
+  return apiRequest(before ? `/api/campaigns?before=${encodeURIComponent(before)}` : "/api/campaigns");
 }
 
 export function createCampaign(

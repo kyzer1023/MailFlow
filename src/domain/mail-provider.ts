@@ -55,7 +55,15 @@ export interface MailSendUnknown {
   providerRequestId?: string | null;
 }
 
-export type MailSendResult = (MailSendAccepted | MailSendRetryable | MailSendFailed | MailSendUnknown) & {
+export interface MailSendReconnect {
+  kind: "reconnect_required";
+  safeToRetry: true;
+  category: "authentication" | "permission";
+  message: string;
+  providerRequestId?: string | null;
+}
+
+export type MailSendResult = (MailSendAccepted | MailSendRetryable | MailSendFailed | MailSendUnknown | MailSendReconnect) & {
   /** Generated diagnostic correlation only; never provider acceptance evidence. */
   diagnosticId?: string;
 };
@@ -66,5 +74,7 @@ export type MailSendResult = (MailSendAccepted | MailSendRetryable | MailSendFai
  * The queue must never infer a retry from a thrown error.
  */
 export interface MailProvider {
+  /** Only credential preparation; must never submit mail. Null means ready. */
+  prepare?(): Promise<MailSendRetryable | MailSendReconnect | null>;
   send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult>;
 }

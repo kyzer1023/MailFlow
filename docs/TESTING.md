@@ -142,3 +142,13 @@ For staging, verify separately:
 - Migration `0009_attachment_failure_recovery.sql` is applied before deploying code that reads attachment issue or retry columns.
 - The deployed Worker version corresponds to the recorded exact candidate commit.
 
+
+## Architecture follow-up regression gate (2026-09-07)
+
+- Missing/revoked SMTP and Graph tokens pause before a row claim or mailbox charge. Temporary token failures retry preparation; a proven provider authorization rejection atomically returns the row to pending, releases its reservation, and pauses. Cancellation races and failed pause persistence preserve the original evidence through rollback.
+- Same-account resume validates the recovered mail grant before the conditional transition. Accepted and unknown rows stay terminal. Self-test preparation failures retain same-key retry without a provider attempt.
+- Competing template publications create one successful current version and one stale-edit conflict in actual local D1. Name conflicts, archived/foreign-owner publication, and forced transaction failure must not partially publish a name or version. One-off preparation remains unpublished.
+- History cursors preserve deterministic `(created_at, id)` order across tied timestamps and new inserts, stay owner-scoped, reject malformed input, and expose only allowlisted campaign fields. Older-page failure preserves loaded rows; retry retains the cursor and obsolete responses cannot append to a refreshed first page.
+- Browser verification covers reconnect/pending-only recovery, older-history retry, and stale-template conflict at 1440 x 900, 1024 x 768, and 390 x 844 where applicable. The reconnect button wraps below its explanatory text on phones.
+- Run `npm run check:staging` for TypeScript, production build, initial bundle budget, unit/integration tests, production packaging dry run, isolated staging build/configuration and packaging dry run. Local D1 test configurations have no env-file or remote bindings and do not send mail.
+- Consult the capacity/retention/restore section in `OPERATIONS.md` before reporting scale or disaster-recovery readiness. An isolated hosted restore and concurrent-mailbox workload measurement remain operational exercises, not claims established by unit tests.

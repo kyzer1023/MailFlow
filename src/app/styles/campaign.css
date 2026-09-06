@@ -239,6 +239,15 @@
   }
 }
 @media (max-width: 680px) {
+  .campaign-reconnect {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+  .campaign-reconnect .button {
+    grid-column: 2;
+    justify-self: start;
+  }
   .campaign-header .header-actions {
     position: sticky;
     top: 6px;

@@ -53,6 +53,7 @@ export function applyTemplate(
   const result = {
     ...current,
     name: flow.name,
+    publishedTemplateVersionId: version.id,
     subject: version.subjectTemplate,
     body: version.bodyHtml,
     importance: saved.importance || "normal",

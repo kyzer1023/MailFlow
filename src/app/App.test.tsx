@@ -338,8 +338,8 @@ describe("authenticated information architecture", () => {
     fireEvent.change(nameInput, { target: { value: "Renamed flow" } });
     fireEvent.click(screen.getByRole("button", { name: "Update template" }));
 
-    await waitFor(() => expect(mockedUpdateFlow).toHaveBeenCalledWith("flow-rename", { name: "Renamed flow" }, "test-csrf-token"));
-    expect(mockedCreateTemplateVersion).toHaveBeenCalled();
+    await waitFor(() => expect(mockedCreateTemplateVersion).toHaveBeenCalledWith("flow-rename", expect.objectContaining({ name: "Renamed flow", expectedTemplateVersionId: "template-original" }), "test-csrf-token"));
+    expect(mockedUpdateFlow).not.toHaveBeenCalled();
     expect(await screen.findByRole("status")).toHaveTextContent("Renamed flow");
     expect(screen.getByRole("button", { name: "Template saved" })).toBeEnabled();
     expect(screen.queryByLabelText("Messages per minute")).not.toBeInTheDocument();
@@ -383,7 +383,7 @@ describe("authenticated information architecture", () => {
       },
     });
     mockedGetFlows.mockResolvedValue({ flows: [originalFlow] });
-    mockedUpdateFlow.mockRejectedValue(new ApiRequestError(409, { error: { code: "flow_name_conflict", message: "Choose a different flow name. Flow names must be unique." } }));
+    mockedCreateTemplateVersion.mockRejectedValue(new ApiRequestError(409, { error: { code: "flow_name_conflict", message: "Choose a different flow name. Flow names must be unique." } }));
 
     render(<App />);
 
@@ -395,7 +395,7 @@ describe("authenticated information architecture", () => {
 
     expect(await screen.findByText("Choose a different flow name. Flow names must be unique.")).toBeInTheDocument();
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
-    expect(mockedCreateTemplateVersion).not.toHaveBeenCalled();
+    expect(mockedUpdateFlow).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Template saved" })).not.toBeInTheDocument();
     expect(screen.queryByText("Changes were not fully saved.")).not.toBeInTheDocument();
   });

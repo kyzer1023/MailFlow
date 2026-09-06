@@ -1,6 +1,7 @@
 import { laterIso } from "../../domain/mailbox-scheduler";
 import { safeErrorKind } from "../diagnostics";
 import { validateRecipientRows } from "../../domain";
+import { PUBLIC_CAMPAIGN_FIELDS, type PublicCampaignRecord } from "../../domain/public-campaign";
 import type {
   AuditEventType,
   FlowRecord,
@@ -67,19 +68,10 @@ export function publicFlow(flow: FlowRecord): Record<string, unknown> {
   return { ...flow };
 }
 
-export function publicCampaign(campaign: import("../../domain/types").CampaignRecord): Record<string, unknown> {
-  const {
-    idempotencyKey: _idempotencyKey,
-    requestFingerprint: _requestFingerprint,
-    wakeToken: _wakeToken,
-    wakeDueAt: _wakeDueAt,
-    ...safe
-  } = campaign;
-  void _idempotencyKey;
-  void _requestFingerprint;
-  void _wakeToken;
-  void _wakeDueAt;
-  return safe;
+export function publicCampaign(campaign: import("../../domain/types").CampaignRecord & { counts?: import("../../domain/types").CampaignCounts }): PublicCampaignRecord & { counts?: import("../../domain/types").CampaignCounts } {
+  const safe = Object.fromEntries(PUBLIC_CAMPAIGN_FIELDS.filter(key => Object.hasOwn(campaign, key))
+    .map(key => [key, campaign[key]])) as PublicCampaignRecord;
+  return campaign.counts ? { ...safe, counts: campaign.counts } : safe;
 }
 
 export function publicJob(job: RecipientJobRecord): Record<string, unknown> {
@@ -311,28 +303,25 @@ export function versionConfigFromInput(input: RecipientConfigurationInput): Reci
 export async function createTemplateVersion(
   repo: Repositories,
   flow: FlowRecord,
-  input: { subjectTemplate: string; bodyHtml: string; placeholderManifest?: readonly string[]; recipientConfiguration: TemplateVersionRecord["recipientConfiguration"] },
+  input: { subjectTemplate: string; bodyHtml: string; placeholderManifest?: readonly string[]; recipientConfiguration: TemplateVersionRecord["recipientConfiguration"]; expectedTemplateVersionId?: string | null; name?: string },
   publish = true,
 ): Promise<TemplateVersionRecord> {
   const subject = validateTemplateSubject(input.subjectTemplate);
   if (!subject.ok) throw new Error(subject.message);
   const body = validateTemplateHtml(input.bodyHtml);
   if (!body.ok) throw new Error(body.message);
-  const versions = await repo.templateVersions.listByFlow(flow.id);
-  const version: TemplateVersionRecord = {
+  const version: Omit<TemplateVersionRecord, "version"> = {
     id: id("template"),
     flowId: flow.id,
-    version: (versions[0]?.version ?? 0) + 1,
     subjectTemplate: subject.subject,
     bodyHtml: body.html,
     recipientConfiguration: input.recipientConfiguration,
     placeholderManifest: templatePlaceholders(subject.subject, body.html),
     createdAt: nowIso(),
   };
-  await repo.templateVersions.create(version);
-  const updatedFlow: FlowRecord = { ...flow, currentTemplateVersionId: version.id, updatedAt: version.createdAt };
-  if (publish) await repo.flows.update(updatedFlow);
-  return version;
+  return repo.templateVersions.create(version, publish ? { ownerUserId: flow.ownerUserId,
+    expectedVersionId: input.expectedTemplateVersionId === undefined ? flow.currentTemplateVersionId : input.expectedTemplateVersionId,
+    name: input.name } : undefined);
 }
 
 function csvValue(value: string): string {

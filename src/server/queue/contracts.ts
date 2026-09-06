@@ -45,8 +45,8 @@ export interface CampaignTickDependencies {
 
 export type TickResult =
   | { kind: "ignored"; reason: "missing_campaign" | "paused" | "terminal" | "not_runnable" | "claim_lost" | "send_claim_lost" | "stale_wake" }
-  | { kind: "waiting"; campaignId: string; jobId: string | null; reason: MailboxUnavailableReason | "not_due" | "attachment_retry" | "attachments_temporarily_unavailable"; nextAttemptAt: string; delaySeconds: number }
-  | { kind: "paused"; campaignId: string; reason: "attachment_authorization" }
+  | { kind: "waiting"; campaignId: string; jobId: string | null; reason: MailboxUnavailableReason | "not_due" | "authorization_retry" | "attachment_retry" | "attachments_temporarily_unavailable"; nextAttemptAt: string; delaySeconds: number }
+  | { kind: "paused"; campaignId: string; reason: "attachment_authorization" | "mail_authorization" }
   | { kind: "completed"; campaignId: string }
   | { kind: "failed"; campaignId: string; reason: "attachments_unavailable" }
   | { kind: "scheduled"; campaignId: string; jobId: string; delaySeconds: number; outcome: "accepted" | "failed" | "retry_scheduled" | "unknown" }

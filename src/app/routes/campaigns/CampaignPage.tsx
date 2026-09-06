@@ -125,6 +125,7 @@ export function CampaignPage() {
   const cancelled = campaignState?.state === "cancelled" && !finishedAfterCancel;
   const cancellation = cancelling || cancelled;
   const attachmentAuthorizationPaused = paused && campaignState?.attachmentIssueCode === "attachment_authorization_required";
+  const mailAuthorizationPaused = paused && campaignState?.mailIssueCode === "mail_authorization_required";
   const activeCounts = counts || { pending: 0, claimed: 0, sending: 0, accepted: 0, skipped: 0, failed: 0, unknown: 0 };
   const total = campaignState?.totalRecipients || 0;
   const processed = activeCounts.accepted + activeCounts.failed + activeCounts.skipped + activeCounts.unknown;
@@ -227,8 +228,8 @@ export function CampaignPage() {
         <header className="page-header campaign-header">
           <div>
             <span className="section-kicker">CAMPAIGN</span>
-            <h1>{cancellation ? cancelling ? "Stopping this campaign." : "This campaign was cancelled." : failedCampaign ? "This campaign stopped safely." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
-            <p>{cancellation ? "Remaining rows will not be submitted. Mail Flow cannot withdraw mail already submitted to Microsoft." : failedCampaign ? "No additional recipient will be sent from this campaign." : attachmentAuthorizationPaused ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Processing is finished. Acceptance by Microsoft does not confirm inbox delivery." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
+            <h1>{cancellation ? cancelling ? "Stopping this campaign." : "This campaign was cancelled." : failedCampaign ? "This campaign stopped safely." : mailAuthorizationPaused ? "Reconnect Microsoft to continue." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
+            <p>{cancellation ? "Remaining rows will not be submitted. Mail Flow cannot withdraw mail already submitted to Microsoft." : failedCampaign ? "No additional recipient will be sent from this campaign." : (attachmentAuthorizationPaused || mailAuthorizationPaused) ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Processing is finished. Acceptance by Microsoft does not confirm inbox delivery." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
           </div>
           <div className="header-actions">
             {!failedCampaign && !completedCampaign && !cancellation && <button
@@ -265,6 +266,7 @@ export function CampaignPage() {
         {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
         {activeCounts.unknown > 0 && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /><span><strong>{unverifiedCount > 0 ? `${unverifiedCount} unknown ${unverifiedCount === 1 ? "outcome needs" : "outcomes need"} receipt verification.` : "Receipt has been manually verified for every unknown outcome."}</strong>{unverifiedCount > 0 && "Check receipt before considering any resend. Microsoft may already have submitted these messages. "}{verifiedCount > 0 && `${verifiedCount} manually verified; original provider outcomes remain Unknown.`}</span></div>}
         {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
+        {mailAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>Microsoft needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect Microsoft</a></div>}
         {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
         {(campaignState?.state === "queued" || cancellation) && <div className="notice" role="status"><Clock /><span>{activity?.detail}</span></div>}
         {finishedAfterCancel && <div className="notice" role="status"><Clock /><span>{ineffectiveCancellationNote}</span></div>}

@@ -1,4 +1,5 @@
 import { diagnosticMetadata } from "../diagnostics";
+import { mailPreparationFailure } from "../microsoft/mail-authorization";
 import {
   MAILBOX_BUDGET_WINDOW_MS,
   MAILBOX_LEASE_MS,
@@ -140,8 +141,8 @@ async function advanceCampaignTick(
 ): Promise<TickResult> {
   if (typeof message === "string") return { kind: "ignored", reason: "stale_wake" };
   const campaignId = message.campaignId;
-  const nowDate = dependencies.now?.() ?? new Date();
-  const now = iso(nowDate);
+  let nowDate = dependencies.now?.() ?? new Date();
+  let now = iso(nowDate);
   let campaign = await dependencies.campaigns.getById(campaignId);
   if (!campaign) return { kind: "ignored", reason: "missing_campaign" };
   if (campaign.state === "paused") return { kind: "ignored", reason: "paused" };
@@ -252,6 +253,34 @@ async function advanceCampaignTick(
     return { kind: "failed", campaignId: campaign.id, reason: "attachments_unavailable" };
   }
 
+  // Credentials are prepared before claiming a row or charging the mailbox.
+  let provider: MailProvider | undefined;
+  let preparationFailure: Awaited<ReturnType<NonNullable<MailProvider["prepare"]>>>;
+  try {
+    provider = await providerFor(dependencies.mailProvider, campaign);
+    preparationFailure = await provider.prepare?.() ?? null;
+  } catch (error) {
+    preparationFailure = mailPreparationFailure(error);
+  }
+  if (preparationFailure) {
+    const preparedAt = dependencies.now?.() ?? new Date();
+    if (preparationFailure.kind === "reconnect_required") {
+      const paused = await dependencies.campaigns.pauseForMailAuthorization(campaign.id, campaign.ownerUserId, preparedAt.toISOString(), preparationFailure.message);
+      if (paused) await safeAudit(dependencies, "campaign.mail_authorization_required", campaign, null, { category: preparationFailure.category });
+      return paused ? { kind: "paused", campaignId: campaign.id, reason: "mail_authorization" } : { kind: "ignored", reason: "not_runnable" };
+    }
+    const delaySeconds = delayForRetry(preparationFailure, preparedAt, 30);
+    const dueAt = new Date(preparedAt.getTime() + delaySeconds * 1000).toISOString();
+    await dependencies.campaigns.markSchedulerWaiting(campaign.id, dueAt, preparationFailure.message, preparedAt.toISOString());
+    await reserveCampaignWake({ campaigns: dependencies.campaigns, queue: dependencies.queue, campaignId: campaign.id,
+      dueAt, message: preparationFailure.message, now: preparedAt });
+    return { kind: "waiting", campaignId: campaign.id, jobId: null, reason: "authorization_retry", nextAttemptAt: dueAt, delaySeconds };
+  }
+
+  // Attachment downloads and token refresh can take time. Start reservations
+  // from the current clock so they cannot expire before submission begins.
+  nowDate = dependencies.now?.() ?? new Date();
+  now = iso(nowDate);
   const claimToken = dependencies.claimToken?.(campaign.id, nowDate) ?? randomToken("claim");
   const job = await dependencies.recipientJobs.claimNextPending(campaign.id, now, claimToken);
   if (!job) {
@@ -335,8 +364,7 @@ async function advanceCampaignTick(
 
   let result: MailSendResult;
   try {
-    const provider = await providerFor(dependencies.mailProvider, campaign);
-    result = await provider.send({
+    result = await provider!.send({
       to: job.recipient,
       cc: job.cc,
       bcc: job.bcc,
@@ -355,7 +383,7 @@ async function advanceCampaignTick(
   const paceDelay = paceDelaySeconds(campaign.pacePerMinute);
   const paceAt = new Date(resultNowDate.getTime() + paceDelay * 1_000).toISOString();
   let outcome: "accepted" | "failed" | "retry_scheduled" | "unknown";
-  let completionOutcome: "accepted" | "unknown" | "failed" | "retry";
+  let completionOutcome: "accepted" | "unknown" | "failed" | "retry" | "pause";
   let nextAttemptAt = paceAt;
   let providerBackoffUntil: string | null = null;
   let category: string | null = null;
@@ -364,6 +392,12 @@ async function advanceCampaignTick(
   let providerRequestId: string | null = null;
 
   switch (result.kind) {
+    case "reconnect_required":
+      outcome = "retry_scheduled";
+      completionOutcome = "pause";
+      category = result.category;
+      messageText = result.message;
+      break;
     case "accepted":
       outcome = "accepted";
       completionOutcome = "accepted";
@@ -422,6 +456,11 @@ async function advanceCampaignTick(
     providerRequestId,
   });
   if (!persisted) return { kind: "persistence_error", campaignId: campaign.id, jobId: job.id, outcome };
+
+  if (completionOutcome === "pause") {
+    await safeAudit(dependencies, "campaign.mail_authorization_required", campaign, job.id, { category, ...diagnosticMetadata(result.diagnosticId) });
+    return { kind: "paused", campaignId: campaign.id, reason: "mail_authorization" };
+  }
 
   const eventType: AuditEventType = outcome === "accepted"
     ? "recipient.accepted"

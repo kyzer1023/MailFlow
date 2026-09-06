@@ -17,20 +17,16 @@ import { handleCampaignQueueMessage, cloudflareQueueAdapter, reserveCampaignWake
 import { MAILBOX_RECOVERY_STALE_MS, laterIso } from "../../domain/mailbox-scheduler";
 import type { MailFlowBindings, QueueBatch } from "./contracts";
 import { isCampaignTickMessage } from "./contracts";
-import type { MailFlowContext } from "./context";
-import { configFor, textEnv } from "./dependencies";
+import { safeErrorKind } from "../diagnostics";
+import { createMailFlowServices } from "./dependencies";
 import {
   cleanupCampaignAttachments,
   loadCampaignAttachments,
 } from "./attachments";
 
 export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: MailFlowBindings): Promise<void> {
-  const queueContext = {
-    env: bindings,
-    req: { url: textEnv(bindings.PUBLIC_ORIGIN, "https://mailflow.invalid") } as MailFlowContext["req"],
-  } as MailFlowContext;
   const repo = createD1Repositories(bindings.DB);
-  let authServices: ReturnType<typeof configFor> | null = null;
+  let authServices: ReturnType<typeof createMailFlowServices> | null = null;
   let attachmentService: AttachmentService | null = null;
   for (const message of batch.messages) {
     if (!isCampaignTickMessage(message.body)) {
@@ -39,7 +35,7 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
     }
     try {
       if (!authServices) {
-        authServices = configFor(queueContext);
+        authServices = createMailFlowServices(bindings);
         attachmentService = authServices.mailTransport === "smtp"
           ? createAttachmentService(
               repo.attachments,
@@ -76,7 +72,8 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
       });
       if (result.kind === "persistence_error") message.retry({ delaySeconds: 60 });
       else message.ack();
-    } catch {
+    } catch (error) {
+      console.warn("Campaign queue failed", { classification: safeErrorKind(error) });
       message.retry({ delaySeconds: 60 });
     }
   }
@@ -114,11 +111,7 @@ export async function processScheduledCleanup(bindings: MailFlowBindings): Promi
 
   if (resolveMailTransport(bindings.MAIL_TRANSPORT) !== "smtp") return;
   const repo = createD1Repositories(bindings.DB);
-  const queueContext = {
-    env: bindings,
-    req: { url: textEnv(bindings.PUBLIC_ORIGIN, "https://mailflow.invalid") } as MailFlowContext["req"],
-  } as MailFlowContext;
-  const { storageAuth } = configFor(queueContext);
+  const { storageAuth } = createMailFlowServices(bindings);
   const service = createAttachmentService(
     repo.attachments,
     new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),

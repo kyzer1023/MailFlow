@@ -109,6 +109,12 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
         return true;
       },
       pause: async () => false,
+      pauseForMailAuthorization: async (_id, _owner, now, reason) => {
+        if (state.campaign.state !== "running" && state.campaign.state !== "queued") return false;
+        state.campaign = { ...state.campaign, state: "paused", mailIssueCode: "mail_authorization_required", pauseReason: reason,
+          updatedAt: now, wakeToken: null, wakeDueAt: null };
+        return true;
+      },
       resume: async () => false,
       pauseForAttachmentAuthorization: async (_id: string, _owner: string, now: string, reason: string) => {
         if (state.campaign.state !== "running" && state.campaign.state !== "queued") return false;

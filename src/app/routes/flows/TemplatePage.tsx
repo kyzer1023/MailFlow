@@ -16,7 +16,6 @@ import {
   createFlow,
   createTemplateVersion,
   getFlow,
-  updateFlow,
 } from "../../api";
 import {
   extractPlaceholders,
@@ -104,17 +103,15 @@ export function TemplatePage({
       placeholderManifest: placeholders,
       recipientConfiguration,
     };
-    let renamed = false;
     try {
       if (update && flowId) {
-        if (name !== draft.name) {
-          await updateFlow(flowId, { name }, csrfToken);
-          renamed = true;
-        }
-        await createTemplateVersion(flowId, payload, csrfToken);
+        const response = await createTemplateVersion(flowId, { ...payload, name,
+          expectedTemplateVersionId: draft.publishedTemplateVersionId ?? null }, csrfToken);
+        updateDraft("publishedTemplateVersionId", response.version.id);
       } else {
         const response = await createFlow({ name, ...payload }, csrfToken);
         setFlowId(response.flow.id);
+        updateDraft("publishedTemplateVersionId", response.templateVersion?.id ?? null);
       }
       updateDraft("name", name);
       setSavedSignature(templateSignature(name));
@@ -125,7 +122,7 @@ export function TemplatePage({
       void refreshDashboard();
     } catch (error) {
       setSaveError(
-        `${renamed ? "The name was updated, but the message was not saved. " : ""}${error instanceof Error ? error.message : "The template could not be saved."}`,
+        error instanceof Error ? error.message : "The template could not be saved.",
       );
     } finally {
       setSaving(false);

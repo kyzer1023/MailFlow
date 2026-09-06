@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import * as wrangler from "wrangler";
 import type { D1Database } from "./contracts";
 import { D1CampaignRepository } from "./d1-campaigns";
+import { D1TemplateVersionRepository, TemplatePublicationConflict } from "./d1-template-versions";
 import { reserveCampaignWake } from "../queue/campaign-tick";
 
 const { getPlatformProxy } = wrangler;
@@ -54,8 +55,20 @@ it("starts and stops campaigns using actual local D1 trigger-inclusive metadata"
       queue: { enqueue: async () => { published += 1; } } });
     expect(wake.published).toBe(true);
     expect(published).toBe(1);
-    expect(await campaigns.pause("campaign", "owner", now, "Paused by member")).toBe(true);
+    expect(await campaigns.pauseForMailAuthorization("campaign", "wrong-owner", now, "Reconnect")).toBe(false);
+    expect(await campaigns.pauseForMailAuthorization("campaign", "owner", now, "Reconnect Microsoft")).toBe(true);
+    expect((await campaigns.getById("campaign"))?.mailIssueCode).toBe("mail_authorization_required");
     expect(await campaigns.resume("campaign", "owner", now)).toBe(true);
+    expect((await campaigns.getById("campaign"))?.mailIssueCode).toBeNull();
+    const versions = new D1TemplateVersionRepository(db);
+    const original = (await versions.getById("template"))!;
+    const saves = await Promise.allSettled([
+      versions.create({ ...original, id: "save-a" }, { ownerUserId: "owner", expectedVersionId: null }),
+      versions.create({ ...original, id: "save-b" }, { ownerUserId: "owner", expectedVersionId: null }),
+    ]);
+    expect(saves.filter(save => save.status === "fulfilled")).toHaveLength(1);
+    expect(saves.find(save => save.status === "rejected")).toMatchObject({ reason: expect.any(TemplatePublicationConflict) });
+    expect(await versions.listByFlow("flow")).toHaveLength(2);
     expect(await campaigns.cancel("campaign", "owner", now)).toBe(true);
     expect((await campaigns.getById("campaign"))?.state).toBe("cancelled");
     expect(await campaigns.resume("campaign", "owner", now)).toBe(false);

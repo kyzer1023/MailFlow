@@ -91,6 +91,8 @@ export const flowUpdateSchema = z.object({
 }).strict().refine((value) => Object.keys(value).length > 0, { message: "At least one flow field is required." });
 
 export const templateVersionSchema = z.object({
+  expectedTemplateVersionId: nonEmpty(128).nullable().optional(),
+  name: nonEmpty(120).optional(),
   subjectTemplate: nonEmpty(998),
   bodyHtml: nonEmpty(200_000),
   placeholderManifest: z.array(nonEmpty(160)).max(100).optional(),

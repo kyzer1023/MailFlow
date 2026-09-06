@@ -241,12 +241,12 @@ describe("Exchange Online SMTP client", () => {
     expect(result).toMatchObject({ kind: "retryable", safeToRetry: true });
   });
 
-  it("safely retries an explicit transient rejection and fails a rejected OAuth token", async () => {
+  it("safely retries a transient rejection and requests reconnect for rejected authorization", async () => {
     const transient = fixture({ finalCode: 451 });
     await expect(delegatedSmtpMailProvider(transient.client, "access-token-fixture", "sender@example.test").send(message())).resolves.toMatchObject({ kind: "retryable", safeToRetry: true, category: "throttle" });
 
     const denied = fixture({ authCode: 535 });
-    await expect(delegatedSmtpMailProvider(denied.client, "access-token-fixture", "sender@example.test").send(message())).resolves.toMatchObject({ kind: "failed", category: "authentication" });
+    await expect(delegatedSmtpMailProvider(denied.client, "access-token-fixture", "sender@example.test").send(message())).resolves.toMatchObject({ kind: "reconnect_required", category: "authentication" });
     expect(denied.script.commands.some((command) => command.startsWith("MAIL FROM"))).toBe(false);
   });
 
@@ -257,9 +257,10 @@ describe("Exchange Online SMTP client", () => {
     }, "sender@example.test");
 
     await expect(provider.send(message())).resolves.toEqual({
-      kind: "failed",
+      kind: "reconnect_required",
+      safeToRetry: true,
       category: "authentication",
-      message: "Reconnect Microsoft before sending this campaign",
+      message: "Reconnect Microsoft with the same account, then resume from the pending rows.",
     });
     expect(test.script.commands).toEqual([]);
   });
@@ -268,7 +269,7 @@ describe("Exchange Online SMTP client", () => {
 
 describe("sanitized SMTP diagnostics", () => {
   it.each([
-    [{ authCode: 535 }, "authenticate", "provider_rejection", "failed"],
+    [{ authCode: 535 }, "authenticate", "provider_rejection", "reconnect_required"],
     [{ failDataWriteAfterBytes: 1 }, "body", "socket_failure", "retryable"],
     [{ finalCode: null }, "terminator", "socket_failure", "unknown"],
     [{ lostAck: "close" }, "acknowledgement", "socket_closed", "unknown"],

@@ -69,8 +69,8 @@ export class D1FlowRepository implements FlowRepository {
     return changes(
       await bind(
         this.db.prepare(
-          `UPDATE flows SET society_name = ?1, name = ?2, current_template_version_id = ?3,
-             state = ?4, updated_at = ?5 WHERE id = ?6 AND owner_user_id = ?7`,
+          `UPDATE flows SET society_name = ?1, name = ?2,
+             state = ?4, updated_at = ?5 WHERE id = ?6 AND owner_user_id = ?7 AND current_template_version_id IS ?3`,
         ),
         [flow.societyName, flow.name, flow.currentTemplateVersionId, flow.state, flow.updatedAt, flow.id, flow.ownerUserId],
       ).run(),
