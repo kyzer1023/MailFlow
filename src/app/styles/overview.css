@@ -6,29 +6,29 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  border-radius: 7px;
+  border-radius: var(--radius-inset);
 }
 .dashboard-page .page-header {
   align-items: center;
-  margin-bottom: 28px;
+  margin-bottom: var(--space-28);
 }
 .flow-grid {
   margin-top: 15px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--space-20);
 }
 .flow-card {
   background: var(--paper-bright);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px 22px 16px;
+  border-radius: var(--radius-panel);
+  padding: var(--space-20) 22px var(--space-16);
   min-height: 205px;
-  box-shadow: 0 10px 22px rgba(58, 63, 58, 0.04);
+  box-shadow: var(--shadow-card);
 }
 .flow-card:hover {
-  border-color: #9fb1a4;
-  box-shadow: 0 14px 28px rgba(58, 63, 58, 0.08);
+  border-color: var(--flow-card-hover-border);
+  box-shadow: var(--shadow-card-hover);
 }
 .flow-title {
   display: grid;
@@ -43,12 +43,12 @@
 .mini-mark {
   width: 38px;
   height: 38px;
-  border-radius: 9px;
+  border-radius: var(--radius-badge);
   display: grid;
   place-items: center;
   background: var(--coral);
-  color: white;
-  box-shadow: 4px 4px 0 #f8c6ba;
+  color: var(--white);
+  box-shadow: 4px 4px 0 var(--flow-icon-shadow);
 }
 .mini-mark svg {
   width: 1.3rem;
@@ -71,9 +71,9 @@
   margin: 0.65rem 0 1rem;
 }
 .field-list code {
-  border: 1px solid #bfccc3;
-  border-radius: 7px;
-  background: #e9efe9;
+  border: 1px solid var(--flow-ready-border);
+  border-radius: var(--radius-inset);
+  background: var(--flow-ready-surface);
   color: var(--moss-dark);
   padding: 0.42rem 0.55rem;
   font: 650 0.74rem/1 var(--font-mono);
@@ -112,7 +112,7 @@
 .flow-library-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--space-20);
 }
 .library-page .page-header {
   align-items: center;
@@ -123,7 +123,7 @@
 .table-open {
   min-width: 40px;
   min-height: 40px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   display: grid;
   place-items: center;
   color: var(--moss-dark);
@@ -145,33 +145,33 @@
   width: var(--status-dot-size);
   height: var(--status-dot-size);
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: currentColor;
 }
 .status--ready,
 .status--completed,
 .status--accepted {
-  background: #e2eee5;
-  color: #315540;
+  background: var(--status-completed-surface);
+  color: var(--status-completed-ink);
 }
 .status--draft,
 .status--pending,
 .status--queued,
 .status--skipped,
 .status--cancelled {
-  background: #ebe9e3;
-  color: #656b67;
+  background: var(--status-paused-surface);
+  color: var(--status-paused-ink);
 }
 .status--paused,
 .status--waiting,
 .status--cancelling {
-  background: #fff0d9;
-  color: #925d19;
+  background: var(--warning-surface);
+  color: var(--status-waiting-ink);
 }
 .status--sending,
 .status--running {
-  background: #ffe6df;
-  color: #a54534;
+  background: var(--status-failed-surface);
+  color: var(--status-failed-ink);
 }
 .status--failed,
 .status--unknown,
@@ -187,11 +187,11 @@
   margin-top: 27px;
   display: grid;
   grid-template-columns: minmax(0, 2.05fr) minmax(280px, 0.95fr);
-  gap: 20px;
+  gap: var(--space-20);
   align-items: stretch;
 }
 .campaign-list {
-  padding: 20px 22px 8px;
+  padding: var(--space-20) 22px var(--space-8);
 }
 .campaign-list .table-wrap {
   margin: 10px -22px 0;
@@ -211,24 +211,24 @@
   top: 49px;
   width: 1px;
   height: 31px;
-  border-left: 1px dashed #a5afa8;
+  border-left: 1px dashed var(--activity-line);
 }
 .route-dot {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   display: grid;
   place-items: center;
-  background: #e3e9e4;
+  background: var(--activity-icon-surface);
   color: var(--moss-dark);
 }
 .route-dot--1 {
-  background: #fff0d9;
-  color: #98601c;
+  background: var(--warning-surface);
+  color: var(--activity-warning-ink);
 }
 .route-dot--2 {
-  background: #dceae0;
-  color: #2f5a3d;
+  background: var(--activity-success-surface);
+  color: var(--activity-success-ink);
 }
 .route-row strong,
 .route-row small {
@@ -253,7 +253,7 @@
   font-size: 0.72rem;
 }
 .table-footer {
-  margin: 0 20px;
+  margin: 0 var(--space-20);
 }
 .table-footer div {
   display: flex;
@@ -271,7 +271,7 @@
 }
 @media (max-width: 680px) {
   .flow-grid {
-    gap: 12px;
+    gap: var(--space-12);
   }
   .flow-card {
     min-height: 190px;
@@ -339,6 +339,13 @@
   }
 }
 
+.campaign-name-link {
+  text-decoration: none;
+}
+.campaign-name-link:hover,
+.campaign-name-link:focus-visible {
+  text-decoration: underline;
+}
 .campaign-status-detail {
   display: block;
   max-width: var(--campaign-status-detail-width);

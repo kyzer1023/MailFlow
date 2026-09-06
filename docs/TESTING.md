@@ -64,6 +64,11 @@
 
 ### Frontend
 
+- Product route loading preserves the draft through navigation, suspended chunks, and recovery from a failed chunk. Verify direct route loads still enforce session and wizard prerequisites.
+- Attachment hook regression checks cover serialized uploads, retained-byte retry, reset during set creation and upload, stale queued work, and prepared-campaign removal guards.
+- After `npm run build`, run `npm run check:client-bundle` (also included in `npm test`). In a production-build browser preview, confirm landing loads no product chunks, CSV import requests no ExcelJS, and the first XLSX import requests its deferred chunk.
+- Campaign names remain keyboard-accessible links at narrow widths where the separate Open column is hidden.
+
 - History/detail agree on Queued, Sending, Waiting with a local-time reason, Paused, Cancelling, and Cancelled. Normal pace is Sending. Clean completed campaigns have a clear Completed badge and successful-submission summary without claiming inbox delivery.
 - Cancel confirmation is gated by acknowledgement; dismissal sends no request, failure permits retry, and successful cancellation restores focus to the campaign status. Cancelled campaigns have no pause/resume/cancel action, keep in-flight and original outcomes visible, and label pending rows Not sent. Legacy recipient waiting timestamps display in the member's browser timezone.
 

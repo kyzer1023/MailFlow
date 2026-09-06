@@ -5,7 +5,7 @@ const MAX_SOURCE_ROWS = 10_000;
 const MAX_COLUMNS = 100;
 const MAX_CELL_LENGTH = 20_000;
 
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type {
   ParsedSpreadsheet,
   RawSpreadsheetRow,
@@ -253,6 +253,7 @@ export async function parseXlsx(input: ArrayBuffer | Uint8Array, fileName: strin
   try {
     if (input.byteLength > SPREADSHEET_MAX_BYTES) throw new SpreadsheetParseError("invalid_content", "Spreadsheet files must be 20 MiB or smaller.");
     assertOfficePackage(new Uint8Array(toArrayBuffer(input)), ".xlsx");
+    const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
     // ExcelJS's browser build accepts ArrayBuffer at runtime while its
     // declaration retains the Node Buffer type. Keep the cast at this adapter

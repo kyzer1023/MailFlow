@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     // Keep the client artifact path stable for local checks and handoff tooling.
     outDir: "dist/client",
+    manifest: true,
   },
   optimizeDeps: {
     include: ["react", "react-dom/client"],

@@ -32,7 +32,7 @@ img {
   max-width: 100%;
 }
 ::selection {
-  background: #f5b2a5;
+  background: var(--selection-surface);
   color: var(--ink);
 }
 :focus-visible {
@@ -45,7 +45,7 @@ img {
   place-content: center;
   justify-items: center;
   gap: 14px;
-  padding: 32px;
+  padding: var(--space-32);
   text-align: center;
   color: var(--ink);
   background: var(--paper);
@@ -63,10 +63,10 @@ img {
   position: fixed;
   left: 1rem;
   top: -5rem;
-  z-index: 100;
+  z-index: var(--z-modal);
   background: var(--paper-bright);
   padding: 0.8rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .skip-link:focus {
   top: 1rem;
@@ -74,7 +74,7 @@ img {
 .button {
   min-height: 44px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   padding: 0.7rem 1.05rem;
   display: inline-flex;
   align-items: center;
@@ -106,19 +106,19 @@ img {
 }
 .button--coral {
   background: var(--coral);
-  color: white;
-  box-shadow: 0 7px 0 rgba(126, 50, 38, 0.14);
+  color: var(--white);
+  box-shadow: 0 7px 0 var(--button-shadow-color);
 }
 .button--coral:hover:not(:disabled) {
   background: var(--coral-dark);
 }
 .button--outline {
   background: var(--paper-bright);
-  border-color: #a9aca6;
+  border-color: var(--button-outline-border);
 }
 .button--outline:hover:not(:disabled) {
   border-color: var(--ink);
-  background: white;
+  background: var(--white);
 }
 .button--text {
   background: transparent;
@@ -126,7 +126,7 @@ img {
 }
 .button--danger {
   background: var(--danger);
-  color: white;
+  color: var(--white);
 }
 .button--danger:hover:not(:disabled) {
   background: var(--coral-dark);
@@ -140,8 +140,8 @@ img {
   width: min(365px, 100%);
   min-height: 66px;
   font-size: 1.05rem;
-  border-radius: 12px;
-  box-shadow: 0 10px 0 rgba(126, 50, 38, 0.14);
+  border-radius: var(--radius-large-control);
+  box-shadow: 0 10px 0 var(--button-shadow-color);
 }
 .button--hero svg {
   width: 1.35rem;
@@ -183,7 +183,7 @@ th {
 }
 td {
   padding: 0.78rem 1rem;
-  border-bottom: 1px solid #e5e1d8;
+  border-bottom: 1px solid var(--table-border);
   vertical-align: middle;
 }
 tbody tr:last-child td {
@@ -193,7 +193,7 @@ tbody tr {
   transition: background 0.15s ease;
 }
 tbody tr:hover {
-  background: #f7f5ef;
+  background: var(--table-stripe);
 }
 td small {
   display: block;
@@ -208,7 +208,7 @@ td small {
 .field > span {
   font-size: 0.73rem;
   font-weight: 760;
-  color: #48534d;
+  color: var(--label-ink);
 }
 .field > small {
   color: var(--muted);
@@ -216,7 +216,7 @@ td small {
 }
 .field--error > input {
   border-color: var(--danger);
-  background: #fff9f7;
+  background: var(--field-error-surface);
 }
 .field > .field-error {
   color: var(--danger);
@@ -228,23 +228,23 @@ textarea,
 select {
   width: 100%;
   min-height: 44px;
-  border: 1px solid #bfc1bc;
-  border-radius: 8px;
-  background: #fffefa;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-surface);
   color: var(--ink);
   padding: 0.68rem 0.78rem;
 }
 input:hover,
 textarea:hover,
 select:hover {
-  border-color: #929891;
+  border-color: var(--control-border-hover);
 }
 textarea {
   resize: vertical;
 }
 details {
   border-top: 1px solid var(--line);
-  padding-top: 12px;
+  padding-top: var(--space-12);
 }
 summary {
   cursor: pointer;
@@ -256,8 +256,8 @@ details input {
 }
 .notice {
   margin-top: 1.2rem;
-  border-radius: 9px;
-  background: #e8efe9;
+  border-radius: var(--radius-badge);
+  background: var(--success-surface);
   color: var(--moss-dark);
   padding: 0.8rem;
   display: flex;
@@ -275,8 +275,8 @@ details input {
   display: block;
 }
 .notice--warn {
-  background: #fff0d9;
-  color: #7f511a;
+  background: var(--warning-surface);
+  color: var(--warning-ink);
 }
 .notice--danger {
   background: var(--danger-soft);

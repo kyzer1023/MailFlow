@@ -34,9 +34,9 @@
   justify-content: center;
   gap: 0.8rem;
   padding: 1.1rem;
-  border: 1px dashed #9eaea2;
-  border-radius: 10px;
-  background: #f7f8f3;
+  border: 1px dashed var(--upload-border);
+  border-radius: var(--radius-card);
+  background: var(--upload-surface);
   color: var(--moss-dark);
   text-align: center;
   cursor: pointer;
@@ -49,8 +49,8 @@
 .attachment-dropzone:focus-visible,
 .attachment-dropzone--dragging {
   border-color: var(--moss);
-  background: #edf3ee;
-  box-shadow: 0 0 0 3px rgba(81, 106, 89, 0.12);
+  background: var(--upload-hover);
+  box-shadow: 0 0 0 3px var(--upload-focus-color);
 }
 .attachment-dropzone--locked {
   cursor: not-allowed;
@@ -58,8 +58,8 @@
 }
 .attachment-dropzone--locked:hover,
 .attachment-dropzone--locked:focus-visible {
-  border-color: #9eaea2;
-  background: #f7f8f3;
+  border-color: var(--upload-border);
+  background: var(--upload-surface);
   box-shadow: none;
 }
 .attachment-dropzone > svg {
@@ -115,24 +115,24 @@
   gap: 0.65rem;
   padding: 0.62rem 0.65rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fffefa;
+  border-radius: var(--radius-control);
+  background: var(--control-surface);
 }
 .attachment-item--error {
-  border-color: #efb5a9;
-  background: #fff7f4;
+  border-color: var(--upload-error-border);
+  background: var(--upload-error-surface);
 }
 .attachment-item__icon {
   width: 32px;
   height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-inset);
   background: var(--mist);
   color: var(--moss-dark);
 }
 .attachment-item--error .attachment-item__icon {
-  background: #f8ddd7;
+  background: var(--upload-error-icon);
   color: var(--danger);
 }
 .attachment-item__icon svg {
@@ -191,13 +191,13 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 .attachment-action:hover:not(:disabled) {
-  background: #edf0ed;
+  background: var(--chip-surface);
   color: var(--ink);
 }
 .attachment-action:disabled {

@@ -17,7 +17,8 @@
     "deploy": "vite build && wrangler deploy",
     "check:staging": "npm test && wrangler deploy --dry-run && npm run build:staging && npm run prepare:staging-config && wrangler deploy --config dist/client/mailflow/wrangler.staging-validated.json --dry-run",
     "deploy:staging": "npm run check:staging && npm run db:migrate:staging && wrangler deploy --config dist/client/mailflow/wrangler.staging-validated.json",
-    "test": "npm run typecheck && npm run build && npm run test:unit"
+    "test": "npm run typecheck && npm run build && npm run check:client-bundle && npm run test:unit",
+    "check:client-bundle": "node scripts/check-client-bundle.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

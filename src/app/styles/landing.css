@@ -6,11 +6,11 @@
 }
 .marketing-header {
   height: 92px;
-  padding: 0 clamp(28px, 5vw, 84px);
+  padding: 0 clamp(var(--space-28), 5vw, 84px);
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  border-bottom: 1px solid rgba(81, 106, 89, 0.14);
+  border-bottom: 1px solid var(--shell-divider);
 }
 .marketing-header > .button {
   justify-self: end;
@@ -41,11 +41,11 @@
   grid-template-columns: minmax(420px, 0.88fr) minmax(520px, 1.12fr);
   align-items: center;
   gap: clamp(30px, 4vw, 80px);
-  padding: clamp(42px, 5vh, 72px) clamp(28px, 5vw, 84px);
+  padding: clamp(42px, 5vh, 72px) clamp(var(--space-28), 5vw, 84px);
 }
 .hero-copy {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-raised);
   grid-column: 1;
   max-width: 650px;
   padding-bottom: 2rem;
@@ -68,7 +68,7 @@
   width: min(310px, 70%);
   height: 4px;
   margin-top: 13px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--coral);
 }
 .hero-copy > p {
@@ -76,7 +76,7 @@
   margin: 2rem 0 2rem;
   font-size: clamp(1.08rem, 1.35vw, 1.32rem);
   line-height: 1.55;
-  color: #4f5b55;
+  color: var(--landing-muted);
 }
 .trust-note {
   margin-top: 1.15rem;
@@ -97,7 +97,7 @@
   white-space: nowrap;
 }
 .trust-note__separator {
-  color: #a4aaa5;
+  color: var(--landing-divider);
 }
 @media (min-width: 901px) {
   .landing-hero {
@@ -110,7 +110,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    z-index: -1;
+    z-index: var(--z-background);
     pointer-events: none;
     background: url("/assets/landing-route-stationery.png") right center / auto
       calc(100% - 32px) no-repeat;
@@ -120,14 +120,14 @@
     -webkit-mask-image: linear-gradient(
       to right,
       transparent 34%,
-      rgba(0, 0, 0, 0.08) 46%,
-      #000 68%
+      var(--mask-soft) 46%,
+      var(--mask-opaque) 68%
     );
     mask-image: linear-gradient(
       to right,
       transparent 34%,
-      rgba(0, 0, 0, 0.08) 46%,
-      #000 68%
+      var(--mask-soft) 46%,
+      var(--mask-opaque) 68%
     );
   }
 }
@@ -188,7 +188,7 @@
 @media (min-width: 1181px) {
   .landing-hero {
     grid-template-columns: minmax(560px, 1fr) minmax(520px, 1.05fr);
-    gap: clamp(24px, 2.5vw, 42px);
+    gap: clamp(var(--space-24), 2.5vw, 42px);
   }
 
   .hero-copy {
@@ -203,14 +203,14 @@
     -webkit-mask-image: linear-gradient(
       to right,
       transparent 21%,
-      rgba(0, 0, 0, 0.12) 36%,
-      #000 60%
+      var(--mask-medium) 36%,
+      var(--mask-opaque) 60%
     );
     mask-image: linear-gradient(
       to right,
       transparent 21%,
-      rgba(0, 0, 0, 0.12) 36%,
-      #000 60%
+      var(--mask-medium) 36%,
+      var(--mask-opaque) 60%
     );
   }
 }

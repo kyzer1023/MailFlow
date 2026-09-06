@@ -30,7 +30,7 @@ export function CampaignTable({ campaigns }: CampaignTableProps) {
             return (
             <tr key={campaign.id}>
               <td>
-                <strong>{campaign.name}</strong>
+                <strong><Link className="campaign-name-link" to={`/campaigns/${campaign.id}`}>{campaign.name}</Link></strong>
                 <small>{campaign.date}</small>
               </td>
               <td>{campaign.updated}</td>

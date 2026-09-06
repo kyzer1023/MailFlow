@@ -1,4 +1,3 @@
-import { validateAttachmentInput } from "../../domain/attachment-policy";
 import {
   createContext,
   useCallback,
@@ -8,32 +7,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  createAttachmentSet as createAttachmentSetRequest,
-  deleteAttachmentFile as deleteAttachmentFileRequest,
-  uploadAttachmentFile as uploadAttachmentFileRequest,
-} from "../api";
 import type { CampaignResponse } from "../api";
-import {
-  mapSpreadsheetRows,
-  extractPlaceholders,
-  recipientConfigurationToClientMapping,
-  validateClientCampaign,
-} from "../../client";
+import { recipientConfigurationToClientMapping } from "../../client";
 import type {
-  CampaignAttachment,
   ClientMapping,
-  ClientValidationSummary,
   ParsedSpreadsheet,
   SpreadsheetTable,
 } from "../../client/types";
 import type { FlowRecord, TemplateVersionRecord } from "../../domain/types";
-import { attachmentFileFromResponse } from "../lib/attachments";
-import { bodyHtmlFromDraft } from "../lib/editor-dom";
-import { matchColumn } from "../lib/template-reuse";
 import { requestKey } from "../lib/ids";
 import { useApi } from "./api-context";
-import type { AddressRuleMode, DraftContextValue, DraftState } from "./types";
+import type { DraftContextValue, DraftState } from "./types";
+
+import { useDraftAttachments } from "./use-draft-attachments";
+import { useDraftValidation } from "./use-draft-validation";
 
 export const emptyDraft = (): DraftState => ({
   name: "",
@@ -72,243 +59,31 @@ export function DraftProvider({ children }: { readonly children: ReactNode }) {
   const testRequest = useRef<DraftContextValue["testRequest"]["current"]>(null);
   const preparation = useRef<DraftContextValue["preparation"]["current"]>(null);
   const lockSnapshot = useCallback(() => setSnapshotLocked(true), []);
-  // Attachment bytes are held by the upload request and this ref only while
-  // retry is possible. They are deliberately not part of draft state or any
-  // campaign payload.
-  const [attachments, setAttachments] = useState<CampaignAttachment[]>([]);
-  const [attachmentSetId, setAttachmentSetId] = useState<string | null>(null);
-  const attachmentSetIdRef = useRef<string | null>(null);
-  const [attachmentSetRequestKey, setAttachmentSetRequestKey] = useState(
-    () => `attachment-${requestKey()}`,
-  );
-  const attachmentSourcesRef = useRef<Map<string, File>>(new Map());
-  const attachmentSetPromiseRef = useRef<{
-    generation: number;
-    promise: Promise<string>;
-  } | null>(null);
-  const attachmentUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const attachmentGenerationRef = useRef(0);
   const [skipInvalidRows, setSkipInvalidRows] = useState(false);
   const [campaignRequestKey, setCampaignRequestKey] = useState(requestKey);
   const [testSendRequestKey, setTestSendRequestKey] = useState(
     () => `test-${requestKey()}`,
   );
-  const bodyHtml = useMemo(() => bodyHtmlFromDraft(draft.body), [draft.body]);
-  const mapping = useMemo<ClientMapping>(() => {
-    const source = (key: "cc" | "bcc" | "replyTo") => {
-      const mode = draft[`${key}Mode` as keyof DraftState] as AddressRuleMode;
-      const column = draft[`${key}Column` as keyof DraftState] as string;
-      if (mode === "column" && column)
-        return { kind: "column" as const, field: column };
-      return { kind: "fixed" as const, value: draft[key] || "" };
-    };
-    return {
-      toField: draft.toField || "",
-      cc: source("cc"),
-      bcc: source("bcc"),
-      replyTo: source("replyTo"),
-      importance: draft.importance || "normal",
-      separator: "auto",
-      placeholders: Object.fromEntries(
-        extractPlaceholders(draft.subject, bodyHtml).map((key) => [
-          key,
-          Object.hasOwn(draft.mappings, key)
-            ? draft.mappings[key]
-            : matchColumn(key, table),
-        ]),
-      ),
-    };
-  }, [draft, bodyHtml, table]);
-  const { rows: mappedRows, issues: mappingIssues } = useMemo(
-    () =>
-      table ? mapSpreadsheetRows(table, mapping) : { rows: [], issues: [] },
-    [table, mapping],
-  );
-  const validation = useMemo<ClientValidationSummary | null>(
-    () =>
-      table
-        ? validateClientCampaign({
-            senderAddress: user?.mailboxAddress || user?.principalName || "",
-            subjectTemplate: draft.subject,
-            bodyHtml,
-            rows: mappedRows,
-            mappedFields: mapping.placeholders,
-            separator: "auto",
-            maxRecipients: config.maxCampaignRecipients,
-            pacePerMinute: config.defaultPacePerMinute,
-            mappingIssues,
-          })
-        : null,
-    [table, user, draft, bodyHtml, mapping, mappedRows, mappingIssues, config],
-  );
-  const campaignValidation = useMemo<ClientValidationSummary | null>(() => {
-    if (!validation || !skipInvalidRows || validation.ok) return validation;
-    const rowOnly =
-      validation.issues.length > 0 &&
-      validation.issues.every((issue) => issue.row !== undefined);
-    return rowOnly ? { ...validation, ok: true, issues: [] } : validation;
-  }, [validation, skipInvalidRows]);
+  const { bodyHtml, mapping, mappedRows, validation, campaignValidation } =
+    useDraftValidation(draft, table, user, config, skipInvalidRows);
+  const {
+    attachments,
+    setAttachments,
+    attachmentSetId,
+    attachmentSetRequestKey,
+    attachmentsUploading,
+    attachmentsHaveErrors,
+    attachmentsReady,
+    uploadAttachment,
+    retryAttachment,
+    removeAttachment,
+    resetAttachmentState,
+  } = useDraftAttachments(csrfToken, Boolean(campaignResponse));
   const updateDraft = useCallback(
     <K extends keyof DraftState>(key: K, value: DraftState[K]) =>
       setDraft((current) => ({ ...current, [key]: value })),
     [],
   );
-  const ensureAttachmentSet = useCallback(async () => {
-    if (attachmentSetIdRef.current) return attachmentSetIdRef.current;
-    const generation = attachmentGenerationRef.current;
-    const currentRequest = attachmentSetPromiseRef.current;
-    if (currentRequest && currentRequest.generation === generation)
-      return currentRequest.promise;
-    const promise = createAttachmentSetRequest(
-      attachmentSetRequestKey,
-      csrfToken,
-    )
-      .then((response) => {
-        const id = response?.attachmentSet?.id;
-        if (!id || attachmentGenerationRef.current !== generation)
-          throw new Error(
-            "The attachment upload was cancelled. Choose the files again.",
-          );
-        attachmentSetIdRef.current = id;
-        setAttachmentSetId(id);
-        return id;
-      })
-      .finally(() => {
-        if (attachmentSetPromiseRef.current?.promise === promise)
-          attachmentSetPromiseRef.current = null;
-      });
-    attachmentSetPromiseRef.current = { generation, promise };
-    return promise;
-  }, [attachmentSetRequestKey, csrfToken]);
-  const performAttachmentUpload = useCallback(
-    async (localId: string, file: File, generation: number) => {
-      if (attachmentGenerationRef.current !== generation) return;
-      setAttachments((current) =>
-        current.map((attachment) =>
-          attachment.id === localId
-            ? { ...attachment, status: "uploading", error: undefined }
-            : attachment,
-        ),
-      );
-      attachmentSourcesRef.current.set(localId, file);
-      try {
-        validateAttachmentInput({
-          filename: file.name,
-          contentType: file.type,
-          bytes: await file.arrayBuffer(),
-        });
-        if (attachmentGenerationRef.current !== generation) return;
-        const setId = await ensureAttachmentSet();
-        if (attachmentGenerationRef.current !== generation) return;
-        const response = await uploadAttachmentFileRequest(
-          setId,
-          file,
-          csrfToken,
-        );
-        if (attachmentGenerationRef.current !== generation) return;
-        const next = attachmentFileFromResponse(response);
-        attachmentSourcesRef.current.delete(localId);
-        setAttachments((current) =>
-          current.map((attachment) =>
-            attachment.id === localId ? next : attachment,
-          ),
-        );
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "This file could not be uploaded.";
-        setAttachments((current) =>
-          current.map((attachment) =>
-            attachment.id === localId
-              ? { ...attachment, status: "error", error: message }
-              : attachment,
-          ),
-        );
-      }
-    },
-    [csrfToken, ensureAttachmentSet],
-  );
-  const uploadAttachment = useCallback(
-    (localId: string, file: File) => {
-      // One attachment set has one conditional file-count update. Serializing
-      // the bounded five uploads prevents two browser requests from choosing
-      // the same next position or racing that counter in D1.
-      const generation = attachmentGenerationRef.current;
-      const queued = attachmentUploadQueueRef.current.then(() =>
-        performAttachmentUpload(localId, file, generation),
-      );
-      attachmentUploadQueueRef.current = queued.catch(() => undefined);
-      return queued;
-    },
-    [performAttachmentUpload],
-  );
-  const retryAttachment = useCallback(
-    (localId: string) => {
-      const file = attachmentSourcesRef.current.get(localId);
-      if (file) void uploadAttachment(localId, file);
-    },
-    [uploadAttachment],
-  );
-  const removeAttachment = useCallback(
-    async (localId: string) => {
-      if (campaignResponse) return;
-      const attachment = attachments.find((item) => item.id === localId);
-      if (!attachment) return;
-      const serverId =
-        attachment.id && !attachment.id.startsWith("attachment-local-")
-          ? attachment.id
-          : "";
-      try {
-        if (serverId && attachmentSetId)
-          await deleteAttachmentFileRequest(
-            attachmentSetId,
-            serverId,
-            csrfToken,
-          );
-        attachmentSourcesRef.current.delete(localId);
-        setAttachments((current) =>
-          current.filter((item) => item.id !== localId),
-        );
-      } catch (error) {
-        setAttachments((current) =>
-          current.map((item) =>
-            item.id === localId
-              ? {
-                  ...item,
-                  status: "error",
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "This file could not be removed.",
-                }
-              : item,
-          ),
-        );
-      }
-    },
-    [attachmentSetId, attachments, campaignResponse, csrfToken],
-  );
-  const resetAttachmentState = useCallback(() => {
-    attachmentGenerationRef.current += 1;
-    attachmentSetPromiseRef.current = null;
-    attachmentUploadQueueRef.current = Promise.resolve();
-    attachmentSourcesRef.current.clear();
-    setAttachments([]);
-    attachmentSetIdRef.current = null;
-    setAttachmentSetId(null);
-    setAttachmentSetRequestKey(`attachment-${requestKey()}`);
-  }, []);
-  const attachmentsUploading = attachments.some(
-    (attachment) => attachment.status === "uploading",
-  );
-  const attachmentsHaveErrors = attachments.some(
-    (attachment) => attachment.status === "error",
-  );
-  const attachmentsReady =
-    !attachmentsUploading &&
-    !attachmentsHaveErrors &&
-    attachments.every((attachment) => attachment.status === "ready");
   const resetWizardState = useCallback(() => {
     testRequest.current = null;
     preparation.current = null;
