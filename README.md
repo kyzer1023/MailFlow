@@ -64,3 +64,15 @@ real-mail test gates are recorded in `docs/TESTING.md` and `docs/PROGRESS.md`.
 - Never request application-level Microsoft permissions. Mail Flow uses delegated OAuth permissions for the signed-in member; delegated Graph `Mail.Send` is the rollback transport.
 - Never call a Graph `202 Accepted` response "delivered". The correct state is "Accepted by Microsoft".
 - Never automatically resend an ambiguous outcome. Surface it as `unknown` and require a human decision.
+
+## License
+
+Mail Flow's original code and documentation are licensed under the
+[MIT License](LICENSE). Copyright (c) 2026 Kyzer Phneh
+([kyzer1023](https://github.com/kyzer1023)).
+
+The PNG files in `mock-images/` (including its subdirectories) and `public/assets/`
+are excluded from this MIT grant pending confirmation of their provenance and
+reuse rights. Dependencies retain their own licenses. See
+[third-party notices and asset scope](THIRD_PARTY_NOTICES.md) for details and the
+unresolved license metadata in the transitive `buffers` dependency.
