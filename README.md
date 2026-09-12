@@ -1,78 +1,50 @@
 # Mail Flow
 
-Mail Flow is a focused mail-merge application for USM student societies. Members sign in with their USM Microsoft account, import recipient data, personalize an HTML message, validate every row, preview representative emails, send a test to themselves, and start a paced campaign through delegated OAuth SMTP.
+Mail Flow helps USM student society members turn a spreadsheet into personalized emails from their own Microsoft Outlook mailbox. Import recipients, compose a message, check the sending rules, preview and test it, then monitor a paced background campaign.
 
-The deployed application uses Cloudflare only: Workers Static Assets, a Worker API, D1, Queues, and Worker secrets. Microsoft Entra ID provides identity and delegated authorization. Delegated OAuth SMTP sends from the signed-in member's Outlook mailbox, with delegated Microsoft Graph `Mail.Send` retained as a deployment-selectable rollback path.
+**For committees:** [view the web presentation](https://mailflow.kyzer-hono-test.workers.dev/presentation/). No sign-in or download is required. It explains the need for clearer email status and control, shows the current interface with illustrative data, and labels future features as roadmap proposals.
 
-Working prototype: `https://mailflow.kyzer-hono-test.workers.dev`
+The product was proposed after the team's experience coordinating email through Power Automate: preparation was tedious and it was difficult to see what had happened or needed attention. Mail Flow brings preparation, paced sending, recipient outcomes, pause/resume, and export into one focused workflow.
 
-## Repository map
+[Prototype website](https://mailflow.kyzer-hono-test.workers.dev)
 
-- `package.json`: application commands, run from the repository root.
-- `src/`: React client, domain modules, and server adapters.
-- `worker/index.ts`: Cloudflare API, Queue, and scheduled-handler entry point.
-- `migrations/`: D1 schema migrations.
-- `public/`: client static assets.
-- `wrangler.jsonc`: Cloudflare bindings and deployment configuration.
-- `AGENTS.md`: first read for every coding agent.
-- `docs/CONTEXT.md`: durable project brief and authority order.
-- `docs/USE_CASES.md`: accepted functional requirements and release boundaries.
-- `docs/ARCHITECTURE.md`: runtime, security, data, and integration design.
-- `docs/DESIGN.md`: mock inventory, visual tokens, and fidelity rules.
-- `docs/IMPLEMENTATION_PLAN.md`: milestones, ownership boundaries, and acceptance gates.
-- `docs/PROGRESS.md`: append-only implementation log and current state.
-- `docs/TESTING.md`: local, integration, visual, and real-mail verification plan.
-- `docs/DECISIONS.md`: architecture decision log.
-- `docs/OPERATIONS.md`: Cloudflare, Entra, smoke-test, evidence, and recovery runbook.
-- `docs/archive/`: superseded investigation notes retained for historical context.
-- `mock-images/`: approved visual references.
+## What is available
 
-## Application commands
+- CSV and XLSX import with worksheet selection, column mapping, and row validation.
+- Reusable flows, visual and HTML message editing, and personalized spreadsheet values.
+- Fixed or spreadsheet-based CC, BCC, and Reply-to, plus message importance.
+- Up to five campaign attachments, totaling 20 MiB, through the member's OneDrive App Folder.
+- Representative previews, a self-only test send, and explicit confirmation.
+- Background sending, pause/resume, recipient results, and CSV export.
 
-Run commands from the repository root:
+The current prototype is individually owned: flows and campaigns belong to their creator. Shared society membership and records are on the [roadmap](docs/ROADMAP.md). Known readiness gaps are recorded there too. Microsoft acceptance is not proof of inbox delivery.
+
+## Documentation
+
+| Document | Read it for |
+| --- | --- |
+| [Product](docs/PRODUCT.md) | Current capabilities, workflow, limits, and terminology |
+| [Architecture](docs/ARCHITECTURE.md) | Runtime, ownership, security, and delivery contracts |
+| [Design](docs/DESIGN.md) | Visual identity, interaction rules, and presentation assets |
+| [Operations](docs/OPERATIONS.md) | Local setup, deployment, recovery, and verification |
+| [Roadmap](docs/ROADMAP.md) | Known gaps, planned improvements, and Society Workspaces |
+| [Agent guide](AGENTS.md) | Repository working rules |
+
+## Local development
+
+Run from the repository root beside `package.json` and `wrangler.jsonc`:
 
 ```text
-npm install
+npm ci
 npm run typecheck
-npm run test
+npm test
 npm run dev
 ```
 
-The Vite dev server serves the client and the Cloudflare Vite plugin's local
-Worker preview. Copy `.env.example` to a local `.env`
-and fill it with non-committed development values before exercising OAuth.
-Apply the local D1 schema with `npm run db:migrate:local`.
+For local OAuth and persistence, configure an ignored `.env` from [.env.example](.env.example), register the local Microsoft callback, and run `npm run db:migrate:local`. See [Operations](docs/OPERATIONS.md) before configuring credentials, migrating, deploying, or testing mail.
 
-For a Cloudflare deployment, create the D1 database and Queue named in
-`wrangler.jsonc`, add the resulting D1 id to that file, configure
-the Entra redirect URI, then set Worker secrets with Wrangler. Finally run:
-
-```text
-npm run db:migrate:remote
-npm run deploy
-```
-
-The deploy command builds the Vite client and publishes `worker/index.ts` with
-the static assets. Keep `PUBLIC_ORIGIN` aligned with the deployed origin so
-same-origin and OAuth redirect checks remain valid. The exact provisioning and
-real-mail test gates are recorded in `docs/TESTING.md` and `docs/PROGRESS.md`.
-
-## Non-negotiable safety rules
-
-- Never commit `.env`, `.dev.vars`, access tokens, refresh tokens, passwords, or client secrets.
-- Never use stored student passwords in the deployed application. User authentication is interactive Microsoft OAuth.
-- Never request application-level Microsoft permissions. Mail Flow uses delegated OAuth permissions for the signed-in member; delegated Graph `Mail.Send` is the rollback transport.
-- Never call a Graph `202 Accepted` response "delivered". The correct state is "Accepted by Microsoft".
-- Never automatically resend an ambiguous outcome. Surface it as `unknown` and require a human decision.
+The application uses React/TypeScript and Vite in `src/app`, browser spreadsheet utilities in `src/client`, pure contracts in `src/domain`, and server adapters in `src/server`. [worker/index.ts](worker/index.ts) handles HTTP, Queues, and scheduled work. [migrations](migrations) and [wrangler.jsonc](wrangler.jsonc) define persistent schema and Cloudflare configuration.
 
 ## License
 
-Mail Flow's original code and documentation are licensed under the
-[MIT License](LICENSE). Copyright (c) 2026 Kyzer Phneh
-([kyzer1023](https://github.com/kyzer1023)).
-
-The PNG files in `mock-images/` (including its subdirectories) and `public/assets/`
-are excluded from this MIT grant pending confirmation of their provenance and
-reuse rights. Dependencies retain their own licenses. See
-[third-party notices and asset scope](THIRD_PARTY_NOTICES.md) for details and the
-unresolved license metadata in the transitive `buffers` dependency.
+Original code and documentation are licensed under the [MIT License](LICENSE). Third-party terms and image exclusions are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

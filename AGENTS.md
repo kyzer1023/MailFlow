@@ -1,99 +1,54 @@
 # Mail Flow agent guide
 
-Read this file before changing the repository. Then read the documents named under "Required context". The repository is designed so an agent can join a workstream without receiving the full conversation history.
-
 ## Required context
 
-Read these files in order:
+Read [Product](docs/PRODUCT.md), [Architecture](docs/ARCHITECTURE.md), [Design](docs/DESIGN.md), and [Roadmap](docs/ROADMAP.md), then the files relevant to the task. Read [Operations](docs/OPERATIONS.md) for setup, verification, OAuth, Cloudflare, deployment, or real-mail work.
 
-1. `docs/CONTEXT.md`
-2. `docs/USE_CASES.md`
-3. `docs/ARCHITECTURE.md`
-4. `docs/DESIGN.md`
-5. `docs/IMPLEMENTATION_PLAN.md`
-6. `docs/PROGRESS.md`
-7. `docs/OPERATIONS.md` when your task touches OAuth, Cloudflare, deployment, or real-mail testing
-8. The files owned by your assigned workstream
+Authority order: the user's latest instruction; security and privacy constraints here and in Architecture; accepted behavior in Product and Design; approved task-specific references; implementation. Roadmap proposals are not implemented features or approval to change runtime contracts.
 
-Use `docs/DECISIONS.md` when a design or architecture choice is unclear. Use `docs/TESTING.md` before declaring a task complete.
+## Product and architecture boundaries
 
-## Authority order
+- Cloudflare is the only application host. Microsoft Entra ID is the only user identity provider, restricted to the configured USM tenant.
+- Delegated OAuth SMTP with `SMTP.Send` is the configured transport. Graph delegated `Mail.Send` remains a deployment-selected rollback path, never an automatic per-message fallback.
+- The sender is the authenticated member's mailbox. Shared mailboxes, arbitrary From addresses, application-level Microsoft permissions, and direct Google Sheets access are outside the current prototype.
+- Parse CSV and XLSX in the browser. Each source row becomes one recipient job; each eligible row receives a separate message.
+- Attachments use each member's OneDrive App Folder through delegated `Files.ReadWrite.AppFolder`. Require SMTP and both resource grants; preserve the five-file and 20-MiB combined limits.
+- Domain modules have no Cloudflare runtime imports. Database access uses repositories, Queue publishing uses its adapter, and Microsoft calls use mail/storage adapters.
+- Preserve conditional recipient transitions, immutable campaign snapshots, mailbox coordination, and request idempotency. Queue delivery is at least once. An ambiguous provider submission becomes `unknown` and is never automatically resent.
+- Unknown API routes and write requests must never fall through to the app shell.
+- Organization membership, shared records, and durable society file storage are roadmap proposals. A society label is not an authorization boundary.
 
-When sources conflict, use this order:
+## Local workflow and shared files
 
-1. The user's latest explicit instruction.
-2. Security and privacy constraints in this file and `docs/ARCHITECTURE.md`.
-3. Approved PNG references in `mock-images/` for visible layout and style.
-4. Accepted behavior in `docs/USE_CASES.md`.
-5. Architecture decisions in `docs/DECISIONS.md`.
-6. Implementation details in the current code.
-
-## Project boundaries
-
-- Cloudflare is the only application hosting platform.
-- Microsoft Entra ID is the only user identity provider.
-- Delegated OAuth SMTP with `SMTP.Send` is the target mail transport. Microsoft Graph delegated `Mail.Send` remains a deployment-selectable rollback path during the staged migration.
-- The first release accepts `.csv` and `.xlsx` uploads. It does not connect directly to Google Sheets.
-- Every spreadsheet row produces a separate message.
-- The sender is always the authenticated USM mailbox.
-- Campaign-wide attachments are limited to five files and 20 MiB combined, use each signed-in student's OneDrive App Folder through delegated `Files.ReadWrite.AppFolder`, and require SMTP mode plus delegated `SMTP.Send`.
-- Shared mailboxes, arbitrary From addresses, and application-level Microsoft permissions are out of scope for the prototype.
-
-## Architecture boundaries
-
-- Domain modules must not import Cloudflare runtime types.
-- Database access goes through repository functions or interfaces.
-- Queue publishing goes through a campaign queue adapter.
-- Microsoft mail calls go through a mail provider adapter.
-- Parsing workbooks happens in the browser, not in a Worker request.
-- Database migrations, bindings, and operational configuration live in Git.
-- Use conditional state transitions for recipient jobs. Queue delivery is at least once.
-- A provider request with an ambiguous network outcome becomes `unknown`; it is not retried automatically.
-
-## Application layout and local workflow
-
-- Run application commands from the repository root beside `package.json` and `wrangler.jsonc`.
-- Build app UI in `src/`. The production Worker API, Queue consumer, and scheduled handler enter through `worker/index.ts`.
-- Static client output must remain reproducible, and unknown API or write requests must never fall through to the app shell.
-- Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
+- Run application commands from the repository root. UI lives in `src/app`; production entrypoints are composed in `worker/index.ts`.
+- Start the local server and open the preview yourself when visual work requires it.
+- Other agents may edit this checkout. Inspect shared files before editing and preserve unrelated changes. Own only the assigned files or responsibility.
+- Update Architecture before implementing an approved cross-module contract change. Keep Roadmap status accurate when work completes.
 
 ## Frontend rules
 
-- Match the approved mock for each route before inventing a new layout.
-- The landing page uses the locally installed `design-taste-frontend` skill sourced from `github.com/leonxlnx/taste-skill`.
-- Product screens follow the approved mocks and the Product Design image-to-code workflow.
-- Design tokens are centralized. Do not scatter literal colors, radii, spacing, or z-index values.
-- Use one icon family. Do not hand-draw SVG icons or substitute emoji.
-- Implement keyboard access, visible focus, reduced-motion handling, loading, empty, error, disabled, and success states.
-- Do not put an em dash or en dash in user-visible copy.
-- Before making substantial visual changes, use the Product Design context workflow when the visual source is unclear or no longer matches the current goal. Record durable prototype-specific design feedback, preferences, and decisions in this guide.
-- Do not hard-code the name or identity of USM Debate Society, or any other individual society, in UI copy, defaults, fixtures, tests, or flow creation. Organization-specific names in approved mocks are layout references only.
+- Preserve the current Paper, Moss, Coral, and Deep Ink identity and the durable interaction rules in Design. The running interface is the baseline for refinements; proposed presentation imagery is not implementation authority.
+- Use the local `design-taste-frontend` skill for landing-page work. For substantial product redesign, inspect the current rendered journey and use the Product Design context/image-to-code workflow when appropriate.
+- Centralize colors, radii, spacing, and z-index tokens. Use one icon family, currently Phosphor; do not hand-draw replacement SVG icons or use emoji.
+- Provide keyboard access, visible focus, reduced motion, and loading, empty, error, disabled, and success states.
+- Do not use em or en dashes in user-visible copy. Do not hard-code a real society identity in UI defaults, fixtures, tests, or flow creation.
+- Fixed CC, BCC, and Reply-to values use removable chips. Spreadsheet values use one explicit dynamic-value control and readable green tokens, including in the message editor. Hide merge braces in the normal interface.
+- Data mapping labels explain the recipient email column and each message value in plain language. Detected columns are plain labels; green tokens are reserved for selecting or inserting dynamic values.
+- CC, BCC, Reply-to, and Importance each occupy their own full-width row. Normal is the default importance.
+- The accepted future direction keeps Familiar Paper and a recipients-first journey, with independent template management. The current four-step journey and proposed three-stage refinement are distinguished in Product and Roadmap.
 
-Recipient metadata controls should follow a Power Automate-like pattern: fixed CC, BCC, and Reply-to addresses use removable chips, while spreadsheet-sourced values stay behind one explicit dynamic-value control. Render dynamic values as readable green tokens without exposing merge braces in the interface, including inside the message editor. Email Importance is a first-class sending rule with Normal as the default.
+## Secrets and privacy
 
-The Data step sidebar should explain mappings in plain language: identify the recipient email column, label each message value by its readable name, and show detected spreadsheet columns without merge braces or dynamic-value icons. Reserve green token styling for places where a member inserts or selects a dynamic value.
+- Never print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, source, screenshots, or Git.
+- `.env` is ignored local application configuration. `.env.test-accounts` contains colon-separated local test notes; never load it into the application or treat it as deployable dotenv configuration.
+- Student passwords are for authorized local interactive support only. Never put them in Cloudflare, D1, browser bundles, fixtures, or Git.
+- OAuth client secrets belong in Worker secrets. Refresh tokens belong only in encrypted server-side storage, with the rotation constraints in Operations.
+- Use synthetic identities and data for public screenshots. Do not present simulated provider responses as evidence of delivery.
 
-In Sending rules, CC, BCC, Reply-to, and Importance each occupy their own full-width row. Do not pair these inputs into two-column groups.
+## Documentation and completion
 
-2026-09-05 frontend direction: the user requested an overhaul/refinement centered on a more intuitive experience for nontechnical members. Evaluate the workflow and terminology as well as visual styling. After comparing Image Gen concepts, the user preferred the first displayed mock, Familiar Paper, preserving the Paper/Moss/Coral identity. Its selected recipient-screen reference is `mock-images/refinement/01-recipients-familiar-paper.png`. The default New send journey imports recipients first, then lets the member choose a saved template or write a message, then reviews and confirms. A saved-template reuse shortcut remains a proposal; do not remove template management or require a spreadsheet merely to edit a saved template. The scope and proposed backend stability boundary are recorded in `docs/FRONTEND_REFINEMENT_PLAN.md`; the backend freeze remains a recommendation, not a finalized decision.
-
-The user also accepted the Message-screen continuation at `mock-images/refinement/02-message-familiar-paper.png` and requested clarification of save, reuse, and missing-field interactions. The corresponding save dialog, template picker, and field-resolution designs remain proposals described in the refinement plan.
-
-## Secret handling
-
-- Do not print or copy values from `.env`, `.env.test-accounts`, or `.dev.vars` into logs, documentation, prompts, tests, or source files.
-- The root `.env` holds local application configuration. The ignored `.env.test-accounts` holds local test-only notes and currently uses colon-separated labels. Never load that account file into the application or treat it as deployable dotenv configuration.
-- Student account passwords are for local interactive test support only. They must never enter Cloudflare, D1, browser bundles, fixtures, screenshots, or Git history.
-- OAuth secrets belong in Worker secrets. Encrypted refresh tokens belong in D1 only when server-side encryption and key rotation notes are present.
-
-## Shared-worktree etiquette
-
-- Other agents may edit the repository at the same time. Do not revert their changes.
-- Own only the files or modules assigned to your workstream.
-- Before editing a shared file, inspect the latest version and preserve unrelated changes.
-- Add a dated entry to `docs/PROGRESS.md` when your workstream reaches a meaningful checkpoint.
-- If a cross-workstream contract changes, update `docs/ARCHITECTURE.md` or `docs/DECISIONS.md` first and notify the coordinating agent.
-
-## Completion standard
-
-A task is complete only when relevant type checks, tests, build checks, and visual or integration checks pass. Record commands and results in `docs/PROGRESS.md`. Do not claim real mail delivery from provider acceptance alone.
+- Maintain current guidance, not a diary. Revise the relevant document in place; do not recreate progress logs, dated review reports, archive folders, or mock-image collections.
+- Preserve current decisions, unresolved limitations, recovery procedures, and a compact dated verification summary. Remove superseded instructions and repair links when consolidating.
+- Every committed presentation asset must be used by the deck. Keep temporary scripts, renders, browser captures, and validation receipts in ignored output directories.
+- Run the checks relevant to the change, including type checks, tests, builds, and visual/integration checks where applicable. Operations defines the verification matrix.
+- Report what was actually verified. Provider acceptance is never proof of inbox delivery. Record only the latest useful verification state in Operations; use commits for change history.

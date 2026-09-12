@@ -16,6 +16,8 @@
 .trust-note svg { width: 1rem; height: 1rem; }
 .trust-note__item { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
 .trust-note__separator { color: #a4aaa5; }
+.committee-presentation-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 1.15rem; color: var(--moss-dark); font-size: .9rem; text-underline-offset: .25em; }
+.committee-presentation-link:hover { color: var(--ink); }
 
 @media (min-width: 901px) {
   .landing-hero { padding: 0; }

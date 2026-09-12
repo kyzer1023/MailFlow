@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Why Mail Flow: clearer control and visibility for society email. Explore the current interface and the proposed roadmap.">
+  <meta name="theme-color" content="#f4f0e8">
+  <meta property="og:title" content="Mail Flow | Every send, accounted for">
+  <meta property="og:description" content="A committee presentation of Mail Flow's current features and proposed roadmap. View in your browser, without signing in.">
+  <meta property="og:type" content="website">
+  <title>Mail Flow | Committee presentation</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./presentation.css">
+  <script src="./presentation.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#deck">Skip to presentation</a>
+  <header class="presentation-header">
+    <a class="brand" href="/" aria-label="Mail Flow home"><img src="/assets/mailflow-logo-horizontal.png" alt="MailFlow" width="160" height="53"></a>
+    <span class="header-label">For society committees</span>
+    <div class="header-actions">
+      <button type="button" id="reading-toggle" class="text-button" aria-pressed="false" hidden>View all</button>
+      <button type="button" id="copy-link" class="text-button" hidden>Copy link</button>
+      <a class="home-link" href="/">Open Mail Flow</a>
+    </div>
+  </header>
+
+  <main id="deck" tabindex="-1">
+    <h1 class="sr-only">Mail Flow: current product and proposed roadmap</h1>
+
+    <section class="slide slide--cover" id="overview" aria-labelledby="overview-title" data-title="The idea">
+      <div class="cover-copy">
+        <p class="eyebrow">Mail Flow</p>
+        <h2 id="overview-title" tabindex="-1">Every send,<br>accounted for.</h2>
+        <p class="intro">Personalized society email with a clear view of progress, recipient results, and the next action.</p>
+      </div>
+      <figure class="cover-image">
+        <a href="/assets/committee/current-dashboard.png" target="_blank" rel="noopener" aria-label="Open the overview screenshot at full size"><img src="/assets/committee/current-dashboard.png" width="1600" height="1000" alt="Mail Flow overview showing reusable flows and recent campaigns" fetchpriority="high"></a>
+        <figcaption>Current interface with fictional demonstration data. Select any screenshot to enlarge it.</figcaption>
+      </figure>
+    </section>
+
+    <section class="slide slide--why" id="why-mail-flow" aria-labelledby="why-title" data-title="Why Mail Flow">
+      <header class="slide-heading"><h2 id="why-title" tabindex="-1">Sending email needed a clearer view.</h2><p>Our earlier Power Automate workflow was tedious to prepare and difficult to monitor during real committee work.</p></header>
+      <div class="why-layout">
+        <div class="problem-copy"><p>Understanding what had happened meant piecing together the automation's progress. We wanted the sending process to be easier to follow and control.</p><p class="emphasis">Mail Flow puts the campaign and its recipient results in one place.</p><p class="context-note">This motivation comes from our experience with the previous workflow.</p></div>
+        <dl class="questions">
+          <div><dt>What has happened?</dt><dd>See campaign progress and a processing result for each spreadsheet row.</dd></div>
+          <div><dt>What needs attention?</dt><dd>Inspect recipient outcomes and keep uncertain submissions visible for review.</dd></div>
+          <div><dt>What can we do next?</dt><dd>Pause a campaign, resume eligible pending work, or export the results.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="slide slide--monitor" id="sending-visibility" aria-labelledby="visibility-title" data-title="Sending visibility">
+      <header class="slide-heading"><h2 id="visibility-title" tabindex="-1">A status for each recipient.</h2><p>See what is pending, what Microsoft accepted, and where to investigate. Paced sending continues after the browser closes.</p></header>
+      <figure class="wide-image"><a href="/assets/committee/current-campaign-paused.png" target="_blank" rel="noopener" aria-label="Open the campaign monitor at full size"><img src="/assets/committee/current-campaign-paused.png" width="1256" height="665" alt="Paused campaign with 14 pending rows, 32 accepted rows, 2 skipped rows, per-recipient results, and an Export results button" loading="lazy"></a><figcaption>Actual monitor, fictional campaign. Pause and resume controls act on eligible pending work.</figcaption></figure>
+      <p class="important-note">Accepted by Microsoft confirms submission. It does not confirm inbox delivery. Unknown submissions require review and are not automatically resent.</p>
+    </section>
+
+    <section class="slide slide--wide" id="recipient-import" aria-labelledby="import-title" data-title="Recipient import">
+      <header class="slide-heading"><h2 id="import-title" tabindex="-1">A spreadsheet becomes individual messages.</h2><p>Import CSV or Excel, confirm the recipient email column, and check the rows before sending.</p></header>
+      <figure class="wide-image"><a href="/assets/committee/current-import.png" target="_blank" rel="noopener" aria-label="Open the recipient import screen at full size"><img src="/assets/committee/current-import.png" width="1272" height="631" alt="Imported CSV showing eight example recipients, a worksheet selector, a header row selector, and the Email column mapping" loading="lazy"></a><figcaption>Current interface with fictional data. Workbook parsing happens in the browser.</figcaption></figure>
+      <p class="slide-takeaway">One source row creates one separate personalized message when it is eligible to send.</p>
+    </section>
+
+    <section class="slide slide--split" id="personalized-messages" aria-labelledby="message-title" data-title="Personalized messages">
+      <header class="slide-heading"><h2 id="message-title" tabindex="-1">Write once. Personalize each message.</h2></header>
+      <div class="feature-layout"><div class="feature-copy"><h3>Values from your file</h3><p>Insert a name, event, date, or another spreadsheet value wherever the message needs it.</p><h3>Familiar editing</h3><p>Use visual formatting or sanitized HTML, then review the result for individual recipients.</p></div><figure><a href="/assets/committee/current-message.png" target="_blank" rel="noopener" aria-label="Open the message editor at full size"><img src="/assets/committee/current-message.png" width="1272" height="642" alt="Current message editor with readable green Name, Event, Date, and Venue tokens" loading="lazy"></a><figcaption>Current message editor with fictional event details.</figcaption></figure></div>
+    </section>
+
+    <section class="slide slide--rules" id="sending-rules" aria-labelledby="rules-title" data-title="Sending rules and files">
+      <header class="slide-heading"><h2 id="rules-title" tabindex="-1">The details stay under your control.</h2></header>
+      <div class="rules-layout"><div class="feature-copy"><h3>Your Outlook stays the sender</h3><p>Set fixed or spreadsheet-based CC, BCC, and Reply-to addresses. Choose message importance.</p><h3>Campaign attachments</h3><p>Every recipient gets the same reviewed files. Attach up to five files, totaling 20 MiB, through your OneDrive App Folder.</p><p class="context-note">Attachments are temporary campaign storage. Microsoft mail and OneDrive permissions are required.</p></div><figure><a href="/assets/committee/current-rules.png" target="_blank" rel="noopener" aria-label="Open the sending rules and attachments at full size"><img src="/assets/committee/current-rules.png" width="583" height="688" alt="Sending rules with CC, BCC, Reply-to, Normal importance, and a ready example attachment" loading="lazy"></a><figcaption>Current controls with a fictional attachment.</figcaption></figure></div>
+    </section>
+
+    <section class="slide slide--wide" id="review-and-test" aria-labelledby="review-title" data-title="Review and test">
+      <header class="slide-heading"><h2 id="review-title" tabindex="-1">Review before the campaign starts.</h2><p>Check representative personalized messages, send a test to yourself, and acknowledge the final review.</p></header>
+      <figure class="wide-image"><a href="/assets/committee/current-review.png" target="_blank" rel="noopener" aria-label="Open the review screen at full size"><img src="/assets/committee/current-review.png" width="1272" height="688" alt="Personalized message preview for Aisha alongside sample recipients and the final review checklist" loading="lazy"></a><figcaption>Current interface with fictional data. The test goes only to the signed-in mailbox.</figcaption></figure>
+      <p class="slide-takeaway">Tests keep the reviewed message and files, while suppressing campaign CC, BCC, and Reply-to.</p>
+    </section>
+
+    <section class="slide slide--split" id="reuse-and-history" aria-labelledby="reuse-title" data-title="Reuse and history">
+      <header class="slide-heading"><h2 id="reuse-title" tabindex="-1">Useful work stays easy to find.</h2></header>
+      <div class="feature-layout"><div class="feature-copy"><h3>Reusable flows</h3><p>A flow saves the message setup. Reuse it with a new recipient file, or edit the template for the next event.</p><h3>Campaign records</h3><p>Revisit earlier sends and export recipient outcomes instead of reconstructing what happened.</p><p class="context-note">Ownership today is individual. Shared society access is proposed on the roadmap.</p></div><figure><a href="/assets/committee/current-flows.png" target="_blank" rel="noopener" aria-label="Open the reusable flows screen at full size"><img src="/assets/committee/current-flows.png" width="1204" height="580" alt="Current reusable flow library with example Event invitation, Volunteer briefing, and Membership update templates" loading="lazy"></a><figcaption>Current flow library with fictional examples.</figcaption></figure></div>
+    </section>
+
+    <section class="slide slide--roadmap" id="roadmap-reliability" aria-labelledby="reliability-title" data-title="Roadmap: preparation and recovery">
+      <header class="slide-heading"><p class="eyebrow">Roadmap / not yet implemented</p><h2 id="reliability-title" tabindex="-1">Clearer preparation and recovery.</h2><p>The current prototype provides the workflow. These improvements remain planned work before wider use.</p></header>
+      <ol class="roadmap-list"><li><span class="roadmap-number" aria-hidden="true">01</span><div><h3>A reviewed version that stays consistent</h3><p>Keep draft edits, test sends, and campaign start tied to the same prepared revision, including interrupted requests.</p></div></li><li><span class="roadmap-number" aria-hidden="true">02</span><div><h3>More predictable reconnection</h3><p>Improve recovery when Microsoft authorization expires, preserving unsent work and clearly explaining the next action.</p></div></li><li><span class="roadmap-number" aria-hidden="true">03</span><div><h3>Deliberate template updates</h3><p>Separate one-off message edits from publishing a reusable template. Make missing fields and reuse choices easier to understand.</p></div></li></ol>
+    </section>
+
+    <section class="slide slide--workspace" id="society-workspaces" aria-labelledby="workspace-title" data-title="Roadmap: Society Workspaces">
+      <header class="slide-heading"><p class="eyebrow">Roadmap / proposed feature</p><h2 id="workspace-title" tabindex="-1">Society Workspaces.</h2><p>A shared home for approved members, reusable templates, and committee records.</p></header>
+      <div class="workspace-layout"><figure><a href="/assets/committee/society-workspace-concept.png" target="_blank" rel="noopener" aria-label="Open the Society Workspaces concept at full size"><img src="/assets/committee/society-workspace-concept.png" width="1586" height="992" alt="ImageGen concept of a future Society Workspace with shared templates, approved members, campaign history, and committee handover" loading="lazy"></a><figcaption>ImageGen concept in the current visual theme. This screen is not implemented.</figcaption></figure><div class="feature-copy"><h3>Approved membership</h3><p>Admins approve student identities. Verified Microsoft sign-in connects members to the society.</p><h3>Shared committee memory</h3><p>Members create and reuse flows, view shared campaigns, and retain records across committee handovers.</p><p class="context-note">Each sender still uses their own mailbox. A permanent society file library needs a separate storage decision.</p></div></div>
+    </section>
+
+    <section class="slide slide--roadmap" id="roadmap-next" aria-labelledby="next-title" data-title="Roadmap: what could follow">
+      <header class="slide-heading"><p class="eyebrow">Roadmap / future options</p><h2 id="next-title" tabindex="-1">What could follow.</h2><p>After preparation and shared access are reliable, committee feedback can guide the next features.</p></header>
+      <div class="future-features"><div><h3>Approval workflows</h3><p>Let a designated reviewer approve the exact campaign before it starts.</p></div><div><h3>Scheduled sends</h3><p>Choose when a reviewed campaign begins, with clear ownership and cancellation rules.</p></div><div><h3>Searchable archives</h3><p>Find campaigns by event or academic year and preserve useful records for the next committee.</p></div></div>
+      <p class="closing-note">The purpose stays the same: clearer visibility and control over society email.</p><p class="context-note">These are proposals, not available features or promised delivery dates.</p>
+    </section>
+  </main>
+
+  <footer class="deck-controls" id="deck-controls" hidden>
+    <div class="deck-progress"><span id="slide-count" aria-hidden="true">1 / 11</span><progress id="slide-progress" value="1" max="11" aria-label="Presentation progress"></progress><span class="keyboard-hint">Use arrow keys to navigate</span></div>
+    <nav class="deck-navigation" aria-label="Presentation slides"><button id="previous" type="button" class="nav-button" disabled>Previous</button><label class="sr-only" for="slide-picker">Choose a slide</label><select id="slide-picker"></select><button id="next" type="button" class="nav-button nav-button--primary">Next</button></nav>
+  </footer>
+  <p class="sr-only" id="slide-announcement" role="status" aria-live="polite"></p>
+  <p class="share-status" id="share-status" role="status" aria-live="polite"></p>
+  <noscript><p class="noscript-note">All slides are shown below one another. JavaScript enables slide navigation and link copying.</p></noscript>
+</body>
+</html>

@@ -44,25 +44,27 @@ package, `https://github.com/substack/node-buffers`, returned 404 during this
 check. No license is inferred for this package, and Mail Flow's MIT grant does
 not cover it. Confirm the applicable upstream terms before redistributing it.
 
-## PNG assets excluded from the MIT grant
+## Image assets excluded from the MIT grant
 
-This exclusion covers every PNG in `mock-images/`, including
-`mock-images/refinement/`, and these two public assets:
+The two runtime assets remain excluded pending confirmation of provenance and
+reuse rights:
 
 - `public/assets/landing-route-stationery.png`
 - `public/assets/mailflow-logo-horizontal.png`
 
-[The progress log](docs/PROGRESS.md) records the original seven mock images as
-supplied approved references, the two public assets as generated from those
-references, and the refinement images as generated design continuations.
-It does not establish the original references' creator or reuse terms.
-Consequently, this repository grants no license for these PNGs while their
-provenance and reuse rights remain unconfirmed. This does not assert ownership
-of third-party content depicted in them.
+They were generated using supplied design references whose original creator and
+reuse terms are unconfirmed. Removing the old reference files does not resolve
+that provenance question or change the runtime assets' licensing scope.
+
+The PNGs in `public/assets/committee/`, displayed in the public web
+presentation, are also excluded from the MIT grant. They contain current UI
+screenshots using synthetic data and an ImageGen workspace concept derived from
+the current UI. The concept is not an implemented feature. These images include
+or derive from the retained artwork; no additional image reuse rights are
+asserted here. The deck's original written content remains MIT-licensed.
 
 ## Fonts
 
 The application names system-font fallbacks in
 [its design tokens](src/app/styles/tokens.css). No font files are bundled in
-this repository, and the MIT grant does not cover those separately installed
-fonts.
+the application or web presentation.

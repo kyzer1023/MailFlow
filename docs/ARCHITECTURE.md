@@ -1,257 +1,113 @@
 # Architecture
 
-## Runtime overview
+Mail Flow is a modular Cloudflare Worker application with a React client. This is the current design and its required safety contract. [Product](PRODUCT.md) describes user behavior; [Roadmap](ROADMAP.md) identifies implementation gaps rather than treating every intended behavior as complete.
+
+## Runtime and module boundaries
 
 ```text
-Browser
-  React application
-  CSV/XLSX parsing
-  Mapping, validation, preview
-        |
-        | same-origin HTTPS
-        v
-Cloudflare Worker
-  API routes
-  Microsoft OAuth callbacks
-  Session and CSRF enforcement
-  Campaign commands
-        |
-        +--> D1
-        |    users, sessions, flows, template versions,
-        |    campaigns, recipient jobs, attachment metadata,
-        |    audit events, encrypted tokens
-        |
-        +--> Microsoft Graph / OneDrive App Folder
-        |    temporary attachment bytes in the signed-in student's drive
-        |
-        +--> Cloudflare Queue
-             one campaign tick at a time
-                    |
-                    v
-             Queue consumer
-                    |
-                    v
-             Selected Microsoft mail transport
-               - current fallback: Graph /me/sendMail
-               - target: SMTP AUTH with OAuth on port 587
+Browser: React, CSV/XLSX parsing, mapping, editing, validation, preview
+  -> same-origin Worker API: OAuth, sessions, CSRF, commands, server validation
+     -> D1: identity, encrypted grants, templates, campaigns, jobs, audit, coordination
+     -> OneDrive App Folder: temporary owner-scoped attachment bytes
+     -> Cloudflare Queue: paced campaign ticks
+        -> selected Microsoft mail adapter: delegated OAuth SMTP or Graph rollback
+Hourly Worker handler: delivery recovery, missing wakes, expiry, attachment cleanup
 ```
 
-## Module boundaries
+| Area | Responsibility |
+| --- | --- |
+| `src/app` | Routes, UI state, editor, preview and workflow controls |
+| `src/client` | Browser parsing, mapping, rendering, and validation |
+| `public/presentation`, `public/assets/committee` | Public static committee deck and illustrative screenshots, served through the existing Cloudflare asset binding |
+| `src/domain` | Pure contracts, validation primitives, attachment limits, pacing and send keys |
+| `src/server/api` | HTTP routes, validation, ownership, command orchestration |
+| `src/server/database` | Repository interfaces, D1 queries, and conditional transitions |
+| `src/server/attachments` | File policy, OneDrive coordination, integrity and cleanup |
+| `src/server/queue` | Queue adapter and campaign-tick consumer |
+| `src/server/microsoft`, `src/server/auth` | OAuth, sessions, encrypted tokens, SMTP/MIME, Graph rollback and error mapping |
+| `worker/index.ts` | HTTP, Queue, and scheduled entrypoint composition |
 
-- `client`: routing, view models, browser-side workbook parsing, attachment selection, sanitization, preview, and user interaction.
-- `api`: HTTP routes, input validation, session checks, and orchestration.
-- `domain`: pure campaign states, validation rules, template rendering, pace calculations, and contracts.
-- `database`: D1 schema, SQL migrations, and repositories.
-- `attachments`: file policy, per-user OneDrive App Folder coordination, checksum verification, locking, and cleanup.
-- `queue`: Cloudflare Queue adapter and campaign tick consumer.
-- `microsoft`: OAuth, encrypted token storage, refresh, Graph fallback, SMTP adapter, MIME generation, and provider error mapping.
+Domain code does not import Cloudflare runtime types. Database, Queue, and Microsoft operations stay behind their adapters. Parsing workbooks in the browser avoids putting that CPU/memory work inside a Worker request. One deployable Worker is sufficient for the current scope; splitting services requires measured need.
 
-Domain modules must have no Cloudflare imports. Adapters depend on domain contracts, not the reverse.
+The public `/presentation/` page is independent of the authenticated React application. It makes no API requests, needs no Microsoft session, and contains only synthetic screenshot data and a labeled workspace concept. Its HTML, CSS, JavaScript, and images are copied by the existing Vite build. Hash links identify individual slides; all content remains readable without JavaScript.
 
-## Microsoft authorization
+## Identity and authorization
 
-- Single-tenant Entra application.
-- Server-side authorization-code flow with PKCE.
-- Graph fallback scopes: `openid`, `profile`, `email`, `offline_access`, `User.Read`, and delegated `Mail.Send`.
-- SMTP target scopes: `openid`, `profile`, `email`, `offline_access`, and delegated `https://outlook.office.com/SMTP.Send`.
-- Attachment storage scopes: `openid`, `profile`, `email`, `offline_access`, and delegated Graph `Files.ReadWrite.AppFolder`.
-- OAuth access tokens are resource-specific. SMTP delivery and OneDrive storage use separate encrypted refresh-token records for the same user.
-- After a successful homepage SMTP callback creates the application session, the API checks the stored OneDrive resource record. If the grant is absent, it creates a second state, PKCE verifier, and nonce for `Files.ReadWrite.AppFolder`, omits the OAuth `prompt` parameter so Microsoft may reuse the active session, and redirects immediately. The second callback binds tenant and object identifiers to the primary user before storing the OneDrive token.
-- Graph deployments, deployments without attachment support, already-authorized users, and unavailable storage authorization skip the second leg. Cancellation or failure preserves the primary session and returns to the state-validated local destination with a visible status. `/auth` destinations are rejected to prevent callback loops.
-- In SMTP mode, the validated ID token supplies the tenant object identity, display name, principal name, and mailbox address. Graph mode retains the `/me` cross-check during the rollback period.
-- Redirect route: `/auth/microsoft/callback` on local and deployed origins.
-- Session cookie: `HttpOnly`, `Secure` in production, `SameSite=Lax`, rotated after login, and renewed on authenticated use with a 365-day rolling lifetime. Microsoft revocation and browser cookie clearing still end access.
-- OAuth state and PKCE verifier are short-lived and bound to the initiating browser.
-- Refresh tokens are encrypted before D1 storage using AES-GCM with a Worker secret that is not stored in D1.
-- Student passwords are not part of the application architecture.
+Microsoft Entra is single-tenant. Authorization-code flows use PKCE, nonce, short-lived one-time browser-bound state, and validated local return paths. Tenant/object identity is verified; a visible email suffix is insufficient. SMTP mode takes mailbox identity from the validated ID token; Graph rollback also cross-checks `/me`.
 
-## Data model
+| Resource | Delegated authorization |
+| --- | --- |
+| SMTP | `openid profile email offline_access https://outlook.office.com/SMTP.Send` |
+| OneDrive | `openid profile email offline_access Files.ReadWrite.AppFolder` |
+| Graph mail rollback | `openid profile email offline_access User.Read Mail.Send` |
 
-### users
+Tokens are resource-specific. SMTP and OneDrive use separate encrypted refresh-token records for the same user; they are never interchangeable bearer tokens. After primary SMTP login establishes the app session, a missing OneDrive grant triggers a separate state/PKCE/nonce journey without forcing another account prompt. The second callback must match the primary tenant/object identity. Declining, failing, or mismatching OneDrive preserves primary login and returns a visible status. Existing grants, Graph mode, or unavailable storage skip this leg. Manual OneDrive connection remains a recovery route. `/auth` return destinations are rejected to prevent loops.
 
-Tenant object identity, display name, principal name, role, created time, and last login.
+Session cookies are opaque, HTTP-only, SameSite=Lax, Secure in production, rotated on login, and renewed on authenticated use with a 365-day rolling lifetime. D1 stores session hashes, expiry, and revocation, not raw session tokens. Refresh tokens use AES-GCM with a secret outside D1. Browser JavaScript never receives OAuth tokens. Passwords are never part of the application.
 
-### sessions
+Flows, campaigns, and attachment sets are owner-scoped. Every read/write/export must enforce ownership; mutation routes also enforce session, CSRF, same-origin, and schema validation. A society-name label or user role does not establish organization membership. The proposed workspace model needs new authorization contracts before implementation.
 
-Opaque session identifier hash, user reference, expiry, and revocation time. Raw session tokens are never stored.
+## Persistence and immutable sends
 
-### oauth_tokens
+| Records | Purpose |
+| --- | --- |
+| users, sessions, OAuth states | Verified identity, session lifecycle and one-time login state |
+| OAuth/resource token records | Encrypted per-user resource grants and encryption metadata |
+| flows | Owner, optional society label, unique active name, current version and archive state |
+| template_versions | Immutable subject, sanitized body, recipient configuration, importance and field manifest |
+| campaigns | Owner/sender, flow/version, source filename, totals, pace, state, request fingerprint and recovery status |
+| recipient_jobs | Row, resolved envelope/content, send key, status, attempts, timestamps and sanitized diagnostics |
+| attachment_sets/files | Owner/campaign association, filename/type/size/hash, private locator, ordering and cleanup lifecycle |
+| audit_events | Actor, event type, references, bounded metadata and time |
+| test_sends, rate_limit_counters | Test idempotency and bounded endpoint controls |
+| mailbox_send_state, delivery_attempts | Provider lease, pace, backoff and rolling-budget reservations |
 
-User reference, encrypted refresh token, access-token expiry metadata, granted scopes, encryption version, and update time.
+Active flow names are unique per owner ignoring case. Archiving removes a flow from the active library while preserving campaign references. Template publication and campaign preparation currently share a lifecycle; [Roadmap](ROADMAP.md) records the needed separation.
 
-### flows
+Campaign-create requests require an owner-scoped idempotency key and a server-calculated fingerprint of the normalized effective snapshot. Exact replays and insert races return the existing campaign. Different content under that key conflicts. Legacy rows without fingerprints retain their attachment-set replay compatibility.
 
-Owner, optional society label, name, current template version, lifecycle state, and timestamps. Active flow names are unique per owner using case-insensitive comparison so campaign history can use the flow name as a stable human-readable label. Removing a flow archives it so existing campaigns and template references remain auditable. The application does not inject a specific society identity when the member creates a flow.
+The API bounds create JSON at 8 MiB before buffering/parsing. Recipient snapshots and bound JSON chunks remain below D1's 2-MB string/row limit. One D1 batch inserts the campaign, owner-matching optional attachment association, all recipient snapshots, validation transition, and audit events atomically. SQLite JSON expansion avoids one insert query per row. Triggers independently enforce owner, sender, template, totals, initial state, fingerprint, and immutable snapshots. [D1 batch semantics](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch) provide transaction rollback.
 
-### template_versions
+Client escaping/sanitization supports usable feedback; independent server validation remains necessary. Preview HTML is sanitized and isolated in an iframe. CSV export protects against formula injection. Audit metadata excludes secrets and message bodies; attachment diagnostics also exclude addresses, filenames, drive identifiers, private URLs, provider payloads and coordination tokens.
 
-Flow reference, version number, subject template, sanitized body HTML, recipient configuration including message importance, placeholder manifest, and immutable creation metadata.
+## Attachments
 
-### campaigns
+Attachment bytes live in the owning student's OneDrive `Apps/MailFlow` folder, using their quota. The browser uploads through the authenticated same-origin API. D1 records sanitized names, approved media types, byte counts, SHA-256, ordering, private locators and lifecycle. Queue messages and campaign-create JSON carry opaque set identifiers, never bytes or locators.
 
-Flow and template references, owner, sender address, source filename, recipient totals, pace, state, pause reason, timestamps, and idempotency key.
+The product and SMTP layer share five-file/20-MiB raw-byte bounds. Open sets may be edited; test-send locks them and campaign creation atomically associates an owner-matching set. Before loading bytes, verify file count/total metadata. Stream downloads only up to each stored byte size and verify hashes. Users can change/delete OneDrive objects, so storage location alone is not immutability.
 
-The campaign-create API requires the idempotency key and stores a server-calculated fingerprint of the normalized, effective campaign snapshot. D1 enforces key uniqueness per owner. An exact ordinary replay or concurrent insert race resolves to the existing campaign response, while reuse of the key for different content fails with a stable conflict instead of silently returning the earlier campaign. Legacy campaigns created before fingerprints remain replay-compatible through their existing attachment-set check.
+Attachment loading finishes before claiming the next recipient. Outcomes are:
 
-Campaign-create JSON is limited to 8 MiB at the Worker boundary before it is buffered or parsed. This application limit is deliberately below Cloudflare's plan-level request-body allowance because Workers have a fixed [128 MB isolate memory limit](https://developers.cloudflare.com/workers/platform/limits/) and Cloudflare recommends enforcing a maximum before consuming JSON bodies. Individual persisted recipient snapshots are also bounded below D1's [2 MB maximum string or row size](https://developers.cloudflare.com/d1/platform/limits/).
+- Network failures, Graph 429/5xx and interrupted downloads preserve pending work, increment a durable retry ordinal, and reserve one delayed wake. Backoff grows from 30 seconds to 15 minutes; a longer Retry-After takes precedence within the Queue's 86,400-second limit.
+- OneDrive authorization failures pause for same-account reconnection and retain the immutable set. Resume revalidates before a conditional paused-to-running transition.
+- Missing objects, invalid metadata, size/hash mismatch, or terminal storage failure stop the campaign before claim. Pending rows become Not sent in terminal presentation.
 
-### attachment_sets and attachment_files
+Successful loading clears the attachment recovery state. Resume never rewrites terminal recipient outcomes. Unassociated sets expire after 24 hours. Terminal cleanup handles at most five objects per set; scheduled cleanup processes at most two eligible sets per run. Partial failures and truncated listings remain eligible for idempotent continuation. Ordinary delete uses the OneDrive recycle bin; scoped permanent deletion and immediate quota recovery are unproven.
 
-An attachment set belongs to one user and at most one campaign. D1 stores the sanitized original filename, media type, byte count, SHA-256 digest, private OneDrive locator, immutable ordering, lifecycle state, and expiry metadata. Attachment bytes live only in that user's OneDrive `Apps/MailFlow` folder and count against their OneDrive quota.
+## Delivery coordination
 
-The product limit is five files and 20 MiB combined raw bytes. Open sets may be edited. Test-send locks a set, and campaign creation atomically associates an open set with one owner-matching campaign. Abandoned unassociated sets expire after 24 hours. Terminal campaign cleanup removes active OneDrive items and retains metadata for audit. Ordinary Graph deletion uses the user's recycle bin unless the scoped `permanentDelete` path is separately proven in the tenant.
+One campaign tick advances one eligible recipient and reserves the next wake. A mailbox has one durable expiring provider lease plus next-send and provider-backoff times, shared by campaigns and self-tests. Conditional D1 batches acquire a lease and reserve a delivery attempt before a provider call. Process-local locks are not a correctness mechanism.
 
-Before reading bytes, the attachment service verifies that the active file rows agree with the set's bounded file count and total size. OneDrive downloads are then streamed only up to each reviewed file's stored byte count before SHA-256 verification. A missing object or an integrity mismatch is permanent for the immutable campaign set and fails clearly before another recipient is claimed. A Graph throttle, provider outage, interrupted download, or network failure remains a proven pre-submission condition: a running campaign retains its pending row and reserves one guarded delayed wake instead of failing or consuming mailbox budget.
+The rolling 24-hour application budget reserves 8,000 envelope-recipient entries per authenticated mailbox. To, CC, BCC, tests, and repeated address occurrences all count. Accepted and unknown attempts retain their budget charge. Only outcomes proving no submission, or stale pre-boundary attempts, release it. Budget exhaustion leaves work pending until the earliest reservation expiry. The bound leaves headroom below [Microsoft's documented mailbox limit](https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits#sending-limits), but Mail Flow cannot observe ordinary Outlook use.
 
-Cleanup is resumable and deliberately bounded. An immediate terminal cleanup pass deletes no more than five active or untracked objects for one set. The hourly fallback handles at most two eligible sets per invocation, keeps metadata active after a partial OneDrive or D1 failure, and repeats idempotent deletes on a later pass. A truncated App Folder listing can never mark a set deleted.
+Runnable campaigns have one effective D1 wake token/due time. A Queue consumer must conditionally consume that token; duplicate or stale physical messages are no-ops. Start, resume, pacing, backoff, and recovery reserve before publishing. Due time respects campaign/mailbox pace, provider backoff, retry eligibility, and budget expiry. [Queue delays](https://developers.cloudflare.com/queues/configuration/javascript-apis/#queuesendoptions) are clamped to 0-86,400 seconds; longer waits reserve another wake after rechecking.
 
-### recipient_jobs
+The hourly watchdog reconciles bounded batches. A stale claim or reserved attempt that never crossed the provider boundary can return to pending. Stale sending/provider-bound work becomes terminal Unknown and retains its budget charge. It releases classified expired leases, recreates missing wakes, and completes exhausted campaigns. Never reset an Unknown row or clear the attempt ledger to force progress.
 
-Campaign reference, source row, resolved recipient metadata, message importance, normalized merge data JSON, rendered subject and sanitized body, unique send key, status, attempt count, claim time, accepted time, last error category, last error message, and Graph request metadata.
+SMTP uses port 587 with STARTTLS and delegated XOAUTH2. MIME preserves HTML, importance, visible headers and BCC envelope privacy; byte output is chunked to at most 80 KiB. Stable hashed Message-ID/MIME identity supports safe pre-submission retries but is not provider idempotency. Graph is selected only at deployment and rejects attachment sends.
 
-Campaign creation inserts the campaign, optional owner-matching attachment association, every recipient snapshot, and the creation audit events in one D1 batch transaction. Recipient snapshots are encoded into bounded JSON chunks and expanded with SQLite JSON functions so the 300-recipient product limit does not require one query per row. Each bound chunk remains below D1's 2 MB string limit, and the full batch remains far below D1's per-invocation query limits. Database triggers independently enforce campaign ownership, sender, template, total, fingerprint, and recipient snapshot invariants if a repository caller bypasses the HTTP schema.
+Acceptance requires Graph 202 or the final SMTP 250 after the DATA terminator. A loss after submission may mean acceptance, so record Unknown without automatic retry. Explicit provider rejection and proven pre-submission failures follow their retry/recovery category. Neither transport supplies a safe application idempotency key or proves inbox delivery. Token-preparation classification still has the recorded gaps in Roadmap.
 
-### audit_events
+## Test sends and public controls
 
-Actor, campaign, recipient job when relevant, event type, structured metadata, and timestamp. Secrets and message bodies are excluded from audit metadata.
+The Worker forces test To to the authenticated mailbox and removes CC/BCC/Reply-to at the final provider boundary. It retains the reviewed subject/body, importance and attachment set. Tests have separate records, effective-content fingerprints, stable keys and audit events; they never create recipient campaign jobs.
 
-Attachment-load audit events record only the failure category, disposition,
-retry ordinal, and next-attempt timestamp when applicable. They never record
-addresses, filenames, message content, bearer tokens, refresh tokens, Graph
-response bodies, private download URLs, drive item identifiers, or generated
-storage locators.
+Exact terminal replays do not call Microsoft again or consume another rate-limit unit. Changed-content keys conflict. Proven pre-submission failure may release a claim for deliberate retry; ambiguous outcomes remain terminal. Limits are five new tests per user per 10 minutes, and anonymous OAuth starts are limited to 20 per secret-derived client hash and 200 globally per 10 minutes. Store no raw client IP. Chained authenticated OneDrive consent is not a second anonymous start.
 
-### test_sends and rate_limit_counters
+## API and deployment contract
 
-Test sends use a dedicated owner-scoped record rather than recipient jobs. A stable client idempotency key and a server-calculated fingerprint cover the campaign, sanitized subject and HTML body, importance, and selected attachment set. The first request claims the key before Microsoft is called; exact replays return the stored terminal result, while a key reused for different effective content is rejected. A failure proven to occur before submission releases the claim so the same key may retry; an ambiguous provider outcome remains terminal and is never automatically resubmitted. Test-send audit events reference the campaign but never a recipient job and never store addresses, message bodies, or attachment bytes.
+Routes cover `/auth/microsoft/start`, the shared `/auth/microsoft/callback`, manual `/auth/microsoft/onedrive/start`, `/auth/logout`, `/api/me`, flows/versions, attachment sets/files, campaign create/list/detail/jobs, test-send, start/pause/resume, and result CSV export. Campaign listing includes live recipient counts in the same bounded owner-scoped read; no duplicated count store is required.
 
-Bounded D1 counters allow five new test-send attempts per authenticated user per 10 minutes. Anonymous Microsoft OAuth starts allow 20 attempts per privacy-preserving client hash and 200 attempts globally per 10 minutes. Idempotent accepted or terminal test-send replays do not consume another rate-limit unit. The public OAuth limiter stores no raw IP address. The hourly scheduled handler drains expired authentication and control rows in bounded batches sized to outpace the globally accepted OAuth-state creation rate.
+Cloudflare bindings are `DB`, `CAMPAIGN_QUEUE`, and `ASSETS`. Secrets are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`. Non-secret configuration includes tenant/client IDs, public origin, transport, pace, and campaign limit. The hourly schedule is minute 15.
 
-## State transitions
-
-```text
-pending -> claimed -> accepted
-                   -> failed
-                   -> unknown
-pending -> skipped
-pending -> pending after an explicitly safe retry condition
-```
-
-Campaign states:
-
-```text
-draft -> validated -> queued -> running -> completed
-                              -> paused -> running
-                              -> failed
-```
-
-Only conditional SQL updates can claim a pending job. A queue duplicate that cannot claim exits successfully.
-
-## Queue pacing
-
-The queue carries campaign tick messages, not an uncontrolled burst of all recipients. A tick:
-
-1. Verifies that the campaign is runnable.
-2. Loads and checksum-verifies the campaign-wide attachment set before claiming a row. Transient OneDrive failures reserve a delayed attachment-check wake; deleted or changed immutable files fail the campaign without claiming the row.
-3. Conditionally claims the next pending job.
-4. Refreshes the user's access token for the selected Microsoft resource when needed.
-5. Calls the selected mail provider once.
-6. Records the result.
-7. Enqueues the next tick with a delay derived from the configured pace.
-
-At 12 messages per minute, the next tick is delayed by approximately 5 seconds. Graph `429` and explicit transient SMTP replies use their provider retry delay when present. Paused campaigns do not enqueue progress until resumed.
-
-### Attachment-load recovery
-
-Attachment loading is a pre-submission operation and always finishes before a
-recipient row is claimed. Failures are classified at the OneDrive boundary and
-have one of three durable outcomes:
-
-- Network failures, Microsoft Graph `429` responses, and Graph `5xx` responses
-  keep the campaign runnable and every recipient job unchanged. The campaign
-  records an attachment retry count and schedules one guarded wake using
-  exponential delay from 30 seconds through 15 minutes. A provider
-  `Retry-After` value takes precedence when it is longer, and the final Queue
-  delay remains clamped to Cloudflare's 86,400-second limit.
-- OneDrive authorization failures pause the campaign before a recipient is
-  claimed, retain the attachment set, and record an explicit reconnect-required
-  issue code. Resume validates the same owner-scoped attachment set before the
-  conditional `paused -> running` transition and then reserves one new wake.
-- A permanently missing OneDrive object, deleted attachment metadata, byte-size
-  mismatch, or SHA-256 mismatch fails the campaign before a recipient is
-  claimed. The campaign keeps a sanitized terminal issue code and explanation;
-  terminal cleanup may remove any remaining active attachment bytes.
-
-`campaigns.attachment_issue_code` is the machine-readable recovery contract and
-`campaigns.attachment_retry_count` supplies durable backoff state. Successful
-attachment loading clears both before the next recipient claim. Neither field
-contains a filename, object locator, token, address, or message content.
-
-Resuming never rewrites recipient outcomes. The next tick continues through the
-existing conditional `claimNextPending` path, so `accepted`, `failed`, `skipped`,
-and `unknown` jobs remain terminal and cannot be sent again through recovery or
-duplicate Queue delivery.
-
-## Mailbox scheduler, budget, and recovery
-
-D1 coordinates delivery per authenticated mailbox, not merely per campaign. Each mailbox has one durable expiring provider lease plus mailbox-wide `next_send_at` and `provider_backoff_until` timestamps. Every campaign provider call and self-only test send must atomically acquire that lease and create a delivery-attempt reservation before crossing the provider boundary. The attempt and lease use a cryptographically unguessable token carried through conditional transitions. A Worker process-local mutex is insufficient and is not used. Cloudflare documents that [`D1Database::batch()` executes as a transaction and rolls the sequence back when a statement fails](https://developers.cloudflare.com/d1/worker-api/d1-database/#batch); guarded conditional batches rely on that behavior.
-
-The application reserves the full provider envelope count against an 8,000-recipient rolling 24-hour mailbox budget. To, CC, BCC, and self-only test recipients all count. Duplicate address occurrences are counted separately, including repeats across fields, so the calculation is deterministic and conservative. Accepted and ambiguous or unknown provider attempts consume their full reservation. Explicit failures that prove no provider submission and stale pre-boundary attempts release it. Budget exhaustion keeps campaign work pending, records the earliest reservation expiry as the next eligible time, and creates one bounded wake reservation rather than failing or skipping a recipient. The headroom is measured against Microsoft's documented [10,000 recipients per mailbox in a rolling 24-hour period](https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits#sending-limits).
-
-Campaign wake-up is also D1-authoritative. A runnable campaign stores no more than one effective wake token and due time. Each Queue message carries that token, and only the consumer that conditionally consumes the matching due token may advance work. Duplicate or stale Queue messages are acknowledged as no-ops. Start, resume, pacing, throttling, and recovery reserve a wake in D1 before publishing it. If publication or a Worker invocation is lost, the hourly watchdog finds runnable campaigns with eligible pending work and recreates the missing physical wake without creating a second effective wake. Queue delays are clamped because Cloudflare's [`delaySeconds` range is 0 through 86,400 seconds](https://developers.cloudflare.com/queues/configuration/javascript-apis/#queuesendoptions); longer waits are represented by another guarded wake.
-
-The delivery-attempt ledger distinguishes `reserved` from `provider_bound`. A crash while a job is only claimed or an attempt is only reserved is recoverable as proven pre-submission work. Once the attempt and job cross the provider boundary, stale work becomes terminal `unknown` and retains its daily-budget charge. The hourly watchdog reconciles expired mailbox leases and stale work in bounded batches, completes exhausted campaigns, and never automatically resends unknown work. User-visible scheduler messages show waiting or recovery times without exposing recipients, message content, attachments, or coordination tokens.
-
-## Ambiguous outcomes
-
-Neither Graph sendMail nor SMTP submission provides a safe application idempotency key. Graph records `accepted` after `202`. SMTP records `accepted` only after the final `250` response following the terminating DATA marker. If a known response proves that no send occurred, apply the safe retry policy. If the network fails after either provider may have accepted the message, record `unknown` and stop automatic retry for that row. This favors no duplicate message over an automatic blind rerun.
-
-## API shape
-
-Expected route groups:
-
-- `/auth/microsoft/start`, `/auth/microsoft/callback`, `/auth/logout`, `/api/me`
-- `/api/flows`, `/api/flows/:id`, `/api/flows/:id/versions`
-- `/api/attachment-sets`, `/api/attachment-sets/:id/files`, `/api/attachment-sets/:id/files/:fileId`
-- `/api/campaigns`, `/api/campaigns/:id`, `/api/campaigns/:id/jobs`
-- `/api/campaigns/:id/test-send`
-- `/api/campaigns/:id/start`, `/pause`, `/resume`
-- `/api/campaigns/:id/export.csv`
-
-All mutating routes require an authenticated session, CSRF protection, same-origin checks, Zod validation, and ownership checks.
-
-The campaign list includes current recipient status counts with each public campaign record. The owner-scoped repository query calculates these counts from recipient jobs in the same read as the bounded campaign list. Dashboard and history screens consume that response directly instead of requesting every campaign detail; no duplicated count storage or background synchronization is needed.
-
-The test-send route is additionally server-authoritative at the final mail-provider boundary: `To` is always the authenticated mailbox, and campaign CC, BCC, and Reply-To are always empty even if those fields are present in the request. The validated subject, sanitized HTML body, message importance, and immutable campaign attachment set remain unchanged. A bounded per-user limit and stable idempotency key apply before provider submission.
-
-`/auth/microsoft/start` is intentionally public, but each anonymous client hash is rate-limited before a new OAuth state record is created. The existing scheduled handler removes expired OAuth-state rows, expired or revoked session rows, expired rate-limit counters, and stale test-send claim records in addition to OneDrive orphan cleanup.
-
-The internally chained OneDrive authorization does not create another anonymous start request. It begins only after the rate-limited primary sign-in succeeds and the application session exists. Manual `/auth/microsoft/onedrive/start` remains an authenticated recovery route and keeps account selection available when a member must correct a declined or mismatched grant.
-
-## Cloudflare bindings
-
-- `DB`: D1 database.
-- `CAMPAIGN_QUEUE`: Queue producer.
-- Queue consumer in the same Worker deployment unless operational evidence calls for a split Worker.
-- Static assets binding for the Vite client.
-- Secrets for Entra client secret, token-encryption key, and session integrity.
-- Plain variables for tenant ID, client ID, public origin, campaign limit, and default pace.
-- `MAIL_TRANSPORT` selects `graph` or `smtp`. Attachments are exposed and accepted only in `smtp` mode when the user's stored grants include both `SMTP.Send` and `Files.ReadWrite.AppFolder`.
-- `ATTACHMENT_OBJECT_NAMESPACE`, when set, is a short deployment discriminator embedded in every new private OneDrive filename. Staging sets it to `staging`; production omits it to preserve the deployed filename format.
-- An hourly scheduled handler removes attachment sets that remain unassociated past their 24-hour expiry. Campaign terminal paths also request immediate cleanup.
-
-The Wrangler `staging` environment is a separate Worker with independent D1, Queue, dead-letter Queue, vars, and secrets. It shares no Cloudflare stateful binding with the top-level production deployment. Both environments use the same Entra application and per-user OneDrive App Folder, so the staging attachment namespace is the storage-level isolation boundary in addition to separate D1 ownership metadata.
-
-## Security boundaries
-
-- No access or refresh token reaches browser JavaScript.
-- No HTML from a workbook is trusted by default.
-- Spreadsheet values are escaped before insertion into templates.
-- Preview content is sanitized and isolated in an iframe.
-- Campaign ownership is checked on every read and write.
-- Attachment APIs require the same authenticated owner, CSRF protection, same-origin mutation checks, bounded multipart bodies, approved file types, and content-signature validation.
-- Queue messages and campaign JSON carry only opaque attachment-set identifiers. They never contain attachment bytes, user filenames as storage keys, or private OneDrive locators.
-- OneDrive bytes are loaded through the reviewed per-file and 20 MiB aggregate bounds and rehashed before every test or campaign send. Missing or changed bytes fail the campaign before a recipient is claimed, while transient storage failures retry only from that pre-claim boundary.
-- SMTP MIME permits the same maximum of five files and 20 MiB raw bytes, chunks HTML and base64 attachment output into writes no larger than 80 KiB, and derives a stable MIME boundary and Message-ID from the opaque send key for proven pre-submission retries. This identity is not treated as provider idempotency, and ambiguous submissions are still never retried.
-- User-facing errors do not reveal tokens, Graph response bodies, or internal stack traces.
-- Production configuration is reproducible from `wrangler` configuration, migration files, and documented secret names.
+Staging has a separate Worker, D1, campaign Queue/DLQ, vars and secrets. Both environments use the same Entra application and the member's App Folder, so staging embeds `ATTACHMENT_OBJECT_NAMESPACE=staging` in new private filenames. Production omits it. No R2 binding exists. [Operations](OPERATIONS.md) governs migration compatibility, target validation, and rollback.
