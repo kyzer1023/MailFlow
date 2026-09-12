@@ -1,4 +1,6 @@
 /* Public landing page. */
+.committee-presentation-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: var(--space-16); color: var(--moss-dark); font-size: .9rem; text-underline-offset: .25em; }
+.committee-presentation-link:hover { color: var(--ink); }
 .landing {
   min-height: 100dvh;
   background: var(--paper);

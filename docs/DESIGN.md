@@ -1,87 +1,55 @@
-# Design reference
+# Design
 
-## Visual authority
+Mail Flow uses a calm editorial interface with paper surfaces, thin borders, readable forms, and restrained route/checkpoint imagery. Preserve the current visual identity while making decisions understandable to nontechnical society members.
 
-The PNG files in `mock-images/` are the approved visual targets. Match their layout, hierarchy, typography, color, density, and component shape at comparable desktop viewport sizes. Adapt responsively without turning the desktop product into a separate visual language.
+## Visual baseline
 
-## Reference inventory
+The running source interface and [centralized tokens](../src/app/styles/tokens.css) are the baseline. Current UI screenshots in the [committee presentation](https://mailflow.kyzer-hono-test.workers.dev/presentation/) illustrate the interface with synthetic data; they are not pixel-locking specifications. The future workspace image is explicitly a concept.
 
-The 2026-09-05 approved Familiar Paper references in `mock-images/refinement/` supersede the original import and message screens: `01-recipients-familiar-paper.png`, `02-message-familiar-paper.png`, `03-save-template.png`, `04-template-picker.png`, and `05-missing-fields.png`. New send has three steps: Recipients, Message, Review & send. The saved-template library remains independently editable without importing a file. Missing message values resolve in the sidebar beside the editor. These screens use flatter surfaces and the centralized 5px `--send-radius`; their approved component shapes supersede the older radius guidance below.
+| Role | Brand color |
+| --- | --- |
+| Deep Ink: text and navigation | `#17211F` |
+| Moss: navigation, validation, secondary emphasis | `#516A59` |
+| Signal Coral: primary action and active progress | `#F0684F` |
+| Mist: quiet fills | `#DCE5DE` |
+| Paper: canvas and surfaces | `#F4F0E8` |
 
-- `brandkit.png`: logo system, palette, typography direction, status language, and material references.
-- `01-landing.png`: public landing page and Microsoft sign-in entry.
-- `02-dashboard.png`: authenticated overview, sidebar, flows, campaigns, and route summary.
-- `03-template.png`: template composition step.
-- `04-mapping.png`: workbook preview, column mapping, and validation summary.
-- `05-review.png`: representative email preview, test send, and final confirmation.
-- `06-campaign.png`: running campaign, pacing, job states, recovery, and audit receipt.
+Use semantic tokens for actual CSS values, including spacing, radii, and z-index. Geometric sans typography with system fallbacks is the interface direction; the repository bundles no fonts. Use the existing Phosphor icon family and prepared logo. Keep thin neutral borders, restrained shadows, rounded controls, and generous but purposeful spacing. Avoid generic blue/purple gradients, glass effects, invented icons, and decorative dashboard metrics.
 
-## Extracted brand tokens
+## Durable interaction rules
 
-- Deep Ink: `#17211F`
-- Moss: `#516A59`
-- Signal Coral: `#F0684F`
-- Mist: `#DCE5DE`
-- Paper: `#F4F0E8`
-- Display and interface direction: Satoshi or a close freely available geometric sans substitute.
-- Template-field direction: Satoshi Mono or a close freely available monospace substitute.
+- The sender is always visible and locked to the authenticated mailbox.
+- Normal interface text uses readable dynamic-field names, without merge braces. Green tokens are for inserting/selecting values and displaying them inside the editor.
+- The Data sidebar labels the recipient email column and each message value plainly. Detected columns are plain reference labels, not insertion tokens.
+- Fixed CC, BCC, and Reply-to values are removable chips. Each field has one explicit control for spreadsheet-sourced values.
+- CC, BCC, Reply-to, and Importance each occupy their own full-width row. Normal importance is the default.
+- Validation explains the problem and correction path beside the affected field or row. Disabled controls explain their prerequisite.
+- Review shows the exact message without adding Mail Flow branding inside the recipient's email. Explain the self-only test substitutions and require final acknowledgement.
+- Accepted means accepted by Microsoft, never delivered. Preserve explicit Unknown, Failed, Skipped, Not sent, and paused states. Finished processing is not universal success.
+- Do not hard-code real society identities, private addresses, or private message content. Do not use em or en dashes in user-visible copy.
 
-Use semantic tokens in code rather than direct color literals. Status colors may extend the palette only where the state requires it.
+## Layout and accessibility
 
-## Design read
+The public landing has a simple sign-in header and Paper hero. The product uses a shared Deep Ink navigation rail and Paper workspace. The current wizard has Recipients, Message, and Review & send, with an inset message preview in Review. Template editing remains available without a spreadsheet.
 
-Mail Flow is a trust-first student-society service with a tactile editorial product language. Paper, envelope, route, and checkpoint imagery reinforce the workflow without making operational screens decorative. The interface should feel calm, accountable, and human rather than like a generic SaaS dashboard.
+At narrow widths, navigation becomes a compact header/drawer, panels stack, steppers retain current-step context, and tables scroll or use readable rows. Keep sender, status, acknowledgement, and primary actions discoverable. The current landing artwork is omitted on narrow screens.
 
-The product serves members of USM student societies generally. Organization names and event copy visible in the approved mocks are sample content, not product identity. The live interface must not present Mail Flow as belonging to USM Debate Society or any other single society.
+Support loading, empty, error, disabled, success, and recovery states. Use semantic labels/headings, keyboard access, visible focus, non-color status cues, live regions for changing results, and reduced-motion behavior. Avoid horizontal page overflow; keep email previews readable. Verify desktop 1440 x 900, tablet 1024 x 768, and mobile 390 x 844 when changing UI.
 
-Landing-page dials:
+## Current preparation and results
 
-- `DESIGN_VARIANCE: 6`
-- `MOTION_INTENSITY: 4`
-- `VISUAL_DENSITY: 5`
+Familiar Paper uses a recipients-first New send journey, followed by choosing a saved template or composing, then review and confirmation. Applying a template preserves recipients and current attachments. Explicit saving distinguishes a one-off send from reusable publication. Connected fields retain a visible mapping and keyboard focus; missing required values stay visible and block Review. A prepared send stays locked across retries, with an explicit new-send path.
 
-The operational UI is outside the marketing-only scope of the taste skill. It follows the approved mocks first, with accessible product patterns and complete interaction states.
+History and detail share Queued, Sending, Waiting with a reason, Paused, Cancelling, and Cancelled meanings. Separate Failed and Unknown outcomes; manual receipt verification records evidence without changing the original provider result. Cancellation that stopped no rows retains its audit and uses the settled result presentation. Use viewer-local timestamps with UTC offset, readable wrapping status pills, and keyboard-accessible horizontal table regions at narrow widths.
 
-## Fidelity rules
+Before a substantial redesign, inspect the actual rendered workflow and capture the affected states. Use the Product Design context workflow when the visual source or goal is unclear. A new approved task-specific reference may guide implementation; presentation concepts alone do not authorize it.
 
-- Preserve the left-rail navigation, stepper hierarchy, paper surfaces, thin borders, and restrained tinted shadows.
-- Use the route line and checkpoint motif only where it explains progress.
-- Use Signal Coral for the primary action and active sending state.
-- Use Moss and Deep Ink for validation, acceptance, navigation, and brand anchoring.
-- Keep the page background within the Paper family. Do not introduce generic blue-purple gradients or glass effects.
-- Use consistent radius rules: controls 8-10px, primary panels 12-16px, status chips fully rounded.
-- Avoid hand-built icon SVGs. Use one close icon library and a prepared logo asset.
-- User-visible copy contains no em dash or en dash.
+## Committee presentation
 
-## Required states
+The [public web deck](https://mailflow.kyzer-hono-test.workers.dev/presentation/) is maintained in [public/presentation](../public/presentation). The landing page links to it. It explains the team's motivation from its earlier Power Automate workflow, emphasizes current features with real UI captures, and explicitly labels the final roadmap slides as unimplemented proposals. Do not describe the earlier experience as a general benchmark of Power Automate.
 
-For the main path, implement:
+Current-interface screenshots were captured from the integrated application with synthetic API responses and example.com identities. They show real React layouts and interactions, not live campaign results or delivery evidence. The seven captures cover the dashboard, Recipients import, message editor, sending rules, Review, paused campaign monitor, and saved templates. Captions disclose the illustrative data; images open at full size for inspection.
 
-- Loading skeletons shaped like the final layout.
-- Empty flows and campaigns.
-- Field-level validation and mapped/unmapped states.
-- Disabled actions before prerequisites are met.
-- Test-send progress, accepted, and failure.
-- Campaign pending, sending, accepted, skipped, failed, paused, completed, and unknown states.
-- Keyboard focus, hover, pressed, and reduced-motion behavior.
+The Society Workspaces illustration was generated with the built-in ImageGen tool using the current dashboard screenshot as a style reference. It retains Paper, Moss, Coral, the dark navigation rail, and the existing form/table language while envisioning approved membership and shared records. Assets used by the deck live in [public/assets/committee](../public/assets/committee); temporary captures and validation reports stay in ignored output directories. See [image licensing scope](../THIRD_PARTY_NOTICES.md) before redistributing the visuals.
 
-## Responsive behavior
-
-- At narrow widths, the sidebar becomes a compact header or drawer.
-- The three New send labels remain visible at narrow widths, with smaller progress nodes.
-- Mapping panels stack below the data preview.
-- Review metadata stacks above or below the email preview without shrinking the preview to illegibility.
-- Wide result tables become horizontally scrollable with sticky identity columns or transform into concise job rows.
-
-## QA viewports
-
-- Reference desktop: use each source image's native aspect ratio and a matching browser viewport where possible.
-- Desktop usability: 1440 x 900.
-- Tablet: 1024 x 768.
-- Mobile: 390 x 844.
-
-Design QA is complete only after reference and implementation screenshots are compared at the same viewport and visible state.
-
-## Stylesheet ownership
-
-`src/app/styles/index.css` loads centralized tokens and shared controls, then landing, shell, overview, data, recipients, message, attachments, review and campaign styles. The final wizard stylesheet owns the shared three-step send layout and its responsive sizing. Component styles keep their related breakpoint rules in the same file. Add styles to the appropriate owner instead of creating another visual-polish or refinement override layer.
+The deck supports previous/next controls, a slide selector, keyboard navigation, shareable slide links, a continuous reading view, and a no-JavaScript reading fallback. Retain responsive layouts, visible focus, sufficient contrast, reduced-motion behavior, and explicit distinction between Microsoft acceptance and delivery. Keep theme values centralized in [presentation.css](../public/presentation/presentation.css).

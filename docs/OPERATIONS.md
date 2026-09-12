@@ -1,200 +1,143 @@
-# Operations runbook
+# Operations and verification
 
-This runbook is for a future agent or maintainer deploying Mail Flow to the existing USM Entra application and a Cloudflare account. Read `../AGENTS.md`, `CONTEXT.md`, `ARCHITECTURE.md`, and `TESTING.md` first. Never paste a secret into this file, a command transcript, a screenshot, or Git.
+Run application commands from the repository root. Read [Architecture](ARCHITECTURE.md) for invariants and [Roadmap](ROADMAP.md) for unresolved readiness work. Repository configuration describes expected resources; inspect the actual target before making remote changes. Do not infer live release identity from a local commit or old test evidence.
 
-## Deployment inventory
+## Environment inventory
 
-| Concern | Expected resource |
+| Concern | Production | Staging |
+| --- | --- | --- |
+| Worker | `mailflow` | `mailflow-staging` |
+| D1, binding `DB` | `mailflow-db` | `mailflow-staging-db` |
+| Queue, binding `CAMPAIGN_QUEUE` | `mailflow-campaign-ticks` | `mailflow-staging-campaign-ticks` |
+| Dead-letter Queue | None declared | `mailflow-staging-campaign-ticks-dlq` |
+| Public origin | [Production](https://mailflow.kyzer-hono-test.workers.dev) | [Staging](https://mailflow-staging.kyzer-hono-test.workers.dev) |
+| Attachment namespace | Default | `staging` |
+| Schedule | Hourly, minute 15 | Hourly, minute 15 |
+
+The exact non-secret IDs and bindings live in [wrangler.jsonc](../wrangler.jsonc). Both environments use the existing single-tenant Entra `MailFlow` application and each member's OneDrive App Folder, but separate D1, Queues and independent secrets. There is no R2 resource. Do not provision duplicates during routine maintenance.
+
+The root package provides all commands. Static client output is reproducible through Vite; `worker/index.ts` remains the sole production application entrypoint. Cloudflare Git build directory configuration must point at the repository root.
+
+## Local full-stack setup
+
+1. Run `npm ci`.
+2. Copy [.env.example](../.env.example) to ignored `.env` and supply local values securely. Use `.env` or `.dev.vars`, never both. Do not use `.env.test-accounts` as configuration.
+3. Use a dedicated short-lived Entra client credential and independent local token/session secrets. Never extract/reuse production secrets.
+4. Keep `http://localhost:5173/auth/microsoft/callback` registered as a Web redirect URI on the existing app. An alternate port requires a matching callback before OAuth testing.
+5. Run `npm run db:migrate:local` for the local D1 schema.
+6. Run `npm run dev`. The Cloudflare Vite plugin serves client and Worker on the same local origin; do not start a separate API server.
+7. Before sign-in, check landing/static responses, unauthenticated `/api/me` returning 401 JSON, and unknown API GET/POST returning 404 JSON rather than the app shell.
+
+An OAuth-start 503 indicates missing required local configuration; a working landing page does not establish OAuth readiness. Sign-in and mail testing require the relevant authorized accounts and recipients. For public UI captures, use synthetic local data and isolated mocked API responses; label them as illustrative.
+
+## Credentials and Microsoft consent
+
+Worker secrets are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`. Keep values out of vars, command arguments, logs, files committed to Git, screenshots and chat. Generate the token key from 32 cryptographically random bytes; use an independent high-entropy session secret. Pipe values directly to Wrangler secret input.
+
+Keep localhost, production, and staging Web callbacks together where needed. Both mail and OneDrive authorization reuse `/auth/microsoft/callback` on the active origin. Preserve single-tenant support and delegated-only permissions. SMTP requests `https://outlook.office.com/SMTP.Send`; OneDrive separately requests `Files.ReadWrite.AppFolder`; Graph rollback uses `User.Read` and `Mail.Send`. Never combine SMTP and Graph resource grants into one token request.
+
+Primary login establishes the app session, then chains missing OneDrive consent. Verify same-account identity binding, existing-grant skip, cancellation/failure preserving primary login, and recovery through Connect OneDrive. Missing SMTP authorization requires Microsoft reconnection. Consent policy and mailbox SMTP availability must be checked for intended users, not inferred from another account's success.
+
+### Rotation and revocation
+
+If an Entra client credential is exposed, revoke it, add a replacement without resetting other active credentials, update the appropriate Worker secret, and verify reauthorization/refresh. Treat staging and production separately.
+
+Changing `TOKEN_ENCRYPTION_KEY_B64` alone makes existing ciphertext unreadable. The repository has [a rotation helper](../src/server/microsoft/token-crypto.ts) but no complete operational rotation command or tested automated migration. Plan a controlled re-encryption of all affected resource records with old/new keys kept only in protected memory, or deliberately invalidate grants and require reauthorization. Coordinate provider work, database updates, secret activation, verification, and recovery before performing rotation. Do not claim key-ring or automatic rotation support.
+
+Rotate an exposed session secret and invalidate affected sessions. Preserve mailbox attempt accounting and recipient outcomes during credential recovery. Never restore old credentials from a documentation artifact.
+
+## Verification by change type
+
+| Change | Required evidence |
 | --- | --- |
-| Worker and static site | `mailflow` |
-| D1 database | `mailflow-db`, binding `DB` |
-| Private attachment storage | Each member's OneDrive `Apps/MailFlow` folder |
-| Queue | `mailflow-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
-| Public origin | `https://mailflow.kyzer-hono-test.workers.dev` |
-| OAuth callback | `<PUBLIC_ORIGIN>/auth/microsoft/callback` |
-| Entra application | Existing single-tenant application named `MailFlow` |
-| Microsoft permissions | SMTP target: delegated `SMTP.Send`; attachment storage: delegated `Files.ReadWrite.AppFolder`; temporary rollback: delegated Graph `User.Read` and `Mail.Send` |
+| Documentation/license only | Correct claims and links, no stale references, expected file scope, whitespace check; build/tests when removing assets or checking application references |
+| Runtime logic | Relevant regressions, `npm test`, and integration/failure-path checks for changed behavior |
+| Visible UI | Runtime checks plus actual browser states, keyboard/reduced-motion and responsive inspection |
+| Schema/deployment | Full release gate, target/migration compatibility, local and isolated staging verification |
+| Mail/storage behavior | Mocked boundaries first, then a separately bounded authorized Microsoft/OneDrive/inbox matrix |
 
-The source configuration is `../wrangler.jsonc`. The application package and all build commands live at the repository root. Configure Cloudflare Git builds to use the repository root as their build directory. Worker secret names are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`; tenant and client IDs remain non-secret vars in versioned configuration.
+`npm test` runs TypeScript, production builds, the 110 kB gzip initial-client bundle guard, and Vitest. `npm run test:unit` runs the unit/integration suite directly. There is no lint script. A passing test count does not prove production capacity, UI correctness, or mail delivery.
 
-As of 2026-08-31, the D1 database and Queue are provisioned, the initial migration is applied, the Entra production callback is registered, all Worker secrets are present, and the public deployment is active. Do not create duplicate resources during routine maintenance; inspect the existing bindings first.
+Meaningful regression coverage includes spreadsheet normalization/mapping, address parsing/duplicates, escaping/sanitization, MIME/STARTTLS/XOAUTH2, attachment count/size/type/hash checks, owner isolation, CSRF, resource consent, rate limits, test envelopes, campaign fingerprints, atomic creation and rollback, conditional claims, mailbox lease races, rolling-budget accounting, duplicate wakes, provider backoff, and crash recovery. Tests use mocked providers and SQLite-backed D1 adapters; verify affected Cloudflare runtime behavior separately.
 
-## Staging inventory and isolation
+For visual work, exercise the changed journey with synthetic data: valid/invalid rows, navigation, template reuse, representative previews, test/start feedback, attachments, mixed recipient results, and recovery. Check 1440 x 900, 1024 x 768, and 390 x 844, keyboard focus, contrast, page overflow, and reduced motion. Compare against the current baseline and any task-approved reference. Keep temporary captures and validation receipts in ignored output directories.
 
-The top-level Wrangler configuration remains production. The named `staging` environment is a separate deployment:
+## Release gate
 
-| Concern | Staging resource |
-| --- | --- |
-| Worker and static site | `mailflow-staging` |
-| Public origin | `https://mailflow-staging.kyzer-hono-test.workers.dev` |
-| D1 database | `mailflow-staging-db`, binding `DB` |
-| Campaign Queue | `mailflow-staging-campaign-ticks`, binding `CAMPAIGN_QUEUE` |
-| Dead-letter Queue | `mailflow-staging-campaign-ticks-dlq` |
-| Attachment storage | Each member's OneDrive `Apps/MailFlow` folder, with `staging` embedded in every new private object filename |
-| OAuth callback | `https://mailflow-staging.kyzer-hono-test.workers.dev/auth/microsoft/callback` |
-
-Staging has independent `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET` Worker secrets. Tenant and client IDs are non-secret vars shared with the existing single-tenant Entra application. Never reuse the production token-encryption key, session secret, or client credential in staging. R2 is absent.
-
-The stable staging environment hosts one pull-request candidate at a time. `.github/workflows/verify.yml` runs tests and both deployment dry runs for pull requests and main without deploying. `.github/workflows/deploy-staging.yml` is manual-only and serialized. Its operator supplies the exact candidate commit SHA; the workflow checks out that commit, repeats the repository test suite and both dry runs, then applies staging migrations and deploys only after all checks pass. The GitHub `staging` environment must contain `CLOUDFLARE_ACCOUNT_ID` and a staging-deployment-scoped `CLOUDFLARE_API_TOKEN`. Configure required reviewers on that environment when the repository plan supports them. Keep migration files LF-only. For D1 trigger bodies, parenthesize `CASE ... END` expressions so the remote migration statement splitter does not mistake a case terminator for the trigger terminator.
-
-## Preflight gate
-
-From the repository root:
+Fetch origin, compare the candidate with `origin/main`, and integrate the intended remote work before release. Preserve other contributors' commits; do not deploy solely because a local branch is named main. From an isolated checkout of the exact integrated candidate:
 
 ```text
 npm ci
-npm test
-npx wrangler deploy --dry-run
-npm run build:staging
-npm run prepare:staging-config
-npx wrangler deploy --config dist/client/mailflow/wrangler.staging-validated.json --dry-run
+npm run check:staging
 ```
 
-Then confirm:
+The second command runs `npm test`, the production Wrangler dry run, staging build, staging configuration validation, and the isolated staging dry run. Use the scripts in [package.json](../package.json); do not invent a second release pipeline.
 
-- `.env` and `.dev.vars` are ignored.
-- No password, token, client secret, or account address is staged in Git.
-- `wrangler.jsonc` keeps the production `PUBLIC_ORIGIN`; loopback requests derive their own origin at runtime.
-- The Entra app remains single tenant and uses only the delegated scopes required by the selected transport.
-- `MAIL_TRANSPORT=smtp`, migrations `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, `0006_public_endpoint_controls.sql`, `0007_mailbox_scheduler_recovery.sql`, `0008_campaign_create_safeguards.sql`, and `0009_attachment_failure_recovery.sql`, and both delegated resource grants move together. Do not enable only part of this set.
-- Migration `0008_campaign_create_safeguards.sql` is applied before code that writes campaign request fingerprints and bounded recipient chunks. It depends on the permanent transaction guard created by migration `0007`.
-- Migration `0009_attachment_failure_recovery.sql` is applied before code that reads attachment issue state or its durable retry ordinal.
-- Real-mail recipients and message content have been explicitly approved for the test.
-- A staging build was generated with `CLOUDFLARE_ENV=staging`; otherwise the Cloudflare Vite plugin's redirected deploy configuration can still describe production.
-- Run `prepare:staging-config` after the staging build and deploy only through its validated, staging-only config snapshot. Do not add `--env staging` to that generated snapshot or deploy from a mutable redirected config in a shared worktree.
+Before deployment, inspect:
 
-## Local full-stack development
+- Ignored secret files and the candidate diff; no private addresses, credentials or tokens are staged.
+- Exact target Worker, public origin, D1, producer/consumer Queue, schedule, transport, and staging namespace/DLQ as applicable.
+- Registered callback and delegated grant requirements, including SMTP and OneDrive for attachments.
+- Pending migration list and compatibility with the selected code. Retain all committed migrations through `0012`, including manual receipt evidence `0010`, FIFO/cancellation `0011`, and mail authorization recovery `0012`.
+- A staging build was generated with `CLOUDFLARE_ENV=staging`, followed by `prepare:staging-config`. Deploy only from `dist/client/mailflow/wrangler.staging-validated.json`; do not add `--env staging` to that generated snapshot or use mutable redirected production config.
 
-`npm run dev` is the full-stack local command. The Cloudflare Vite plugin serves the React client and executes the Worker routes on the same `http://localhost:5173` origin. Do not start a second API server.
+### Staging
 
-Before testing sign-in locally:
+Staging hosts one candidate at a time. The existing [verification workflow](../.github/workflows/verify.yml) checks candidates without deployment. The [manual staging workflow](../.github/workflows/deploy-staging.yml) is serialized, checks out the supplied commit, verifies, applies only staging migrations, and deploys that candidate. The GitHub staging environment needs `CLOUDFLARE_ACCOUNT_ID` and a scoped `CLOUDFLARE_API_TOKEN`; use required reviewers where supported.
 
-1. Copy `.env.example` to the ignored `.env` file beside `wrangler.jsonc`. Use `.env` or `.dev.vars`, never both.
-2. Supply a dedicated, short-lived Entra client secret and independent local values for `TOKEN_ENCRYPTION_KEY_B64` and `SESSION_SECRET`. Never reuse or extract production Worker secrets.
-3. Confirm that `http://localhost:5173/auth/microsoft/callback` remains registered as a Web redirect URI in the existing Entra application.
-4. Run `npm run db:migrate:local` once for a fresh local D1 state.
-5. Run `npm run dev`, then verify `/api/me` returns `401` before sign-in and that Microsoft sign-in returns to the local callback.
-6. In SMTP mode, verify the primary SMTP callback immediately continues to the separate OneDrive authorization for a user without an App Folder grant. The second request should reuse Microsoft SSO, although first-time consent may appear, and should return to the original app page.
-7. Verify `/api/me` reports attachments enabled after both grants and that a synthetic multi-file upload appears in Review. Decline the OneDrive step once in a disposable local session to confirm the primary login survives and the Recipients recovery action remains available. Do not start a campaign unless its test recipients are explicitly authorized.
+The local staging commands are `npm run db:migrate:staging` and `npm run deploy:staging`. Supply separate staging Worker secrets through `wrangler secret put <NAME> --env staging` using secure input. A new staging app credential must be added alongside the production credential, not replace it.
 
-If `/auth/microsoft/start` returns `503`, the Worker is running but one or more required values are missing from the app-local `.env` or `.dev.vars`. A successful landing-page response does not by itself prove local OAuth is configured.
+### Production
 
-## Provision Cloudflare
+Promote a reviewed candidate through the production process. Rebuild the production artifact after staging builds and inspect the exact target. Apply only pending production migrations with `npm run db:migrate:remote`; deploy with `npm run deploy` after the gate. Never promote by binding production to staging data or Queues.
 
-These actions create persistent external resources and require action-time user confirmation.
+For first-time provisioning only, inspect/create the configured D1 and Queue, record their IDs in versioned configuration, set independent secrets, register the exact callback, apply migrations and deploy. Routine maintenance should use the existing resources. Remote resource, tenant, recipient and deployment actions must be within the user's authorized scope; existing session authorization persists.
 
-1. Authenticate Wrangler to the intended Cloudflare account.
-2. Create D1 database `mailflow-db`.
-3. Add the returned `database_id` to the existing `DB` entry in `wrangler.jsonc`.
-4. Create Queue `mailflow-campaign-ticks`.
-5. Deploy once to obtain the `workers.dev` origin, or confirm the intended custom domain.
-6. Set `PUBLIC_ORIGIN` to that exact HTTPS origin.
-7. Apply production D1 migrations, including `0004_campaign_attachments.sql`, `0005_oauth_resource_tokens.sql`, `0006_public_endpoint_controls.sql`, `0007_mailbox_scheduler_recovery.sql`, `0008_campaign_create_safeguards.sql`, and `0009_attachment_failure_recovery.sql`.
-8. Store every secret using Wrangler secret storage, never `vars` or a committed file.
-9. Deploy the verified build.
+Keep SQL migrations LF-only. Parenthesize `CASE ... END` inside D1 trigger bodies so the remote statement splitter does not mistake it for the trigger terminator.
 
-Generate `TOKEN_ENCRYPTION_KEY_B64` from 32 cryptographically random bytes and make `SESSION_SECRET` an independent high-entropy value. Record neither value here. Rotating the token key requires the rotation procedure described in the auth implementation; rotating blindly makes stored refresh tokens unreadable.
+### Hosted non-sending checks
 
-For staging, create or inspect the exact resources in the staging inventory and add their non-secret identifiers to `wrangler.jsonc`. Apply migrations with `npm run db:migrate:staging`. Set staging secrets by piping each value directly to `wrangler secret put <NAME> --env staging`; never pass a secret as a command-line argument. A staging Entra credential must be appended to the existing application, given the shortest practical lifetime, and piped directly into the staging Worker secret. Do not reset or delete the production credential.
+Check landing and current hashed JS/CSS responses, unauthenticated `/api/me` 401 JSON, unknown API GET/POST 404 JSON, OAuth redirect origin/scopes without completing consent, migration status, Queue bindings, hourly schedule and deployed Worker version. Inspect deployment failures on the actual platform; a local success does not establish that an independent Git-build check passed. Record the currently verified candidate only, not a release diary.
 
-## Configure Entra
+## Controlled mail and storage matrix
 
-These actions change tenant state and require action-time user confirmation.
+Use only authorized accounts, recipients, content and file bytes. Run mocked/local checks first and keep live campaigns small.
 
-1. Open the existing `MailFlow` app registration.
-2. Preserve single-tenant account support.
-3. Add the exact production Web redirect URI.
-4. Keep the local callback only while local OAuth testing is needed.
-5. Create one confidential client credential with the shortest practical lifetime.
-6. Copy the credential value directly into the Worker secret prompt. Do not save it in `.env`, notes, chat, or screenshots.
-7. OneDrive consent reuses the existing `/auth/microsoft/callback` registration. A purpose-prefixed OAuth state dispatches the shared callback without another Entra redirect URI.
-8. During Graph rollback, confirm delegated `User.Read` and `Mail.Send`. For SMTP, request delegated `https://outlook.office.com/SMTP.Send`; for attachment storage, request delegated `Files.ReadWrite.AppFolder`. Never use SMTP Basic authentication or application-level mail or file access.
+1. Sign in with a primary USM account and verify locked sender, tenant and logout behavior.
+2. Verify chained OneDrive consent and an existing-grant skip. Test declined consent separately and preserve login/recovery.
+3. Send one self-test; confirm campaign CC/BCC/Reply-to are suppressed.
+4. For attachment changes, use at least two small synthetic file types; verify Review names/sizes, test locking, and byte counts/hashes independently in Sent Items and an authorized inbox.
+5. Start one small campaign, close its browser page, and verify background progress, pause/resume, recipient results and CSV export.
+6. Observe intended inbox receipt and Sent Items separately from provider acceptance. Repeat the relevant matrix with a second authorized student account before claiming multi-account support.
+7. Verify active App Folder cleanup. Ordinary deletion may retain recycle-bin quota; test scoped `permanentDelete` separately before claiming immediate reclamation.
+8. Verify duplicate Queue delivery cannot resend accepted or unknown rows.
 
-Keep the staging callback alongside localhost and production. OneDrive consent continues to reuse the same callback path on the active origin.
+Record only date, source/deployment identity, sender alias, recipient count, provider category, campaign outcome, Sent Items/inbox observation and sanitized checks. Do not commit private addresses, message bodies, credentials or provider payloads.
 
-The staged attachment configuration declares `MAIL_TRANSPORT=smtp`. Both tested USM student accounts passed Cloudflare-hosted STARTTLS/XOAUTH2 authentication-only probes. Before deployment, apply the attachment, resource-token, mailbox-scheduler, and attachment-recovery migrations and verify chained OneDrive consent through the shared callback. Because Microsoft access tokens are resource-specific, never combine SMTP and Graph scopes into one authorization request or token record. New homepage sign-ins chain the two grants; members whose stored grant lacks `SMTP.Send` use Reconnect Microsoft, while declined, failed, or legacy OneDrive grants use the separate Connect OneDrive recovery action.
+## Recovery and rollback
 
-The scheduled handler runs hourly at minute 15. It first performs a bounded mailbox scheduler reconciliation: pre-submission stale attempts return safely to pending, provider-bound stale attempts become terminal `unknown`, expired classified leases are released, exhausted campaigns complete, and missing or stale durable Queue wakes are recreated. A campaign attachment load always occurs before the next pending row is claimed. Transient network, throttling, and Microsoft service failures retain the attachment set and schedule a bounded retry; authorization failures pause for a same-account OneDrive reconnect; missing or integrity-invalid objects fail the campaign before another claim. It then drains expired OAuth states, expired or revoked sessions, endpoint counters, and abandoned test-send claims in bounded batches before removing unassociated attachment sets from the owning student's active OneDrive App Folder after their 24-hour expiry. Terminal campaign paths also request immediate removal. Attachment cleanup deletes no more than five objects for one set and processes at most two eligible sets during one scheduled invocation; partial deletes and truncated listings keep the set eligible for the next hourly pass. Ordinary Graph delete moves items to the user's recycle bin, so monitor both stale app-folder files and recycle-bin quota usage until scoped `permanentDelete` is proven in the USM tenant.
+- Pause a live campaign before investigation. Never reset Unknown to pending automatically or replay a dead-lettered tick until state proves another submission safe.
+- Roll back application code only to a schema-compatible release. Preserve D1, Queues, attachment metadata, and mailbox attempt accounting. Do not blindly rewind the database or delete OneDrive App Folders.
+- Migration `0007` is forward-only; earlier code must not recreate provider-bound work. Never clear `delivery_attempts` to remove a waiting period.
+- After `0008`, older create code without fingerprints/atomic snapshots is incompatible. Preserve existing legacy null-fingerprint rows.
+- Apply `0009` before code reading attachment issue/retry columns. Preserve terminal recipient outcomes during any storage recovery.
+- For scheduler waits, inspect sanitized reason/time and allow the guarded wake/watchdog to proceed. Never expose wake/lease/attempt tokens in logs or tickets.
+- For `attachment_retrying`, allow bounded backoff (30 seconds to 15 minutes, honoring longer Retry-After within the 24-hour Queue delay limit).
+- For `attachment_authorization_required`, keep the campaign paused, reconnect the same owner, and resume pending rows only after revalidation.
+- For missing/integrity/storage terminal failures, keep the campaign stopped. Do not replace its immutable set or reset rows. Investigate from sanitized categories.
+- Cleanup is resumable: at most five objects per set and two eligible sets per scheduled pass. Monitor backlog and recycle-bin usage. Partial failure must not be reported as complete deletion.
+- Graph rollback must reject attachment campaigns. No automatic transport fallback is safe after an ambiguous submission.
+- Staging rollback selects a compatible prior commit through the same manual workflow; it does not copy or rewind data.
 
-## Smoke test order
+## Current schema and recovery contracts
 
-For a staging deployment, complete the non-sending checks first: landing page, hashed static asset, unauthenticated `/api/me`, an unknown `/api/*` route that must not fall through to the app shell, Microsoft authorization redirect origin and SMTP scope, D1 migration status, Queue producer/consumer binding, dead-letter Queue configuration, hourly schedule, and absence of R2. Do not sign in, test-send, or start a campaign without a separately approved account and recipient.
+Apply forward migrations 0010, 0011 and 0012 before deploying the current Worker. They preserve manual delivery evidence, FIFO turn order and cancellation timestamps, and mail authorization recovery/history indexing. Migration 0011 keeps in-flight work first and invalidates competing follower wakes. Do not roll back to a Worker that predates these contracts. Preserve the schema, audit triggers, cancellation markers, attempt ledger and budgets.
 
-1. Public landing page and static assets.
-2. Primary account sign-in, tenant identity, dashboard, and logout.
-3. Primary account chained OneDrive consent, return to dashboard, and `/api/me` attachment readiness. Repeat with an existing grant and confirm the second leg is skipped.
-4. Secondary account sign-in through the same application.
-5. One test-send to the authenticated mailbox.
-6. One attachment test-send to the authenticated mailbox with two small synthetic files; verify exact filenames and downloaded hashes in Sent Items.
-7. One five-recipient campaign from the primary account.
-8. Queue progress after closing the browser.
-9. Pause and resume.
-10. Result CSV export.
-11. Gmail receipt observation and Outlook Sent Items observation.
-12. A small campaign from the secondary account, proving the sender is locked to that mailbox.
+For `mail_authorization_required`, keep the campaign paused while its owner reconnects the same Microsoft account, then uses Resume pending rows. Resume checks the grant before rejoining FIFO. Invalid grants remain paused with 409; temporary token-service failures return 503. Never alter recipient outcomes or mailbox budget to bypass authorization. Only FIFO heads schedule timed wakes; followers wait for handoff events. Cancellation waits for an outstanding provider-bound attempt to settle and never releases accepted/Unknown charges.
 
-Graph `202 Accepted` or SMTP's final post-DATA `250` is recorded as `Accepted by Microsoft`. Neither is proof of inbox delivery. An ambiguous transport result is `unknown` and is never automatically resent.
+A stale template publication returns `template_changed` (409); reload the saved version or save edited content as a new template. Name, version and current pointer publish transactionally. Check the saved template after an uncertain publication response before retrying: publication has stale-edit protection but is not client-key-idempotent. Campaign preparation remains an unpublished snapshot.
 
-## Sanitized evidence template
-
-Append results to `PROGRESS.md` using aliases only:
-
-```text
-Timestamp (MYT):
-Deployment URL:
-Sender alias: primary | secondary
-Recipient count:
-Provider result: accepted | failed | unknown
-Campaign result:
-Sent Items observed: yes | no | not checked
-Inbox receipt observed: yes | no | partial | not checked
-Notes without addresses, tokens, or message content:
-```
-
-## FIFO turn and cancellation migration
-
-Apply forward-only `0011_campaign_turns_cancellation.sql` before deploying FIFO/cancellation code. It retains the in-flight campaign as the first mailbox turn, backfills other runnable campaigns by queue time, preserves each head's existing wake, and invalidates competing follower wakes. Existing provider and budget evidence is preserved. The scheduled watchdog repairs a previously missing wake or handoff. A provider-bound database guard also covers the brief migration/Worker deployment overlap.
-
-Do not roll back to a Worker predating migration 0011: its UI cannot interpret cancellation timestamps and its queue code does not implement FIFO handoff. Preserve the turn table, cancellation columns, audit triggers, attempts, mailbox pace and budget on rollback. Cancellation is internally a stopped `paused` row with immutable request/completion timestamps; repository/API reads project Cancelling or Cancelled. For read-only operational counts, distinguish those timestamps from an ordinary member pause. Do not remove a turn, clear a lease, or replay a recipient manually to shorten a wait.
-
-Only the head has timer wakes for pacing, provider backoff, budget, or attachment retry. Followers are Queued with no wake until a handoff event. A lease collision is event-driven, with the hourly watchdog retained as a bounded crash-recovery fallback. Cancellation cleanup waits for the current attempt to settle; original Unknown and accepted budget charges remain unchanged.
-
-## Rollback and recovery
-
-- Apply forward-only `0010_manual_delivery_verification.sql` before deploying results-verification code. Retain its columns, evidence, and audit triggers during rollback. A member confirmation is owner-reported receipt; it does not change the original `unknown` provider result or release mailbox budget. Notes are private owner-visible records and must not be copied into operational logs.
-- SMTP failure logs use `mailflow.smtp.failure` with a generated correlation ID, fixed stage, failure classification, and elapsed milliseconds since send preparation started. Recipient and controlled test-send failure audits include the matching `diagnosticId`. Use that link to investigate; never log send keys, attempt/claim/wake tokens, addresses, content, or provider payloads. `timeout`, `socket_closed`, and `socket_failure` describe the observed failure, not a proven delivery root cause. Older unknown rows without these diagnostics cannot establish which network failure occurred.
-- Uncaught API errors emit `mailflow.api.failure` with an application-generated request ID, fixed route group and stage, allowlisted error classification, and elapsed milliseconds. The response carries the same ID in `X-MailFlow-Request-Id` while retaining the generic error text. SQL text, raw exceptions, stacks, request URLs, query parameters, and request bodies are excluded.
-
-- Pause the campaign before investigating a live sending problem.
-- Never reset an `unknown` row to pending automatically.
-- A Worker rollback may use Cloudflare deployment history, but do not roll back D1 schema blindly.
-- Preserve D1 and Queue resources when rolling back application code.
-- Migration `0007_mailbox_scheduler_recovery.sql` is forward-only. Do not deploy earlier code that assumes it can recreate provider-bound work, and never delete or reset `delivery_attempts` to clear a wait because accepted and unknown rows are part of the rolling mailbox budget.
-- Migration `0008_campaign_create_safeguards.sql` is forward-only. After it is applied, do not roll back to campaign-create code that inserts `draft` campaigns without a request fingerprint; the database triggers intentionally reject that unsafe write path. Preserve legacy rows with a null fingerprint.
-- Migration `0009_attachment_failure_recovery.sql` is forward-only. It persists the attachment recovery category and durable retry ordinal. Deploy it before code that reads those campaign columns, and do not reset recipient states while investigating an attachment issue.
-- If a campaign is waiting, inspect only its public scheduler reason and next-attempt time plus sanitized audit categories. Never copy wake, lease, claim, or attempt tokens into tickets or logs.
-- For `attachment_retrying`, allow the reserved wake to run. Backoff starts at 30 seconds, doubles to a 15-minute cap, honors a longer Microsoft `Retry-After`, and never exceeds the Queue's 24-hour delay limit. Do not manually replay the current row.
-- For `attachment_authorization_required`, keep the campaign paused, have the owning member reconnect the same OneDrive account, and use `Resume pending rows`. Resume revalidates the locked attachment set before changing the campaign to running. Accepted and unknown rows must remain unchanged.
-- For `attachment_missing`, `attachment_integrity`, or `attachment_storage_failure`, keep the campaign terminal. Investigate from the sanitized campaign reason and audit category; never copy OneDrive URLs, object identifiers, access tokens, provider payloads, filenames, or message content into tickets.
-- Preserve D1 attachment metadata and do not delete a member's OneDrive App Folder during a code rollback. Graph mail mode must reject campaigns that reference attachment sets.
-- A temporary OneDrive throttle, outage, or interrupted download should leave a running campaign pending with an attachment-check retry time and no mailbox-budget reservation. A deleted file or SHA-256 mismatch is not transient: the campaign fails before the next row is claimed and reports that the reviewed attachment was deleted or changed. Do not replace attachment metadata or reset that failed campaign.
-- If the Entra client credential is exposed, revoke it first, create a replacement, update the Worker secret, then redeploy.
-- If a session or token-encryption secret is exposed, rotate it and invalidate affected sessions. Follow the token-key rotation path before changing the encryption key.
-
-### Staging promotion and rollback
-
-- Promotion is a Git decision, not a data copy: merge the reviewed candidate, repeat the production release gate, apply only pending production migrations, and deploy through the production procedure. Never promote by rebinding production to staging D1 or Queues.
-- To roll back staging code, manually dispatch the staging workflow with an earlier known-good commit SHA. Preserve staging D1 and Queue resources and inspect migration compatibility first. Do not reverse or delete applied D1 migrations blindly.
-- Record the currently hosted candidate commit and Worker version in `PROGRESS.md`. A new staging deployment replaces the previous candidate on the stable URL.
-- A dead-lettered campaign tick requires human investigation. Do not replay it until campaign and recipient state prove that another send is safe; never auto-retry an `unknown` recipient outcome.
-
-## Mail authorization and template publication release (2026-09-07)
-
-Apply `0012_mail_authorization_recovery.sql` after migrations 0010 and 0011 and before deploying this Worker. It adds nullable `mail_issue_code` and an owner/history index; it does not rewrite historical recipient outcomes. `npm run check:staging` only validates packaging. A Git push runs verification; the repository workflows do not automatically deploy production. Use the existing environment-specific migration/deployment commands when releasing. Retain migration 0012 on rollback. A rollback candidate must understand reconnect pauses as well as the existing cancellation and delivery evidence contracts.
-
-For `mail_authorization_required`, leave the campaign paused and have its owner use Reconnect Microsoft with the same account, followed by Resume pending rows. Resume checks token refresh before re-entering the mailbox FIFO. An invalid grant remains paused with HTTP 409; a temporary token-service outage returns 503. If Microsoft keeps rejecting the refreshed grant, verify the configured delegated permission and application credential through the existing tenant procedure. Do not change recipient results or clear mailbox budget to work around authorization.
-
-Reusable template updates publish their name, immutable version, and current pointer in one D1 batch. A stale expected version returns `template_changed` (409) and leaves the previous template intact. Recover by reloading the current template or saving the edited content as a new template. A timeout after publication requires checking the saved template before retrying; publishing is protected from overwrites, but it is not a client-key-idempotent operation. Preparing a campaign continues to create an unpublished immutable snapshot.
+Manual receipt confirmation records owner, time and an optional private note while keeping the original Unknown provider result. SMTP failures use `mailflow.smtp.failure` with correlation ID, fixed stage, classification and elapsed time. API failures use `mailflow.api.failure` and return the generated `X-MailFlow-Request-Id`; background failures use allowlisted categories. Correlate these sanitized records without logging private notes, addresses, message content, raw exceptions, SQL, URLs or coordination tokens. A timeout category alone does not establish the delivery root cause.
 
 ## Capacity and recovery measurement
 
@@ -231,3 +174,11 @@ A database restore can rewind an accepted recipient to pending. A restored datab
 6. Record a reviewed reconciliation, resume a small authorized canary, then restore normal processing. Retain separate provider-acceptance and receipt evidence.
 
 Planning objectives are a recoverable database point within one hour and an isolated, paused application available for assessment within four hours. Neither objective is a promise of restored sending. The database backup/restore mechanism, retention window, measured RPO/RTO, and full isolated disaster-recovery drill still require operational validation on the actual Cloudflare account. The local recovery/rollback tests prove state transitions, not a hosted backup restore. Never reopen automatic sending merely to meet an RTO target.
+
+## Latest useful evidence
+
+Verified 2026-09-13 against the integrated candidate based on GitHub main `bbdcaf9`, including merged PRs 7 through 10 and the subsequent recovery/publication work. The documentation and presentation integration preserves those application changes; its only edits to existing application source are the public landing link and its styles.
+
+An isolated clean install and `npm run check:staging` passed: TypeScript, production and staging builds, 346 tests across 43 files, production dry run, staging configuration validation, and staging dry run. Initial JavaScript is 83.96 kB gzip, below the 110 kB guard. All 43 relative links across the eight Markdown documents resolve. Browser checks passed for all 11 public slides at 1440 x 900, 1024 x 768, 390 x 844, and 320 x 700, including keyboard/history navigation, deep links, sharing, reading view, reduced motion and script-unavailable fallback. The deck makes no authentication or API requests. Its seven current UI captures use synthetic data from this integrated interface.
+
+Before promotion, production had no queued/running campaigns or reserved/provider-bound attempts. Migrations `0010` through `0012` were pending and must be applied before the integrated Worker is deployed. This verification does not claim live-mail receipt, measured pilot capacity, or a completed hosted restore drill.

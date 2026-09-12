@@ -29,7 +29,7 @@ export function LandingPage() {
   return <div className="landing">
     <header className="marketing-header"><Brand /><LandingAction compact allowSignOut /></header>
     <main className="landing-hero">
-      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Microsoft OAuth</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div></section>
+      <section className="hero-copy"><h1>Every send,<br />accounted for.</h1><p>Personalized campaign email for student societies, sent safely through your own USM Outlook.</p><LandingAction /><div className="trust-note"><span className="trust-note__item"><CheckCircle weight="fill" /> Uses delegated Microsoft OAuth</span><span className="trust-note__item"><span className="trust-note__separator" aria-hidden="true">•</span> Your mailbox stays yours</span></div><a className="committee-presentation-link" href="/presentation/">For committees: view the presentation</a></section>
     </main>
   </div>;
 }
