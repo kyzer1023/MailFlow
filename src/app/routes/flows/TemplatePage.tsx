@@ -449,16 +449,16 @@ export function TemplatePage({
   return editing ? (
     <AppShell>
       <div className="page">
-        <header className="page-header">
+        <header className="page-header template-edit-header">
           <div>
             <h1>
               {editingFlowId ? "Edit saved template" : "Create a template"}
             </h1>
             <p>A reusable message for your next send.</p>
           </div>
+          <div className="template-edit-actions">{actions}</div>
         </header>
         {content}
-        <div className="template-edit-actions header-actions">{actions}</div>
       </div>
     </AppShell>
   ) : (

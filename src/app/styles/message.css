@@ -676,16 +676,32 @@ html:has(.template-dialog[open]) {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
+.page-header.template-edit-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--send-values-width);
+  gap: 22px;
+  align-items: start;
+}
 .template-edit-actions {
-  margin-top: var(--send-space-lg);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--send-space-sm);
+  margin: 0;
+}
+.template-edit-actions .button {
+  flex: 0 1 auto;
 }
 @media (max-width: 1180px) {
-  .template-layout {
+  .template-layout,
+  .page-header.template-edit-header {
     --send-values-width: 240px;
   }
 }
 @media (max-width: 900px) {
-  .template-layout.familiar-layout {
+  .template-layout.familiar-layout,
+  .page-header.template-edit-header {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--send-space-lg);
   }

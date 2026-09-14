@@ -331,7 +331,11 @@ describe("authenticated information architecture", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save as template" }));
+    const saveButton = await screen.findByRole("button", { name: "Save as template" });
+    const editHeader = screen.getByRole("heading", { name: "Edit saved template" }).closest("header");
+    expect(editHeader).toContainElement(screen.getByRole("button", { name: "Back to templates" }));
+    expect(editHeader).toContainElement(saveButton);
+    fireEvent.click(saveButton);
     expect(mockedGetFlow).toHaveBeenCalledExactlyOnceWith("flow-rename");
     fireEvent.click(screen.getByRole("radio", { name: /Update Original flow/ }));
     const nameInput = screen.getByLabelText("Template name");
