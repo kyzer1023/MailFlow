@@ -351,7 +351,7 @@ export function TemplatePage({
           tabIndex={-1}
           aria-label="Message values"
         >
-          {editing && <div className="template-edit-actions">{actions}</div>}
+          <div className="message-values-body">
           {table && placeholders.length > 0 && (
             <FieldResolutionPanel
               fields={placeholders}
@@ -411,6 +411,8 @@ export function TemplatePage({
               </span>
             </div>
           )}
+          </div>
+          {editing && <div className="template-edit-actions">{actions}</div>}
         </aside>
       </div>
       {dialog === "picker" && (
