@@ -441,7 +441,8 @@ describe("authenticated information architecture", () => {
     expect(sourceEditor.value).toContain("border:1px solid #d9d9d9");
     fireEvent.change(sourceEditor, { target: { value: '<table style="border-collapse:collapse"><tr><td style="border:1px solid #d9d9d9;padding:14px"><mark>Updated</mark></td></tr></table><script>alert(1)</script>' } });
     expect(sourceEditor.value).toContain("<script>alert(1)</script>");
-    expect(screen.getByText(/Unsupported or unsafe markup is removed/)).toBeInTheDocument();
+    expect(screen.queryByText(/Unsupported or unsafe markup is removed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Preview and sending use this sanitized HTML/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Return to visual editor" }));
     const cleanedVisualEditor = screen.getByRole("textbox", { name: "Message body" });

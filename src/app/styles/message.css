@@ -185,26 +185,6 @@
   tab-size: 2;
   overflow: auto;
 }
-.html-source-status {
-  min-height: 38px;
-  padding: 0.55rem 0.72rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: var(--upload-hover);
-  color: var(--moss-dark);
-  font-size: 0.7rem;
-}
-.html-source-status--cleaned {
-  background: var(--editor-warning-surface);
-  color: var(--editor-warning-ink);
-}
-.html-source-status svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  flex: 0 0 auto;
-}
 .html-message-composer .token-message-editor {
   background: var(--white);
 }
