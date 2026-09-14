@@ -332,9 +332,9 @@ describe("authenticated information architecture", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const saveButton = await screen.findByRole("button", { name: "Save as template" });
-    const editHeader = screen.getByRole("heading", { name: "Edit saved template" }).closest("header");
-    expect(editHeader).toContainElement(screen.getByRole("button", { name: "Back to templates" }));
-    expect(editHeader).toContainElement(saveButton);
+    const valuesPanel = screen.getByRole("complementary", { name: "Message values" });
+    expect(valuesPanel).toContainElement(screen.getByRole("button", { name: "Back to templates" }));
+    expect(valuesPanel).toContainElement(saveButton);
     fireEvent.click(saveButton);
     expect(mockedGetFlow).toHaveBeenCalledExactlyOnceWith("flow-rename");
     fireEvent.click(screen.getByRole("radio", { name: /Update Original flow/ }));

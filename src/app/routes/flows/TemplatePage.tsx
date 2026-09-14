@@ -351,6 +351,7 @@ export function TemplatePage({
           tabIndex={-1}
           aria-label="Message values"
         >
+          {editing && <div className="template-edit-actions">{actions}</div>}
           {table && placeholders.length > 0 && (
             <FieldResolutionPanel
               fields={placeholders}
@@ -448,15 +449,14 @@ export function TemplatePage({
   );
   return editing ? (
     <AppShell>
-      <div className="page">
-        <header className="page-header template-edit-header">
+      <div className="page template-edit-page">
+        <header className="page-header">
           <div>
             <h1>
               {editingFlowId ? "Edit saved template" : "Create a template"}
             </h1>
             <p>A reusable message for your next send.</p>
           </div>
-          <div className="template-edit-actions">{actions}</div>
         </header>
         {content}
       </div>
