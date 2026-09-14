@@ -135,19 +135,6 @@
   margin-inline: 2px;
   background: var(--line);
 }
-.editor-toolbar__source-label {
-  min-height: 32px;
-  padding-inline: 0.42rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  color: var(--moss-dark);
-  font: 750 0.72rem/1 var(--font-mono);
-}
-.editor-toolbar__source-label svg {
-  width: 1rem;
-  height: 1rem;
-}
 .html-message-composer .editor-toolbar .editor-source-toggle {
   margin-left: auto;
   border-left: 1px solid var(--line);
@@ -181,21 +168,11 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   border-right: 1px solid var(--line);
 }
 .html-source-pane--preview {
   border-right: 0;
   background: var(--white);
-}
-.html-source-pane__label {
-  min-height: 30px;
-  padding: 0.45rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  color: var(--moss);
-  font: 700 0.68rem/1 var(--font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 .html-source-editor {
   display: block;

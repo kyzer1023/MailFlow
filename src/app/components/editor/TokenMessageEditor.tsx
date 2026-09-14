@@ -248,7 +248,7 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
         {toolbarButton("Align right", TextAlignRight, "justifyRight")}
         <button type="button" aria-label="Add link" title="Add link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><LinkSimple weight="bold" /></button>
         {toolbarButton("Clear formatting", Eraser, "removeFormat")}
-      </> : <span className="editor-toolbar__source-label"><Code weight="bold" /> HTML source</span>}
+      </> : null}
       <button type="button" className={`editor-source-toggle${mode === "html" ? " active" : ""}`} aria-label={mode === "html" ? "Return to visual editor" : "Edit HTML source"} aria-pressed={mode === "html"} title={mode === "html" ? "Return to visual editor" : "Edit HTML source"} onClick={() => switchMode(mode === "html" ? "visual" : "html")}><Code weight="bold" /></button>
     </div>
     {mode === "visual" ? <div
@@ -284,11 +284,9 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
     /> : <>
       <div className="html-source-workspace">
         <div className="html-source-pane">
-          <span className="html-source-pane__label">HTML source</span>
           <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
         </div>
         <div className="html-source-pane html-source-pane--preview">
-          <span className="html-source-pane__label">Preview</span>
           <HtmlPreviewFrame title="Message HTML preview" bodyHtml={sanitizedSourceHtml} />
         </div>
       </div>
