@@ -30,10 +30,12 @@ import {
   appendTokenEditorContent,
   bodyHtmlFromDraft,
   dynamicFieldLabel,
+  looksLikeHtmlMarkup,
   normalizeHtmlForComparison,
   serializeTokenEditor,
 } from "../../lib/editor-dom";
 import type { DynamicFieldOption } from "../../state/types";
+import { HtmlPreviewFrame } from "./HtmlPreviewFrame";
 
 export interface TokenMessageEditorHandle {
   readonly insertToken: (key: string) => void;
@@ -268,15 +270,28 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
       onPaste={(event) => {
         event.preventDefault();
         const pastedHtml = event.clipboardData.getData("text/html");
+        const pastedText = event.clipboardData.getData("text/plain");
         if (pastedHtml) {
-          const safeHtml = sanitizeTemplateHtml(pastedHtml);
-          insertHtml(safeHtml);
+          insertHtml(sanitizeTemplateHtml(pastedHtml));
           return;
         }
-        insertPlainText(event.clipboardData.getData("text/plain"));
+        if (looksLikeHtmlMarkup(pastedText)) {
+          insertHtml(sanitizeTemplateHtml(pastedText));
+          return;
+        }
+        insertPlainText(pastedText);
       }}
     /> : <>
-      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
+      <div className="html-source-workspace">
+        <div className="html-source-pane">
+          <span className="html-source-pane__label">HTML source</span>
+          <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
+        </div>
+        <div className="html-source-pane html-source-pane--preview">
+          <span className="html-source-pane__label">Preview</span>
+          <HtmlPreviewFrame title="Message HTML preview" bodyHtml={sanitizedSourceHtml} />
+        </div>
+      </div>
       <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
     </>}
   </div>;

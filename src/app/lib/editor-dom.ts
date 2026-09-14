@@ -1,6 +1,14 @@
 import { escapeMergeValue, sanitizeTemplateHtml } from "../../client/template";
 import type { DynamicFieldOption } from "../state/types";
 
+const HTML_MARKUP_PATTERN =
+  /<(?:!doctype\s+html|html|body|head|table|thead|tbody|tfoot|tr|td|th|div|span|p|br|img|font|a|ul|ol|li|h[1-6]|strong|em|b|i|u|hr|pre|blockquote)\b/iu;
+
+/** True when clipboard or draft text looks like authored HTML, not prose. */
+export function looksLikeHtmlMarkup(value: string): boolean {
+  return HTML_MARKUP_PATTERN.test(value);
+}
+
 export function bodyHtmlFromDraft(body: unknown): string {
   const source = String(body || "");
   if (/<[a-z][^>]*>/iu.test(source)) return source;

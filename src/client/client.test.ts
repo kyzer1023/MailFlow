@@ -316,6 +316,11 @@ describe("safe template rendering and representative previews", () => {
     expect(safe).toContain("background-color:#f5f6f7");
     expect(buildPreviewSrcDoc(safe)).toContain("border:1px solid #d9d9d9");
 
+    const sizedImage = sanitizeTemplateHtml('<img src="https://example.com/logo.png" width="150" height="150" alt="Logo">');
+    expect(sizedImage).toContain("width: 150px");
+    expect(sizedImage).toContain("height: 150px");
+    expect(sizedImage).toContain('alt="Logo"');
+
     const legacyTable = sanitizeTemplateHtml('<table border="1" cellspacing="0" cellpadding="12" style="border-collapse:collapse;width:80%"><tr><td style="padding-top:14px">Label</td><td>Value</td></tr></table>');
     expect(legacyTable).toContain("border: 1px solid");
     expect(legacyTable).toContain("border-spacing: 0px");
@@ -346,7 +351,13 @@ describe("safe template rendering and representative previews", () => {
     const previews = buildMessagePreviews({ senderAddress: "sender@example.com", subjectTemplate: "Hi {{first_name}}", bodyHtml: "<p>{{first_name}}</p>", rows, fieldMappings: { first_name: "first_name" } });
     expect(previews.map((preview) => preview.sourceRow)).toEqual([2, 4, 6]);
     expect(previews[1].subject).toBe("Hi Person 3");
-    expect(buildPreviewSrcDoc("<p>Hi</p>")).toContain("Content-Security-Policy");
+    const preview = buildPreviewSrcDoc("<p>Hi</p>");
+    expect(preview).toContain("Content-Security-Policy");
+    expect(preview).not.toContain("font-family:Arial");
+    expect(preview).not.toContain("img{max-width");
+    expect(preview).not.toContain("height:auto");
+    expect(buildPreviewSrcDoc('<img src="https://example.com/logo.png" width="150" height="150">')).toContain("width: 150px");
+    expect(buildPreviewSrcDoc('<img src="https://example.com/logo.png" width="150" height="150">')).toContain("height: 150px");
   });
 });
 

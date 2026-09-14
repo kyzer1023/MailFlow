@@ -501,6 +501,55 @@ describe("authenticated information architecture", () => {
     expect(visualEditor.querySelector("td")?.style.border).toContain("1px solid");
     fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
     expect((screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement).value).toContain("Pasted table");
+    expect(screen.getByTitle("Message HTML preview")).toHaveAttribute("srcdoc", expect.stringContaining("Pasted table"));
+    expect(screen.getByTitle("Message HTML preview").getAttribute("srcdoc")).not.toContain("img{max-width");
+  });
+
+  it("treats pasted HTML source as markup in the visual editor", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const flow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Invitation flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlow.mockResolvedValue({
+      flow,
+      templateVersion: {
+        id: "template-original",
+        flowId: flow.id,
+        version: 1,
+        subjectTemplate: "Invitation",
+        bodyHtml: "<p>Opening</p>",
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto" },
+        placeholderManifest: [],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+
+    render(<App />);
+
+    const visualEditor = await screen.findByRole("textbox", { name: "Message body" });
+    fireEvent.focus(visualEditor);
+    fireEvent.paste(visualEditor, {
+      clipboardData: {
+        getData: (type: string) => type === "text/html"
+          ? ""
+          : '<table style="border-collapse:collapse"><tr><td style="padding-top:10px"><img src="https://example.com/logo.png" width="150" height="150" alt="Logo"></td></tr></table>',
+      },
+    });
+
+    await waitFor(() => expect(visualEditor.querySelector("table")).not.toBeNull());
+    const logo = visualEditor.querySelector("img");
+    expect(logo).toHaveAttribute("src", "https://example.com/logo.png");
+    expect(logo?.style.width).toBe("150px");
+    expect(logo?.style.height).toBe("150px");
+    expect(visualEditor).not.toHaveTextContent("<table");
   });
 
   it("requires confirmation before removing a flow and then archives it", async () => {
