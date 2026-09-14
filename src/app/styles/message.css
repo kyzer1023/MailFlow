@@ -189,6 +189,8 @@
   color: var(--ink);
   font: 500 0.78rem/1.6 var(--font-mono);
   white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   tab-size: 2;
   overflow: auto;
 }
@@ -198,26 +200,6 @@
   min-height: 0;
   border: 0;
   background: var(--white);
-}
-.html-source-status {
-  min-height: 38px;
-  padding: 0.55rem 0.72rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: var(--upload-hover);
-  color: var(--moss-dark);
-  font-size: 0.7rem;
-}
-.html-source-status--cleaned {
-  background: var(--editor-warning-surface);
-  color: var(--editor-warning-ink);
-}
-.html-source-status svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  flex: 0 0 auto;
 }
 .html-message-composer .token-message-editor {
   background: var(--white);
