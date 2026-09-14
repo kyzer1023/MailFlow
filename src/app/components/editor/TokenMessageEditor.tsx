@@ -11,6 +11,8 @@ import {
   TextB,
   TextItalic,
   TextUnderline,
+  CheckCircle,
+  WarningCircle,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -29,10 +31,10 @@ import {
   bodyHtmlFromDraft,
   dynamicFieldLabel,
   looksLikeHtmlMarkup,
+  normalizeHtmlForComparison,
   serializeTokenEditor,
 } from "../../lib/editor-dom";
 import type { DynamicFieldOption } from "../../state/types";
-import { HtmlPreviewFrame } from "./HtmlPreviewFrame";
 
 export interface TokenMessageEditorHandle {
   readonly insertToken: (key: string) => void;
@@ -57,6 +59,7 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
   const [mode, setMode] = useState<EditorMode>("visual");
   const sourceHtml = bodyHtmlFromDraft(value);
   const sanitizedSourceHtml = sanitizeTemplateHtml(sourceHtml);
+  const sourceWasCleaned = normalizeHtmlForComparison(sourceHtml) !== normalizeHtmlForComparison(sanitizedSourceHtml);
 
   const saveRange = useCallback(() => {
     const root = rootRef.current;
@@ -244,7 +247,7 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
         {toolbarButton("Align right", TextAlignRight, "justifyRight")}
         <button type="button" aria-label="Add link" title="Add link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><LinkSimple weight="bold" /></button>
         {toolbarButton("Clear formatting", Eraser, "removeFormat")}
-      </> : null}
+      </> : <span className="editor-toolbar__source-label"><Code weight="bold" /> HTML source</span>}
       <button type="button" className={`editor-source-toggle${mode === "html" ? " active" : ""}`} aria-label={mode === "html" ? "Return to visual editor" : "Edit HTML source"} aria-pressed={mode === "html"} title={mode === "html" ? "Return to visual editor" : "Edit HTML source"} onClick={() => switchMode(mode === "html" ? "visual" : "html")}><Code weight="bold" /></button>
     </div>
     {mode === "visual" ? <div
@@ -278,14 +281,8 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
         insertPlainText(pastedText);
       }}
     /> : <>
-      <div className="html-source-workspace">
-        <div className="html-source-pane">
-          <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" wrap="off" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
-        </div>
-        <div className="html-source-pane html-source-pane--preview">
-          <HtmlPreviewFrame title="Message HTML preview" bodyHtml={sanitizedSourceHtml} />
-        </div>
-      </div>
+      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
+      <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
     </>}
   </div>;
 });

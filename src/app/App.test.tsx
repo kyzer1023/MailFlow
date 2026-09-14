@@ -441,7 +441,7 @@ describe("authenticated information architecture", () => {
     expect(sourceEditor.value).toContain("border:1px solid #d9d9d9");
     fireEvent.change(sourceEditor, { target: { value: '<table style="border-collapse:collapse"><tr><td style="border:1px solid #d9d9d9;padding:14px"><mark>Updated</mark></td></tr></table><script>alert(1)</script>' } });
     expect(sourceEditor.value).toContain("<script>alert(1)</script>");
-    expect(screen.getByTitle("Message HTML preview").getAttribute("srcdoc")).not.toContain("<script");
+    expect(screen.getByText(/Unsupported or unsafe markup is removed/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Return to visual editor" }));
     const cleanedVisualEditor = screen.getByRole("textbox", { name: "Message body" });
@@ -502,8 +502,6 @@ describe("authenticated information architecture", () => {
     expect(visualEditor.querySelector("td")?.style.border).toContain("1px solid");
     fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
     expect((screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement).value).toContain("Pasted table");
-    expect(screen.getByTitle("Message HTML preview")).toHaveAttribute("srcdoc", expect.stringContaining("Pasted table"));
-    expect(screen.getByTitle("Message HTML preview").getAttribute("srcdoc")).not.toContain("img{max-width");
   });
 
   it("treats pasted HTML source as markup in the visual editor", async () => {

@@ -21,6 +21,12 @@ export function bodyHtmlFromDraft(body: unknown): string {
     .join("");
 }
 
+export function normalizeHtmlForComparison(html: unknown): string {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "");
+  return template.innerHTML.trim();
+}
+
 export function dynamicFieldLabel(key: string | null | undefined, options: readonly DynamicFieldOption[] = []): string {
   const match = options.find((option) => option.value === key);
   return match?.label || String(key || "").replace(/_/gu, " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
