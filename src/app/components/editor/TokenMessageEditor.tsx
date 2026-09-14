@@ -150,13 +150,9 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
 
   const switchMode = useCallback((nextMode: EditorMode) => {
     if (nextMode === mode) return;
-    if (nextMode === "html") emitVisualChange();
-    else {
-      lastEmittedRef.current = null;
-      onChange(sanitizedSourceHtml);
-    }
+    lastEmittedRef.current = null;
     setMode(nextMode);
-  }, [emitVisualChange, mode, onChange, sanitizedSourceHtml]);
+  }, [mode]);
 
   useImperativeHandle(forwardedRef, () => ({
     insertToken(key: string) {
@@ -281,7 +277,7 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
         insertPlainText(pastedText);
       }}
     /> : <>
-      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
+      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" wrap="off" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
       <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
     </>}
   </div>;

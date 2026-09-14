@@ -180,7 +180,10 @@
   color: var(--ink);
   font: 500 0.78rem/1.6 var(--font-mono);
   white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   tab-size: 2;
+  overflow: auto;
 }
 .html-source-status {
   min-height: 38px;

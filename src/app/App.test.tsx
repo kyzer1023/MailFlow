@@ -551,6 +551,47 @@ describe("authenticated information architecture", () => {
     expect(visualEditor).not.toHaveTextContent("<table");
   });
 
+  it("keeps authored HTML source when toggling visual mode", async () => {
+    window.history.replaceState({}, "", "/flows/flow-rename/edit/template");
+    const authoredHtml = '<div lang="en-MY">\n  <p>Hello {{name}}</p>\n</div>';
+    const flow = {
+      id: "flow-rename",
+      ownerUserId: "user-1",
+      societyName: null,
+      name: "Invitation flow",
+      currentTemplateVersionId: "template-original",
+      state: "active" as const,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:01.000Z",
+    };
+    mockedGetFlow.mockResolvedValue({
+      flow,
+      templateVersion: {
+        id: "template-original",
+        flowId: flow.id,
+        version: 1,
+        subjectTemplate: "Invitation",
+        bodyHtml: authoredHtml,
+        recipientConfiguration: { toField: "email", ccField: null, bccField: null, replyToField: null, separator: "auto", placeholderMappings: { name: "name" } },
+        placeholderManifest: ["name"],
+        createdAt: "2026-09-01T00:00:01.000Z",
+      },
+    });
+    mockedGetFlows.mockResolvedValue({ flows: [flow] });
+
+    render(<App />);
+
+    expect(await screen.findByRole("toolbar", { name: "Message formatting" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
+    const sourceEditor = screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement;
+    expect(sourceEditor.value).toBe(authoredHtml);
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to visual editor" }));
+    expect(await screen.findByRole("textbox", { name: "Message body" })).toHaveTextContent("Hello");
+    fireEvent.click(screen.getByRole("button", { name: "Edit HTML source" }));
+    expect((screen.getByRole("textbox", { name: "Message body HTML" }) as HTMLTextAreaElement).value).toBe(authoredHtml);
+  });
+
   it("requires confirmation before removing a flow and then archives it", async () => {
     window.history.replaceState({}, "", "/flows");
     const activeFlow = {
