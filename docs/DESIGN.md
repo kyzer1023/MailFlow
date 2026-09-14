@@ -24,7 +24,7 @@ Use semantic tokens for actual CSS values, including spacing, radii, and z-index
 - Fixed CC, BCC, and Reply-to values are removable chips. Each field has one explicit control for spreadsheet-sourced values.
 - CC, BCC, Reply-to, and Importance each occupy their own full-width row. Normal importance is the default.
 - Validation explains the problem and correction path beside the affected field or row. Disabled controls explain their prerequisite.
-- Review shows the exact message without adding Mail Flow branding inside the recipient's email. Explain the self-only test substitutions and require final acknowledgement.
+- Review and the message HTML preview show the exact cleaned message without adding Mail Flow fonts, image resizing, or table styles inside the recipient's email. Explain the self-only test substitutions and require final acknowledgement.
 - Accepted means accepted by Microsoft, never delivered. Preserve explicit Unknown, Failed, Skipped, Not sent, and paused states. Finished processing is not universal success.
 - Do not hard-code real society identities, private addresses, or private message content. Do not use em or en dashes in user-visible copy.
 

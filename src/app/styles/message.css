@@ -180,50 +180,22 @@
   color: var(--ink);
   font: 500 0.78rem/1.6 var(--font-mono);
   white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   tab-size: 2;
+  overflow: auto;
 }
-.html-source-status {
-  min-height: 38px;
-  padding: 0.55rem 0.72rem;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  background: var(--upload-hover);
-  color: var(--moss-dark);
-  font-size: 0.7rem;
+.html-message-composer .token-message-editor {
+  background: var(--white);
 }
-.html-source-status--cleaned {
-  background: var(--editor-warning-surface);
-  color: var(--editor-warning-ink);
+.html-message-composer .token-message-editor *:not(.dynamic-inline-token) {
+  box-sizing: content-box;
 }
-.html-source-status svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  flex: 0 0 auto;
+.html-message-composer .token-message-editor :is(a, table, caption, col, colgroup, tbody, td, tfoot, th, thead, tr, img, font) {
+  all: revert;
 }
-.token-message-editor table {
-  width: auto;
-  border-collapse: separate;
-  border-spacing: 2px;
-  font-size: inherit;
-}
-.token-message-editor th {
-  padding: 0;
-  text-align: initial;
-  color: inherit;
-  font-size: inherit;
-  letter-spacing: normal;
-  text-transform: none;
-  border: 0;
-}
-.token-message-editor td {
-  padding: 0;
-  border: 0;
-  vertical-align: middle;
-}
-.token-message-editor tbody tr:last-child td {
-  border: 0;
+.html-message-composer .token-message-editor :is(tbody, thead, tfoot) tr:hover {
+  background: revert;
 }
 .dynamic-inline-token,
 .dynamic-value-chip {
@@ -704,8 +676,48 @@ html:has(.template-dialog[open]) {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
+.page.template-edit-page {
+  min-height: calc(100dvh - 46px);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space-24);
+}
+.template-edit-page > .template-layout {
+  flex: 1;
+  align-items: stretch;
+  min-height: 0;
+}
+.template-edit-page .message-values {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  position: sticky;
+  top: var(--space-24);
+  z-index: var(--z-sticky-column);
+  min-width: 0;
+  min-height: 100%;
+  max-height: calc(100dvh - var(--space-24) - 46px);
+  overflow: hidden;
+  padding-top: 0;
+}
+.template-edit-page .message-values-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .template-edit-actions {
-  margin-top: var(--send-space-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--send-space-sm);
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: var(--send-space-lg);
+  background: var(--paper);
+}
+.template-edit-actions .button {
+  width: 100%;
+  justify-content: center;
 }
 @media (max-width: 1180px) {
   .template-layout {
@@ -716,6 +728,24 @@ html:has(.template-dialog[open]) {
   .template-layout.familiar-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--send-space-lg);
+  }
+  .page.template-edit-page {
+    min-height: 0;
+  }
+  .template-edit-page .message-values {
+    order: -1;
+    position: static;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: var(--send-space-lg);
+  }
+  .template-edit-page .message-values-body {
+    overflow: visible;
+  }
+  .template-edit-actions {
+    margin-top: var(--send-space-lg);
+    padding-top: 0;
   }
   .message-values {
     padding-bottom: var(--send-space-lg);

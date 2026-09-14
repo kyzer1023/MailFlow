@@ -35,7 +35,7 @@ The wizard has three steps: Recipients, Message, and Review & send. Editing a sa
 
 - CSV and XLSX only; worksheet and header-row selection for workbooks.
 - One source row creates one recipient job and one separate message when eligible. Unrelated rows are not combined into a shared To list.
-- Subject/body dynamic values, escaped spreadsheet values, sanitized HTML, and an isolated preview iframe.
+- Subject/body dynamic values, escaped spreadsheet values, sanitized HTML, and an isolated preview iframe. The HTML source editor shows the authored markup with no sanitization status. Visual display, Review, save, and send use sanitized HTML. Pasted HTML source is treated as markup. The visual editor and Review preview keep email table, image, and link layout instead of applying Mail Flow styles inside the message.
 - Fixed addresses use chips; column-based CC, BCC, and Reply-to use explicit dynamic controls. Importance is Low, Normal, or High, defaulting to Normal.
 - Validation detects malformed/missing addresses, duplicate recipients, missing columns/mappings, empty required values, unsupported content, and campaign limits. Flagged rows require correction or explicit skipping where allowed; unresolved required mappings remain blockers.
 - Review offers first, middle, and last valid examples plus navigation between samples, showing sender, headers, subject, body, and attachments.

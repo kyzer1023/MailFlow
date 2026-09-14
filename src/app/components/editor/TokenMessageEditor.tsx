@@ -11,8 +11,6 @@ import {
   TextB,
   TextItalic,
   TextUnderline,
-  CheckCircle,
-  WarningCircle,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -30,7 +28,7 @@ import {
   appendTokenEditorContent,
   bodyHtmlFromDraft,
   dynamicFieldLabel,
-  normalizeHtmlForComparison,
+  looksLikeHtmlMarkup,
   serializeTokenEditor,
 } from "../../lib/editor-dom";
 import type { DynamicFieldOption } from "../../state/types";
@@ -58,7 +56,6 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
   const [mode, setMode] = useState<EditorMode>("visual");
   const sourceHtml = bodyHtmlFromDraft(value);
   const sanitizedSourceHtml = sanitizeTemplateHtml(sourceHtml);
-  const sourceWasCleaned = normalizeHtmlForComparison(sourceHtml) !== normalizeHtmlForComparison(sanitizedSourceHtml);
 
   const saveRange = useCallback(() => {
     const root = rootRef.current;
@@ -149,13 +146,9 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
 
   const switchMode = useCallback((nextMode: EditorMode) => {
     if (nextMode === mode) return;
-    if (nextMode === "html") emitVisualChange();
-    else {
-      lastEmittedRef.current = null;
-      onChange(sanitizedSourceHtml);
-    }
+    lastEmittedRef.current = null;
     setMode(nextMode);
-  }, [emitVisualChange, mode, onChange, sanitizedSourceHtml]);
+  }, [mode]);
 
   useImperativeHandle(forwardedRef, () => ({
     insertToken(key: string) {
@@ -268,16 +261,17 @@ export const TokenMessageEditor = forwardRef<TokenMessageEditorHandle, TokenMess
       onPaste={(event) => {
         event.preventDefault();
         const pastedHtml = event.clipboardData.getData("text/html");
+        const pastedText = event.clipboardData.getData("text/plain");
         if (pastedHtml) {
-          const safeHtml = sanitizeTemplateHtml(pastedHtml);
-          insertHtml(safeHtml);
+          insertHtml(sanitizeTemplateHtml(pastedHtml));
           return;
         }
-        insertPlainText(event.clipboardData.getData("text/plain"));
+        if (looksLikeHtmlMarkup(pastedText)) {
+          insertHtml(sanitizeTemplateHtml(pastedText));
+          return;
+        }
+        insertPlainText(pastedText);
       }}
-    /> : <>
-      <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />
-      <div className={`html-source-status${sourceWasCleaned ? " html-source-status--cleaned" : ""}`} role="status">{sourceWasCleaned ? <><WarningCircle weight="fill" /> Preview and sending use cleaned HTML. Unsupported or unsafe markup is removed.</> : <><CheckCircle weight="fill" /> Preview and sending use this sanitized HTML.</>}</div>
-    </>}
+    /> : <textarea ref={sourceRef} className="message-editor html-source-editor" aria-label="Message body HTML" spellCheck="false" wrap="off" value={sourceHtml} onChange={(event) => onChange(event.target.value)} />}
   </div>;
 });

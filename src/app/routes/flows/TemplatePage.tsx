@@ -351,6 +351,7 @@ export function TemplatePage({
           tabIndex={-1}
           aria-label="Message values"
         >
+          <div className="message-values-body">
           {table && placeholders.length > 0 && (
             <FieldResolutionPanel
               fields={placeholders}
@@ -410,6 +411,8 @@ export function TemplatePage({
               </span>
             </div>
           )}
+          </div>
+          {editing && <div className="template-edit-actions">{actions}</div>}
         </aside>
       </div>
       {dialog === "picker" && (
@@ -448,7 +451,7 @@ export function TemplatePage({
   );
   return editing ? (
     <AppShell>
-      <div className="page">
+      <div className="page template-edit-page">
         <header className="page-header">
           <div>
             <h1>
@@ -458,7 +461,6 @@ export function TemplatePage({
           </div>
         </header>
         {content}
-        <div className="template-edit-actions header-actions">{actions}</div>
       </div>
     </AppShell>
   ) : (

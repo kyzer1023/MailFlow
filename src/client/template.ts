@@ -108,14 +108,29 @@ function parseLegacyPixelValue(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseLegacySizeValue(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d{1,4}$/u.test(trimmed)) return `${trimmed}px`;
+  if (/^\d{1,3}%$/u.test(trimmed)) return trimmed;
+  return null;
+}
+
+function applyLegacySizeAttribute(element: HTMLElement, attribute: "width" | "height"): void {
+  const parsed = parseLegacySizeValue(element.getAttribute(attribute));
+  if (!parsed) return;
+  if (attribute === "width" && !element.style.width) element.style.width = parsed;
+  if (attribute === "height" && !element.style.height) element.style.height = parsed;
+}
+
 /**
- * Convert legacy table presentation attributes into inline CSS before
- * sanitization. Email HTML still commonly uses border/cellpadding/cellspacing,
- * but DOMPurify removes those obsolete attributes even when they are named in
- * ALLOWED_ATTR. Inline equivalents also render more consistently in the
- * contenteditable editor and in mail clients.
+ * Convert legacy presentation attributes into inline CSS before sanitization.
+ * Email HTML still commonly uses border/cellpadding/cellspacing and img
+ * width/height, but DOMPurify removes those obsolete attributes even when they
+ * are named in ALLOWED_ATTR. Inline equivalents also render more consistently
+ * in the contenteditable editor and in mail clients.
  */
-function normalizeLegacyTablePresentation(html: string): string {
+function normalizeLegacyHtmlPresentation(html: string): string {
   const template = document.createElement("template");
   template.innerHTML = html;
 
@@ -148,6 +163,11 @@ function normalizeLegacyTablePresentation(html: string): string {
     }
   });
 
+  template.content.querySelectorAll<HTMLElement>("img, table, td, th, col").forEach((element) => {
+    applyLegacySizeAttribute(element, "width");
+    applyLegacySizeAttribute(element, "height");
+  });
+
   return template.innerHTML;
 }
 
@@ -158,7 +178,7 @@ function normalizeLegacyTablePresentation(html: string): string {
  */
 export function sanitizeTemplateHtml(html: string): string {
   if (!DOMPurify.isSupported) return "";
-  const normalized = normalizeLegacyTablePresentation(html);
+  const normalized = normalizeLegacyHtmlPresentation(html);
   const sanitized = DOMPurify.sanitize(normalized, TEMPLATE_SANITIZATION_POLICY);
   const template = document.createElement("template");
   template.innerHTML = sanitized;
@@ -218,8 +238,12 @@ export function renderTemplate(
   };
 }
 
-/** Build a restrictive srcDoc for the isolated preview iframe. */
+/**
+ * Build a restrictive srcDoc for the isolated preview iframe.
+ * The document chrome stays empty on purpose so pasted email HTML keeps its
+ * own fonts, table layout, and image sizes instead of inheriting Mail Flow CSS.
+ */
 export function buildPreviewSrcDoc(bodyHtml: string): string {
   const safeBody = sanitizeTemplateHtml(bodyHtml);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline';"><style>body{margin:24px;font-family:Arial,sans-serif;color:#17211f;background:#fff}img{max-width:100%;height:auto}</style></head><body>${safeBody}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline';"><style>html,body{margin:0;background:#fff}</style></head><body>${safeBody}</body></html>`;
 }
