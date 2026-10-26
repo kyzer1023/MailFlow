@@ -12,6 +12,7 @@ import {
 } from "../microsoft";
 import type { MailTransport } from "../microsoft";
 import {
+  AttachmentError,
   createAttachmentService,
   OneDriveAppFolderAttachmentStore,
   type AttachmentService,
@@ -68,6 +69,9 @@ export function accountAttachmentService(bindings: MailFlowBindings, repo = crea
     if (owner.provider === "google") {
       const auth = googleAuthFor(bindings, origin);
       return new GoogleAppDataAttachmentStore(async id => (await auth.refreshUserAccessToken(id, DRIVE_SCOPE)).accessToken);
+    }
+    if (resolveMailTransport(bindings.MAIL_TRANSPORT) !== "smtp") {
+      throw new AttachmentError("service_unavailable", "Microsoft attachment campaigns require SMTP delivery", { transient: true });
     }
     const services = createMailFlowServices(bindings, origin);
     return new OneDriveAppFolderAttachmentStore(async id => (await services.storageAuth.refreshUserAccessToken(id)).accessToken);

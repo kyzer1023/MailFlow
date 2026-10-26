@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { Buffer } from "node:buffer";
-import { GoogleAuthService, GMAIL_SCOPE, DRIVE_SCOPE, verifyGoogleIdentity } from "./auth";
+import { GoogleAuthService, GOOGLE_SCOPES, GMAIL_SCOPE, DRIVE_SCOPE, verifyGoogleIdentity } from "./auth";
 import { gmailMailProvider, gmailMime } from "./gmail";
 import { GoogleAppDataAttachmentStore } from "./drive";
 import { SqliteD1 } from "../../../tests/helpers/sqlite-d1";
@@ -64,6 +64,33 @@ describe("Google identity and offline grants", () => {
     refreshScopes = "openid email";
     await expect(auth.refreshUserAccessToken(result.user.id, DRIVE_SCOPE)).rejects.toThrow("permission");
     expect((await stores.tokenStore.findByUserId(result.user.id, "google"))?.grantedScopes).not.toContain(DRIVE_SCOPE);
+    db.close();
+  });
+  it("uses requested scopes when an equivalent grant omits scope, including same-account reconnect", async () => {
+    const db = new SqliteD1(); db.migrate();
+    const stores = createD1AuthStores(db, () => now);
+    let nonce = "";
+    let exchanges = 0;
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/certs")) return keyResponse();
+      const refreshing = new URLSearchParams(String(init?.body)).get("grant_type") === "refresh_token";
+      if (refreshing) return Response.json({ access_token: "synthetic-access", expires_in: 3600 });
+      exchanges += 1;
+      return Response.json({ access_token: "synthetic-access", refresh_token: exchanges === 1 ? "synthetic-refresh" : undefined, id_token: await signed({ nonce }), expires_in: 3600 });
+    });
+    const auth = new GoogleAuthService({ clientId: "synthetic-client", clientSecret: "synthetic", redirectUri: "https://mailflow.test/auth/google/callback" }, {
+      ...stores, stateSecret: "synthetic", tokenEncryptionSecret: Buffer.alloc(32, 7).toString("base64"), now: () => now, fetchImpl: fetcher,
+    });
+    let user;
+    for (const attempt of ["login", "reconnect"]) {
+      const started = await auth.beginSignIn("/dashboard", user);
+      const url = new URL(started.authorizationUrl); nonce = url.searchParams.get("nonce")!;
+      const result = await auth.completeSignIn({ code: attempt, state: url.searchParams.get("state")!, cookieHeader: started.stateCookie }, user);
+      user = result.user;
+      expect((await stores.tokenStore.findByUserId(user.id, "google"))?.grantedScopes).toEqual(GOOGLE_SCOPES);
+      expect(await auth.refreshUserAccessToken(user.id)).toEqual({ accessToken: "synthetic-access" });
+    }
+    expect(db.database.prepare("SELECT COUNT(*) AS count FROM users").get()).toMatchObject({ count: 1 });
     db.close();
   });
   it("consumes denied consent without creating a session and rejects its replay", async () => {

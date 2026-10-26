@@ -79,7 +79,7 @@ export class GoogleAuthService {
       displayName: identity.name, principalName: identity.email, mailboxAddress: identity.email, lastLoginAt: this.now() });
     const encryptedRefreshToken = tokens.refresh_token ? await encryptRefreshToken(tokens.refresh_token, this.deps.tokenEncryptionSecret) : previous?.encryptedRefreshToken;
     if (encryptedRefreshToken) await this.deps.tokenStore.save({ userId, resource: "google", encryptedRefreshToken,
-      accessTokenExpiresAt: this.now() + Number(tokens.expires_in) * 1000, grantedScopes: (tokens.scope ?? "").split(/\s+/u).filter(Boolean),
+      accessTokenExpiresAt: this.now() + Number(tokens.expires_in) * 1000, grantedScopes: tokens.scope === undefined ? [...GOOGLE_SCOPES] : tokens.scope.split(/\s+/u).filter(Boolean),
       encryptionVersion: 1, updatedAt: this.now() });
     const session = await startSession(this.deps.sessionStore, userId, { now: this.now(), ttlSeconds: this.deps.sessionTtlSeconds, cookie: this.deps.sessionCookie });
     return { user, sessionToken: session.token, sessionCookie: session.cookie,

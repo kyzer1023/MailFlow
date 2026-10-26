@@ -73,6 +73,24 @@ function leaseRequest(ids: { userId: string; campaignId: string; jobId: string }
 
 
 describe("Google migration and mailbox coordination", () => {
+  it("holds Microsoft attachment campaigns during Graph rollback without failing or submitting rows", async () => {
+    const db = new SqliteD1(); db.migrate();
+    const ids = seedCampaign(db, "rollback", undefined, 1, "microsoft");
+    run(db, "UPDATE recipient_jobs SET status='pending', claim_token=NULL, claimed_at=NULL WHERE id=?", ids.jobId);
+    run(db, "UPDATE campaigns SET wake_token='wake', wake_due_at='2026-09-05T00:00:00.000Z' WHERE id=?", ids.campaignId);
+    run(db, `INSERT INTO attachment_sets(id,owner_user_id,campaign_id,upload_idempotency_key,file_count,total_bytes,state,expires_at,created_at,updated_at)
+      VALUES ('set',?,?,'upload',1,3,'locked','2099-01-01','2026-09-05','2026-09-05')`, ids.userId, ids.campaignId);
+    run(db, `INSERT INTO attachment_files(id,attachment_set_id,object_key,original_filename,content_type,byte_size,sha256_hex,position,created_at)
+      VALUES ('file','set','mailflow-set-file.bin','sample.txt','text/plain',3,?,1,'2026-09-05')`, "0".repeat(64));
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    const bindings = { DB: db, MAIL_TRANSPORT: "graph", CAMPAIGN_QUEUE: { send: vi.fn() } } as unknown as MailFlowBindings;
+    try {
+      await processQueueBatch({ queue: "test", messages: [{ body: { type: "campaign.tick", campaignId: ids.campaignId, wakeToken: "wake" }, ack: vi.fn(), retry: vi.fn() }] }, bindings);
+      expect(db.database.prepare("SELECT state, attachment_retry_count FROM campaigns WHERE id=?").get(ids.campaignId)).toMatchObject({ state: "running", attachment_retry_count: 1 });
+      expect(db.database.prepare("SELECT status FROM recipient_jobs WHERE id=?").get(ids.jobId)).toMatchObject({ status: "pending" });
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); db.close(); }
+  });
   it("preserves existing Microsoft identity, session and encrypted grants", async () => {
     const db = new SqliteD1(); db.migrate(1, 12);
     const stores = createD1AuthStores(db);
@@ -113,7 +131,7 @@ describe("Google migration and mailbox coordination", () => {
     await createD1AuthStores(db).tokenStore.save({userId:ids.userId,resource:"google",encryptedRefreshToken:await encryptRefreshToken("synthetic-refresh",secret),grantedScopes:[GMAIL_SCOPE],accessTokenExpiresAt:1,encryptionVersion:1,updatedAt:1});
     const send=vi.fn(async () => {if(ambiguous)throw new Error("response lost");return Response.json({id:"synthetic-provider-id"});});
     vi.stubGlobal("fetch",vi.fn(async (url: RequestInfo|URL)=>String(url).includes("/token")?Response.json({access_token:"synthetic-access",expires_in:3600,scope:GMAIL_SCOPE}):send()));
-    const bindings={DB:db,GOOGLE_CLIENT_ID:"synthetic",GOOGLE_CLIENT_SECRET:"synthetic",SESSION_SECRET:"synthetic-state",TOKEN_ENCRYPTION_KEY_B64:secret,PUBLIC_ORIGIN:"https://mailflow.test",CAMPAIGN_QUEUE:{send:vi.fn()}} as unknown as MailFlowBindings;
+    const bindings={DB:db,MAIL_TRANSPORT:"graph",GOOGLE_CLIENT_ID:"synthetic",GOOGLE_CLIENT_SECRET:"synthetic",SESSION_SECRET:"synthetic-state",TOKEN_ENCRYPTION_KEY_B64:secret,PUBLIC_ORIGIN:"https://mailflow.test",CAMPAIGN_QUEUE:{send:vi.fn()}} as unknown as MailFlowBindings;
     const queueMessage={body:{type:"campaign.tick",campaignId:ids.campaignId,wakeToken:"wake"},ack:vi.fn(),retry:vi.fn()};
     try {
       await processQueueBatch({queue:"test",messages:[queueMessage]},bindings);
