@@ -194,6 +194,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
         }),
         classifyFailure: testSendFailure,
         pacePerMinute: accountPace(context.env, campaign.provider),
+        provider: campaign.provider,
         prepare: async () => {
           if (attachmentSet) {
             const service = attachmentServiceFor(context, repo);
@@ -209,7 +210,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
           const failure = await provider.prepare?.();
           if (failure) throw new TestSendError(failure.message, true, failure.kind === "retryable" ? failure.retryAfter : null, failure.kind);
         },
-        send: async (sendKey) => {
+        send: async (sendKey, onSubmissionStart) => {
           const inputValue = {
             subject: recipientJob.renderedSubject,
             bodyHtml: recipientJob.renderedBodyHtml,
@@ -217,7 +218,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
             attachments,
           };
           return sendProviderTestToSelf(provider, authenticated.user.mailboxAddress, inputValue, sendKey, campaign.provider,
-            campaign.provider === "google" ? "gmail" : resolveMailTransport(context.env.MAIL_TRANSPORT));
+            campaign.provider === "google" ? "gmail" : resolveMailTransport(context.env.MAIL_TRANSPORT), onSubmissionStart);
         },
       });
       return context.json(controlled);

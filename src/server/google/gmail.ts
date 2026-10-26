@@ -35,6 +35,7 @@ export function gmailMailProvider(tokenSource: () => Promise<string>, senderAddr
     catch { return { kind: "failed", category: "invalid_message", message: "The message exceeds Gmail MIME safety limits or has invalid headers." }; }
     let response: Response;
     try {
+      options?.onSubmissionStart?.();
       response = await fetchImpl("https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media", {
         method: "POST", headers: { Authorization: `Bearer ${authorization.token}`, "Content-Type": "message/rfc822" },
         body: mime.body, signal: AbortSignal.timeout(60_000), duplex: "half",

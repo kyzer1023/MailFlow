@@ -109,6 +109,7 @@ export async function sendProviderTestToSelf(
   sendKey = `test:${crypto.randomUUID()}`,
   accountProvider: "microsoft" | "google" = "microsoft",
   transport: "smtp" | "graph" | "gmail" = "smtp",
+  onSubmissionStart?: () => void,
 ): Promise<TestSendResult> {
   const self = mailboxAddress(senderAddress, null);
   if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address", true);
@@ -124,7 +125,7 @@ export async function sendProviderTestToSelf(
     subject: input.subject,
     htmlBody: input.bodyHtml,
     attachments: input.attachments,
-  }, { sendKey });
+  }, { sendKey, onSubmissionStart });
   if (result.kind !== "accepted") {
     throw new TestSendError(
       result.message,

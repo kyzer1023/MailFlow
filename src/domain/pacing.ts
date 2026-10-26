@@ -15,6 +15,19 @@ export function paceDelaySeconds(pacePerMinute: number): number {
   return Math.max(1, Math.ceil(60 / pace));
 }
 
+/** Normal spacing only. Provider retry/backoff delays still start at completion. */
+export function nextMailSubmissionAt(
+  provider: "google" | "microsoft" | undefined,
+  pacePerMinute: number,
+  startedAt: number,
+  completedAt: number,
+): number {
+  const intervalMs = paceDelaySeconds(pacePerMinute) * 1_000;
+  return provider === "google"
+    ? Math.max(completedAt, startedAt + intervalMs)
+    : completedAt + intervalMs;
+}
+
 export function estimateCampaignDurationSeconds(recipientCount: number, pacePerMinute: number): number {
   if (!Number.isFinite(recipientCount) || recipientCount <= 0) return 0;
   return Math.max(0, Math.ceil(recipientCount) - 1) * paceDelaySeconds(pacePerMinute);

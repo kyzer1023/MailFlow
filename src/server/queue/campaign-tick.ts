@@ -8,7 +8,7 @@ import {
   mailboxWaitMessage,
   queueDelayUntil,
 } from "../../domain/mailbox-scheduler";
-import { parseRetryAfterSeconds, paceDelaySeconds, MAX_QUEUE_DELAY_SECONDS } from "../../domain/pacing";
+import { parseRetryAfterSeconds, paceDelaySeconds, nextMailSubmissionAt, MAX_QUEUE_DELAY_SECONDS } from "../../domain/pacing";
 import type { MailAttachment, MailProvider, MailSendResult } from "../../domain/mail-provider";
 import { makeSendKey } from "../../domain/state";
 import type { AuditEventType, CampaignRecord } from "../../domain/types";
@@ -362,6 +362,8 @@ async function advanceCampaignTick(
   );
   if (!markedSending) return { kind: "ignored", reason: "send_claim_lost" };
 
+  // The Gmail adapter reports the HTTP boundary after database and MIME work.
+  let submissionStartedAt: number | undefined;
   let result: MailSendResult;
   try {
     result = await provider!.send({
@@ -373,7 +375,10 @@ async function advanceCampaignTick(
       subject: job.renderedSubject,
       htmlBody: job.renderedBodyHtml,
       attachments,
-    }, { sendKey: job.sendKey || makeSendKey(campaign.id, job.sourceRow) });
+    }, {
+      sendKey: job.sendKey || makeSendKey(campaign.id, job.sourceRow),
+      onSubmissionStart: () => { submissionStartedAt = (dependencies.now?.() ?? new Date()).getTime(); },
+    });
   } catch {
     result = { kind: "unknown", category: "ambiguous", message: "The mail provider response was lost after the send was attempted." };
   }
@@ -381,7 +386,8 @@ async function advanceCampaignTick(
   const resultNowDate = dependencies.now?.() ?? new Date();
   const resultNow = iso(resultNowDate);
   const paceDelay = paceDelaySeconds(campaign.pacePerMinute);
-  const paceAt = new Date(resultNowDate.getTime() + paceDelay * 1_000).toISOString();
+  const paceAt = new Date(nextMailSubmissionAt(campaign.provider, campaign.pacePerMinute,
+    submissionStartedAt ?? resultNowDate.getTime(), resultNowDate.getTime())).toISOString();
   let outcome: "accepted" | "failed" | "retry_scheduled" | "unknown";
   let completionOutcome: "accepted" | "unknown" | "failed" | "retry" | "pause";
   let nextAttemptAt = paceAt;
@@ -501,7 +507,7 @@ async function advanceCampaignTick(
     campaignId: campaign.id,
     dueAt,
     message: wakeMessage,
-    now: resultNowDate,
+    now: campaign.provider === "google" ? dependencies.now?.() ?? new Date() : resultNowDate,
     token: dependencies.wakeToken?.(campaign.id, resultNowDate),
   });
   return { kind: "scheduled", campaignId: campaign.id, jobId: job.id, delaySeconds: wake.delaySeconds, outcome };

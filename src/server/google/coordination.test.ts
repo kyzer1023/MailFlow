@@ -4,6 +4,7 @@ import { Buffer } from "node:buffer";
 import { SqliteD1, type SqliteValue } from "../../../tests/helpers/sqlite-d1";
 import { MAILBOX_BUDGET_WINDOW_MS } from "../../domain/mailbox-scheduler";
 import { D1MailboxDeliveryRepository } from "../database/d1-mailbox-delivery";
+import type { MailboxLeaseDecision } from "../database/contracts";
 import { createD1AuthStores } from "../database/d1-auth";
 import { encryptRefreshToken } from "../microsoft/token-crypto";
 import { processQueueBatch } from "../api/worker-runtime";
@@ -142,13 +143,28 @@ describe("Google migration and mailbox coordination", () => {
     expect(await repository.acquire({ ...leaseRequest(ids,"after-expiry"), now: expiresAt, leaseExpiresAt: "2026-09-06T00:05:00.000Z", budgetExpiresAt: "2026-09-07T00:00:00.000Z" })).toMatchObject({ kind: "acquired" });
     db.close();
   });
-  it.each([false,true])("routes Queue Gmail sends without Microsoft configuration and never replays outcomes: ambiguous=%s", async ambiguous => {
-    const db = new SqliteD1(); db.migrate(); const ids = seedCampaign(db);
+  it.each([false, true].flatMap(ambiguous => [3_000, 6_000].map(duration => ({ ambiguous, duration }))))(
+    "keeps Gmail sequential across $duration ms submissions and duplicate wakes: ambiguous=$ambiguous", async ({ ambiguous, duration }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-05T00:00:00.000Z"));
+    const db = new SqliteD1(); db.migrate(); const ids = seedCampaign(db, "1", undefined, 2);
     run(db,"UPDATE recipient_jobs SET status='pending', claim_token=NULL, claimed_at=NULL WHERE id=?",ids.jobId);
     run(db,"UPDATE campaigns SET wake_token='wake',wake_due_at='2026-09-05T00:00:00.000Z' WHERE id=?",ids.campaignId);
     const secret=Buffer.alloc(32,9).toString("base64");
     await createD1AuthStores(db).tokenStore.save({userId:ids.userId,resource:"google",encryptedRefreshToken:await encryptRefreshToken("synthetic-refresh",secret),grantedScopes:[GMAIL_SCOPE],accessTokenExpiresAt:1,encryptionVersion:1,updatedAt:1});
-    const send=vi.fn(async () => {if(ambiguous)throw new Error("response lost");return Response.json({id:"synthetic-provider-id"});});
+    const starts: number[] = [];
+    const competingDecisions: MailboxLeaseDecision[] = [];
+    const send=vi.fn(async () => {
+      starts.push(Date.now());
+      vi.setSystemTime(Date.now() + duration);
+      // A self-test still cannot acquire the mailbox, even after five seconds.
+      competingDecisions.push(await new D1MailboxDeliveryRepository(db).acquire({
+        ...leaseRequest(ids, "competing-test"), recipientJobId: null, testSendId: "competing-test",
+        now: new Date().toISOString(),
+      }));
+      if(ambiguous)throw new Error("response lost");
+      return Response.json({id:"synthetic-provider-id"});
+    });
     vi.stubGlobal("fetch",vi.fn(async (url: RequestInfo|URL)=>String(url).includes("/token")?Response.json({access_token:"synthetic-access",expires_in:3600,scope:GMAIL_SCOPE}):send()));
     const bindings={DB:db,MAIL_TRANSPORT:"graph",GOOGLE_CLIENT_ID:"synthetic",GOOGLE_CLIENT_SECRET:"synthetic",SESSION_SECRET:"synthetic-state",TOKEN_ENCRYPTION_KEY_B64:secret,PUBLIC_ORIGIN:"https://mailflow.test",CAMPAIGN_QUEUE:{send:vi.fn()}} as unknown as MailFlowBindings;
     const queueMessage={body:{type:"campaign.tick",campaignId:ids.campaignId,wakeToken:"wake"},ack:vi.fn(),retry:vi.fn()};
@@ -158,11 +174,26 @@ describe("Google migration and mailbox coordination", () => {
       expect(send).toHaveBeenCalledOnce();
       expect(db.database.prepare("SELECT status FROM recipient_jobs WHERE id=?").get(ids.jobId)?.status).toBe(ambiguous?"unknown":"accepted");
       expect(db.database.prepare("SELECT state FROM delivery_attempts").get()?.state).toBe(ambiguous?"unknown":"accepted");
-      const attempt = db.database.prepare("SELECT completed_at FROM delivery_attempts").get();
       const mailbox = db.database.prepare("SELECT next_send_at FROM mailbox_send_state WHERE owner_user_id=?").get(ids.userId);
-      expect(Date.parse(String(mailbox?.next_send_at)) - Date.parse(String(attempt?.completed_at))).toBe(5000);
+      const nextAt = starts[0]! + Math.max(duration, 5_000);
+      expect(Date.parse(String(mailbox?.next_send_at))).toBe(nextAt);
+      const wake = db.database.prepare("SELECT wake_token FROM campaigns WHERE id=?").get(ids.campaignId);
+      const nextMessage = { ...queueMessage, body: { ...queueMessage.body, wakeToken: String(wake?.wake_token) } };
+      if (duration < 5_000) {
+        vi.setSystemTime(nextAt - 1);
+        await processQueueBatch({ queue: "test", messages: [nextMessage] }, bindings);
+        expect(send).toHaveBeenCalledOnce();
+      }
+      vi.setSystemTime(nextAt);
+      await processQueueBatch({ queue: "test", messages: [nextMessage, nextMessage] }, bindings);
+      expect(starts).toEqual([nextAt - Math.max(duration, 5_000), nextAt]);
+      expect(competingDecisions).toEqual([
+        expect.objectContaining({ kind: "unavailable", reason: "lease" }),
+        expect.objectContaining({ kind: "unavailable", reason: "lease" }),
+      ]);
+      expect(db.database.prepare("SELECT SUM(envelope_recipient_count) AS charged FROM delivery_attempts WHERE state IN ('accepted','unknown')").get()?.charged).toBe(2);
       expect(queueMessage.retry).not.toHaveBeenCalled();
       await expect(accountMailProvider(bindings,{provider:"microsoft",ownerUserId:ids.userId,senderAddress:"member-1@example.test"})).rejects.toThrow("snapshot");
-    } finally {vi.unstubAllGlobals();db.close();}
+    } finally {vi.unstubAllGlobals();vi.useRealTimers();db.close();}
   });
 });

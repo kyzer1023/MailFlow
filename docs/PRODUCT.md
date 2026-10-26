@@ -64,6 +64,8 @@ Test and campaign-create requests have stable keys. Exact completed replays avoi
 
 Campaigns use paced Queue ticks, conditional recipient claims, and a first-in-first-out queue per mailbox. Only its head campaign may submit work; followers stay Queued without polling. Resume joins the back of the queue. Campaigns and tests share mailbox coordination, pace, provider backoff, and a rolling recipient budget. Known transient failures can retry only where no submission occurred. Unknown outcomes remain terminal.
 
+Gmail counts submission processing time toward its pacing interval. At 12/minute, a three-second submission leaves two seconds of normal waiting; a six-second submission needs no additional normal wait. The previous result must be stored before another submission starts. Provider backoff still applies, and Queue/database overhead can make actual progress slower. Microsoft pacing is unchanged.
+
 Provider storage throttling/outages retain pending rows and schedule a retry. Mail or storage authorization failures pause for same-account reconnection; resume validates authorization before rejoining the queue. Missing or integrity-invalid attachments stop the campaign. Recovery preserves accepted, failed, skipped, and unknown results.
 
 Recipient results distinguish pending, claimed/sending, accepted, failed, skipped, and Unknown. An owner may confirm receipt for an Unknown row with an optional private note. Actor and time are audited, the original provider result remains Unknown, and no resend or budget release occurs. Timestamps use the viewer's timezone with UTC offset. Provider acceptance remains separate from receipt evidence.

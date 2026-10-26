@@ -169,12 +169,22 @@ describe("Gmail submission boundary", () => {
   });
   it("sends self-tests only to the authenticated mailbox", async () => {
     let raw = "";
-    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => { raw = await new Response(init?.body).text(); return Response.json({ id: "synthetic-message" }); });
-    const provider = gmailMailProvider(async () => "synthetic-access", "sender@gmail.com", fetcher);
-    const result = await sendProviderTestToSelf(provider, "sender@gmail.com", { ...message, bodyHtml: message.htmlBody }, "self-key", "google");
+    const events: string[] = [];
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => { events.push("fetch"); raw = await new Response(init?.body).text(); return Response.json({ id: "synthetic-message" }); });
+    const provider = gmailMailProvider(async () => { events.push("authorization"); return "synthetic-access"; }, "sender@gmail.com", fetcher);
+    const result = await sendProviderTestToSelf(provider, "sender@gmail.com", { ...message, bodyHtml: message.htmlBody }, "self-key", "google", "gmail", () => { events.push("submission"); });
+    expect(events).toEqual(["authorization", "submission", "fetch"]);
     expect(result.userMessage).toBe("Accepted by Gmail"); expect(result.smtpStatus).toBeUndefined();
     expect(raw).toContain("To: sender@gmail.com"); expect(raw).not.toMatch(/hidden@|cc@|reply@|to@example/u);
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("does not start the pacing clock when MIME validation prevents submission", async () => {
+    const fetcher = vi.fn();
+    const onSubmissionStart = vi.fn();
+    const provider = gmailMailProvider(async () => "synthetic-access", "sender@gmail.com", fetcher);
+    expect(await provider.send({ ...message, to: "invalid" }, { sendKey: "invalid", onSubmissionStart })).toMatchObject({ kind: "failed" });
+    expect(onSubmissionStart).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it.each([429, 403, 401, 500])("classifies explicit Gmail status %i conservatively", async status => {
     const provider = gmailMailProvider(async () => "synthetic", "sender@gmail.com", vi.fn(async () => Response.json({ error: { errors: [{ reason: status === 403 ? "userRateLimitExceeded" : "other" }] } }, { status })));
