@@ -61,7 +61,7 @@ export function mailboxWaitMessage(reason: "lease" | "pace" | "provider_backoff"
     case "budget":
       return `The daily mailbox allowance is temporarily full. Sending will continue after ${availableAt}.`;
     case "provider_backoff":
-      return `Microsoft requested a temporary pause. Sending will continue after ${availableAt}.`;
+      return `Your mail provider requested a temporary pause. Sending will continue after ${availableAt}.`;
     case "lease":
       return `Another message is using this mailbox. Sending will continue after ${availableAt}.`;
     case "pace":

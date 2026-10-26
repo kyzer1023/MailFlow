@@ -19,6 +19,7 @@ import type { MailFlowAppEnv } from "../context";
 import {
   attachmentInfrastructureAvailable,
   configFor,
+  accountPace,
   integerEnv,
   oneDriveAuthorizedFor,
   smtpAuthorizedFor,
@@ -157,9 +158,12 @@ export function registerAuthRoutes(app: Hono<MailFlowAppEnv>): void {
       user: publicUser(authenticated.user),
       csrfToken: authenticated.csrfToken,
       config: {
-        defaultPacePerMinute: integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600),
+        defaultPacePerMinute: accountPace(context.env, authenticated.user.provider),
         maxCampaignRecipients: integerEnv(context.env.MAX_CAMPAIGN_RECIPIENTS, 300, 1, 300),
-        mailTransport: resolveMailTransport(context.env.MAIL_TRANSPORT),
+        mailTransport: authenticated.user.provider === "google" ? "gmail" : resolveMailTransport(context.env.MAIL_TRANSPORT),
+        provider: authenticated.user.provider ?? "microsoft",
+        reconnectUrl: authenticated.user.provider === "google" ? "/auth/google/start" : "/auth/microsoft/start",
+        storageProvider: authenticated.user.provider === "google" ? "Google Drive app data" : "OneDrive App Folder",
         attachmentsEnabled: attachmentInfrastructure && smtpAuthorized && oneDriveAuthorized,
         attachmentsReauthorizationRequired: attachmentInfrastructure && (!smtpAuthorized || !oneDriveAuthorized),
         attachmentsSmtpAuthorizationRequired: attachmentInfrastructure && !smtpAuthorized,

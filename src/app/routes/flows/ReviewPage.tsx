@@ -43,6 +43,7 @@ export function ReviewPage() {
   const [startState, setStartState] = useState<StartState>("idle");
   const [actionError, setActionError] = useState("");
   const actionInFlightRef = useRef<"test" | "start" | null>(null);
+  const providerLabel = user?.provider === "google" ? "Gmail" : "Microsoft";
   const { testRequest } = state;
   const ensureCampaign = useEnsureCampaign();
   const sender =
@@ -139,7 +140,7 @@ export function ReviewPage() {
       setActionError(
         error instanceof Error
           ? error.message
-          : "The test message could not be accepted by Microsoft.",
+          : `The test message could not be accepted by ${providerLabel}.`,
       );
     } finally {
       actionInFlightRef.current = null;
@@ -252,7 +253,7 @@ export function ReviewPage() {
       </>
     ) : testState === "accepted" ? (
       <>
-        <CheckCircle weight="fill" /> Microsoft accepted the test request for
+        <CheckCircle weight="fill" /> {providerLabel} accepted the test request for
         your mailbox.
       </>
     ) : null;
@@ -515,7 +516,7 @@ export function ReviewPage() {
             </span>
           </label>
           <div className="accepted-note">
-            <Info weight="fill" /> Microsoft acceptance means the request was
+            <Info weight="fill" /> {providerLabel} acceptance means the request was
             received. It is not a delivery receipt.
           </div>
           <p

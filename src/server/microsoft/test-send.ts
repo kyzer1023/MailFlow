@@ -15,7 +15,7 @@ export interface TestSendInput {
 
 export interface TestSendResult {
   status: "accepted";
-  userMessage: "Accepted by Microsoft";
+  userMessage: "Accepted by Microsoft" | "Accepted by Gmail";
   senderAddress: string;
   recipientAddress: string;
   graphStatus?: number;
@@ -107,6 +107,9 @@ export async function sendProviderTestToSelf(
   senderAddress: string,
   input: TestSendInput,
   sendKey = `test:${crypto.randomUUID()}`,
+  accountProvider: "microsoft" | "google" = "microsoft",
+  transport: "smtp" | "graph" | "gmail" = "smtp",
+  onSubmissionStart?: () => void,
 ): Promise<TestSendResult> {
   const self = mailboxAddress(senderAddress, null);
   if (!self) throw new TestSendError("The signed-in Microsoft mailbox has no usable address", true);
@@ -122,7 +125,7 @@ export async function sendProviderTestToSelf(
     subject: input.subject,
     htmlBody: input.bodyHtml,
     attachments: input.attachments,
-  }, { sendKey });
+  }, { sendKey, onSubmissionStart });
   if (result.kind !== "accepted") {
     throw new TestSendError(
       result.message,
@@ -134,9 +137,9 @@ export async function sendProviderTestToSelf(
   }
   return {
     status: "accepted",
-    userMessage: "Accepted by Microsoft",
+    userMessage: accountProvider === "google" ? "Accepted by Gmail" : "Accepted by Microsoft",
     senderAddress: self,
     recipientAddress: self,
-    smtpStatus: 250,
+    ...(accountProvider === "microsoft" ? transport === "graph" ? { graphStatus: 202 } : { smtpStatus: 250 } : {}),
   };
 }

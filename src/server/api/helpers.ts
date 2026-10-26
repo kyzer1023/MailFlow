@@ -57,6 +57,7 @@ export function sameOrigin(context: MailFlowContext): boolean {
 
 export function publicUser(user: MailFlowVariables["user"]): Record<string, unknown> {
   return {
+    provider: user.provider ?? "microsoft",
     id: user.id,
     displayName: user.displayName,
     principalName: user.principalName,
@@ -189,6 +190,7 @@ export async function requireSession(context: MailFlowContext): Promise<Authenti
   if (!session) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
   const user = await repo.users.getById(session.userId);
   if (!user) return responseError(context, 401, "session_expired", "Your sign-in has expired. Sign in again, then resume from the first unsent row.");
+  context.set("user", user);
   const csrfToken = await csrfTokenFor(context, sessionToken);
   await renewSession(authStores.sessionStore, session);
   context.header("Set-Cookie", serializeCookie(SESSION_COOKIE_NAME, sessionToken, {
@@ -198,6 +200,7 @@ export async function requireSession(context: MailFlowContext): Promise<Authenti
     maxAgeSeconds: DEFAULT_SESSION_TTL_SECONDS,
   }), { append: true });
   return { user: {
+    provider: user.provider ?? "microsoft",
     id: user.id,
     tenantId: user.tenantId,
     objectId: user.objectId,

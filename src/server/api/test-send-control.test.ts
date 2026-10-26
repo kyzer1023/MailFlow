@@ -160,6 +160,31 @@ const classifyFailure = () => ({
 });
 
 describe("test-send public controls", () => {
+  it.each([
+    { provider: "google" as const, duration: 3_000, wait: 2_000 },
+    { provider: "google" as const, duration: 6_000, wait: 0 },
+    { provider: "microsoft" as const, duration: 3_000, wait: 5_000 },
+  ])("shares $provider pacing after a $duration ms self-test", async ({ provider, duration, wait }) => {
+    const store = new MemoryPublicControlStore();
+    const mailboxDelivery = new MemoryMailboxDelivery(store);
+    let now = Date.parse("2026-09-05T08:30:00.000Z");
+    mailboxDelivery.markTestProviderBound = async () => { now += 2_000; return true; };
+    const options = {
+      store, mailboxDelivery, input: baseInput, provider, pacePerMinute: 12,
+      now: () => now, classifyFailure, audit: async () => undefined,
+      send: async (_sendKey: string, onSubmissionStart: () => void) => {
+        now += 1_000;
+        onSubmissionStart();
+        now += duration;
+        return result;
+      },
+    };
+    await executeControlledTestSend(options);
+    expect(mailboxDelivery.completions[0]?.nextSendAt).toBe(new Date(now + wait).toISOString());
+    expect(await executeControlledTestSend(options)).toMatchObject({ replayed: true });
+    expect(mailboxDelivery.completions).toHaveLength(1);
+  });
+
   it("sends an exact idempotency key once and returns the durable accepted replay", async () => {
     const store = new MemoryPublicControlStore();
     const sends: string[] = [];
@@ -314,11 +339,12 @@ describe("test-send public controls", () => {
   it("applies provider Retry-After to the shared mailbox state for a safe test-send retry", async () => {
     const store = new MemoryPublicControlStore();
     const mailboxDelivery = new MemoryMailboxDelivery(store);
+    let now = Date.parse("2026-09-05T08:30:00.000Z");
     await expect(executeControlledTestSend({
       store,
       mailboxDelivery,
       input: baseInput,
-      send: async () => { throw new Error("throttled before submission"); },
+      send: async () => { now += 6_000; throw new Error("throttled before submission"); },
       audit: async () => undefined,
       classifyFailure: () => ({
         safeToRetry: true,
@@ -327,13 +353,14 @@ describe("test-send public controls", () => {
         failure: { status: 503, code: "test_send_failed", message: "Microsoft requested a pause" },
       }),
       pacePerMinute: 12,
-      now: () => Date.parse("2026-09-05T08:30:00.000Z"),
+      provider: "google",
+      now: () => now,
       createId: () => "test-send-throttle",
     })).rejects.toMatchObject({ failure: { status: 503 } });
 
     expect(mailboxDelivery.completions).toContainEqual(expect.objectContaining({
-      nextSendAt: "2026-09-05T08:32:00.000Z",
-      providerBackoffUntil: "2026-09-05T08:32:00.000Z",
+      nextSendAt: "2026-09-05T08:32:06.000Z",
+      providerBackoffUntil: "2026-09-05T08:32:06.000Z",
       safeToRetry: true,
     }));
     expect(await store.findTestSend("user-1", "test-key-1")).toBeNull();

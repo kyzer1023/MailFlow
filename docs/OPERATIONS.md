@@ -14,7 +14,7 @@ Run application commands from the repository root. Read [Architecture](ARCHITECT
 | Attachment namespace | Default | `staging` |
 | Schedule | Hourly, minute 15 | Hourly, minute 15 |
 
-The exact non-secret IDs and bindings live in [wrangler.jsonc](../wrangler.jsonc). Both environments use the existing single-tenant Entra `MailFlow` application and each member's OneDrive App Folder, but separate D1, Queues and independent secrets. There is no R2 resource. Do not provision duplicates during routine maintenance.
+The exact non-secret IDs and bindings live in [wrangler.jsonc](../wrangler.jsonc). Both environments preserve the existing single-tenant Entra application and OneDrive App Folder integration. Google uses the separate MailFlow Web OAuth client and each account's Drive appDataFolder. Environments have separate D1, Queues and independent application secrets. There is no R2 resource. Do not provision duplicates during routine maintenance.
 
 The root package provides all commands. Static client output is reproducible through Vite; `worker/index.ts` remains the sole production application entrypoint. Cloudflare Git build directory configuration must point at the repository root.
 
@@ -30,7 +30,37 @@ The root package provides all commands. Static client output is reproducible thr
 
 An OAuth-start 503 indicates missing required local configuration; a working landing page does not establish OAuth readiness. Sign-in and mail testing require the relevant authorized accounts and recipients. For public UI captures, use synthetic local data and isolated mocked API responses; label them as illustrative.
 
-## Credentials and Microsoft consent
+## Google provider configuration and rollout
+
+Google and Microsoft accounts are separate owners. Use the existing Google Web OAuth client with the exact `/auth/google/callback` on localhost:5173, staging and production. Enable Gmail and Drive APIs. Request only OpenID email/profile, `https://www.googleapis.com/auth/gmail.send` and `https://www.googleapis.com/auth/drive.appdata`; do not add read-mail, full Drive or Sheets scopes. Google personal Gmail identity is verified using signed issuer/audience/nonce claims and stable `sub`, not an email-only account lookup. Existing Microsoft SMTP/OneDrive and rollback grants remain separate.
+
+Supply `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in ignored local configuration and Worker secrets. Keep local encryption/session keys independent from staging and production, and never copy a local refresh token into another environment. Staging retains its existing encryption/session secrets. Google credentials are installed into staging only for this rollout; production application promotion and production secret installation remain separate gates. Use secure stdin for Wrangler secret operations, not command-line values. If the CLI's localhost OAuth callback fails, its device flow can authorize only account/user read, Workers/scripts write, D1 write and Queues write without unrelated DNS, R2 or AI permissions.
+
+`GMAIL_PACE_PER_MINUTE` defaults to 12 and is clamped at 12. `GMAIL_RECIPIENT_BUDGET` defaults to 475 and is clamped at 475 recipient entries per rolling 24 hours. To, CC, BCC and tests all count. The application cannot observe ordinary Gmail usage; these are application ceilings, not Google quota promises. The 475 budget is 95% of the [documented personal Gmail 500-email daily limit](https://support.google.com/mail/answer/22839?hl=en), using stricter recipient-entry accounting. Gmail API sends share the mailbox limit with other clients. Previously prepared campaigns keep their saved pace; new campaigns use 12/minute. Explicit quota rejections wait with backoff. Lost/5xx submission responses are Unknown and are never automatically retried. A stable Message-ID is not idempotency. Gmail uses a streamed media upload capped below the API's 35 MiB MIME limit; the five-file/20 MiB raw attachment bounds remain unchanged.
+
+Migration `0014_google_pace_limit.sql` raises the Gmail insert guard to 12/minute without changing existing campaigns. Apply it before the increased-default Worker; no recipient state or budget charge is reset.
+
+Gmail normal spacing now starts at the actual HTTP submission boundary, after credential and MIME preparation. Processing time counts toward the saved interval for campaigns and successful self-tests. The next request still requires the previous outcome to be stored and the shared mailbox lease to be released. A missing boundary notification retains the full wait after completion; retry/backoff delays remain measured from the failure response. No migration or limit increase is required for this timing change. Microsoft pacing stays unchanged. Higher actual throughput may increase Gmail throttling or spam risk; the configured rate is not a Google safety guarantee.
+
+Migration `0013_google_provider.sql` defaults existing identities/campaigns to Microsoft without changing their IDs, ownership, sessions or encrypted grants. It expands the resource-token table and adds immutable campaign provider/owner checks. Apply it before deploying provider-aware code. Do not drop it or restore a pre-Google binary over active Google accounts/campaigns. Roll back to a provider-aware candidate, or hold affected sending and reconcile accepted/Unknown evidence first. Never copy or overwrite unrelated uncommitted documentation from another checkout while integrating.
+
+External OAuth audience publishing is independent of verification and Worker deployment. Testing is restricted to Google-configured test users and can give offline grants a short lifetime. In production, an unverified sensitive-scope app can still show consent warnings and encounter Google's cumulative unverified-user cap; publishing does not remove sending quotas or grant unlimited users. On 2026-10-26, Chrome confirmed persisted **External / In production** status after saving the genuinely public [staging privacy notice](https://mailflow-staging.kyzer-hono-test.workers.dev/privacy/). No terms URL, logo, verification submission or account-security change was needed. The console still requests verification and shows a lifetime **100-user cap** (one used). There is no MailFlow Gmail allowlist. Keep the privacy URL reachable while it is registered; the notice describes actual retention limitations and manual deletion, not an automatic purge.
+
+For controlled Google verification: authenticate with an approved signed-in Chrome account, verify the locked sender and separate flow ownership, publish/reuse a synthetic-named template, attach small synthetic files, and send only to the authorized self-test/case addresses. Record Gmail API acceptance separately from independently observed inbox receipt. Check downloaded attachment bytes/hashes, terminal storage cleanup and retained budget charges. Use synthetic data for screenshots. Local development restarts can discard in-memory draft editing; an already prepared D1 snapshot remains immutable and must not be recreated/resubmitted blindly.
+
+### Latest Google verification
+
+On 2026-10-27, the full `npm run check:staging` gate passed with 402 tests across 46 files, including signed Google identity validation, denied/partial/omitted-scope consent, refreshed-scope loss, migration preservation, per-provider budget ceilings (475 for Gmail), rolling expiry, the forward migration preserving saved pace, streamed maximum-size MIME, BCC envelope handling, self-test suppression, Drive app-data bounds and duplicate/ambiguous Queue outcomes. New timing regressions cover three- and six-second Gmail submissions, actual HTTP-boundary notification, saved slower pace, competing self-tests, missing-boundary fallback, retained accepted/Unknown charges, full retry delays and unchanged Microsoft pacing. Microsoft attachment campaigns remain held before row claims during Graph rollback; Gmail continues independently of that deployment setting. Type checks, production/staging builds and dry runs passed. Initial JavaScript is 84.41 kB gzip, below the 110 kB guard. The processing-time change is locally verified only; it is not included in the staging deployment below, and no additional live mail or throughput measurement was performed for it. The earlier provider-rollout private-value scan of candidate files and client artifacts found no local Google credentials, application secrets or supplied inbox addresses.
+
+An independent Luna max review exercised the synthetic Gmail journey through Review at 1440 x 900, 1024 x 768 and 390 x 844, without horizontal overflow. Keyboard navigation, visible focus, reduced motion and reconnect UI passed. This used isolated mocked sessions without sending or persistence; it is UI evidence, not provider delivery evidence. The review's omitted OAuth scope finding was fixed and regression-tested; no additional high-priority issue surfaced in the exercised paths.
+
+Chrome completed real Google consent and local sign-in. A reusable flow, five-recipient campaign and two synthetic attachments (69-byte text and 68-byte PNG) were prepared through the existing interface. Gmail accepted one self-test and five personalized campaign messages; the campaign completed with five accepted, no failed/Unknown rows. Searches for the marked test in all five authorized inboxes independently showed matching received messages; the sender's inbox also showed the separate self-test. Both downloaded self-test attachment hashes matched the uploaded files. D1 recorded six retained accepted charges and terminal attachment cleanup as deleted. No other recipients or recruitment links were contacted.
+
+The supplied XLSX uses XML namespace prefixes that the existing ExcelJS parser cannot read. Its supplied CSV companion was checked cell-for-cell against the workbook's XML and used for the same five approved rows. This input compatibility limitation was not expanded into an unrelated parser rewrite. A development configuration reload occurred after self-test preparation; the immutable prepared campaign was inspected against the exact authorized recipient set and started through the existing authenticated/CSRF-protected API, not recreated. The real campaign does not establish a browser Confirm-click check.
+
+On 2026-10-27 (Asia/Kuala_Lumpur), the [serialized staging workflow](https://github.com/kyzer1023/MailFlow/actions/runs/40363801768) verified and deployed application candidate `0afdb0e8d433002aae0c279570b28b7559c91718`, Worker version `37043db2-5a39-4862-bc51-a7f303ffc25f`. Staging applied migration `0014` and deployed Gmail settings of 12 messages/minute and 475 recipient entries per rolling 24 hours. The candidate contains the current remote main. Hosted landing/privacy, matching client JS/CSS, anonymous API 401 and unknown API GET/POST 404 JSON checks passed. No additional mail was sent for this limits update; five-second pacing is automated test evidence, not measured live delivery throughput. Earlier provider-rollout checks returned landing/privacy 200 with matching client/privacy artifacts, anonymous `/api/me` 401 JSON, and unknown API GET/POST 404 JSON. Both providers' OAuth starts used the correct staging callback and PKCE. Chrome completed real Google staging SSO through the unverified-app warning; encrypted grant persistence and the authenticated sender were confirmed. Cancelling same-account reconnect retained the session and displayed recovery feedback; a subsequent same-account reconnect succeeded. No staged mail was sent by that verification. Production still runs version `cc4e21ae-514e-4d4b-93aa-7c3c19315c50` and has no Google secrets installed. Review and integration remain required before production application promotion.
+
+## Microsoft credentials and consent
 
 Worker secrets are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`. Keep values out of vars, command arguments, logs, files committed to Git, screenshots and chat. Generate the token key from 32 cryptographically random bytes; use an independent high-entropy session secret. Pipe values directly to Wrangler secret input.
 
@@ -54,7 +84,7 @@ Rotate an exposed session secret and invalidate affected sessions. Preserve mail
 | Runtime logic | Relevant regressions, `npm test`, and integration/failure-path checks for changed behavior |
 | Visible UI | Runtime checks plus actual browser states, keyboard/reduced-motion and responsive inspection |
 | Schema/deployment | Full release gate, target/migration compatibility, local and isolated staging verification |
-| Mail/storage behavior | Mocked boundaries first, then a separately bounded authorized Microsoft/OneDrive/inbox matrix |
+| Mail/storage behavior | Mocked boundaries first, then a separately bounded authorized matrix for the changed provider, storage adapter and inboxes |
 
 `npm test` runs TypeScript, production builds, the 110 kB gzip initial-client bundle guard, and Vitest. `npm run test:unit` runs the unit/integration suite directly. There is no lint script. A passing test count does not prove production capacity, UI correctness, or mail delivery.
 
@@ -77,8 +107,8 @@ Before deployment, inspect:
 
 - Ignored secret files and the candidate diff; no private addresses, credentials or tokens are staged.
 - Exact target Worker, public origin, D1, producer/consumer Queue, schedule, transport, and staging namespace/DLQ as applicable.
-- Registered callback and delegated grant requirements, including SMTP and OneDrive for attachments.
-- Pending migration list and compatibility with the selected code. Retain all committed migrations through `0012`, including manual receipt evidence `0010`, FIFO/cancellation `0011`, and mail authorization recovery `0012`.
+- Registered callback and delegated grant requirements: SMTP/OneDrive for Microsoft attachments and Gmail send/Drive app-data for Google.
+- Pending migration list and compatibility with the selected code. Retain all committed migrations through `0014`, including manual receipt evidence `0010`, FIFO/cancellation `0011`, mail authorization recovery `0012`, provider identity/resource grants `0013`, and the Gmail pace guard `0014`.
 - A staging build was generated with `CLOUDFLARE_ENV=staging`, followed by `prepare:staging-config`. Deploy only from `dist/client/mailflow/wrangler.staging-validated.json`; do not add `--env staging` to that generated snapshot or use mutable redirected production config.
 
 ### Staging
@@ -131,7 +161,7 @@ Record only date, source/deployment identity, sender alias, recipient count, pro
 
 ## Current schema and recovery contracts
 
-Apply forward migrations 0010, 0011 and 0012 before deploying the current Worker. They preserve manual delivery evidence, FIFO turn order and cancellation timestamps, and mail authorization recovery/history indexing. Migration 0011 keeps in-flight work first and invalidates competing follower wakes. Do not roll back to a Worker that predates these contracts. Preserve the schema, audit triggers, cancellation markers, attempt ledger and budgets.
+Apply all forward migrations through 0014 before deploying the current Worker. They preserve manual delivery evidence, FIFO turn order and cancellation timestamps, and mail authorization recovery/history indexing. Migration 0011 keeps in-flight work first and invalidates competing follower wakes. Do not roll back to a Worker that predates these contracts. Preserve the schema, audit triggers, cancellation markers, attempt ledger and budgets.
 
 For `mail_authorization_required`, keep the campaign paused while its owner reconnects the same Microsoft account, then uses Resume pending rows. Resume checks the grant before rejoining FIFO. Invalid grants remain paused with 409; temporary token-service failures return 503. Never alter recipient outcomes or mailbox budget to bypass authorization. Only FIFO heads schedule timed wakes; followers wait for handoff events. Cancellation waits for an outstanding provider-bound attempt to settle and never releases accepted/Unknown charges.
 
@@ -160,7 +190,7 @@ Current evidence: deterministic tests cover maximum 300-row atomic campaign crea
 
 ## Retention and database restore
 
-The current release retains saved template versions, campaign snapshots, recipient addresses/rendered content, audits, delivery verification notes, delivery attempts, and attachment metadata. No automatic campaign-history purge is introduced. Archive is a visibility action, not erasure. Expired authentication/control records use the bounded existing cleanup; OneDrive attachment bytes use terminal cleanup and 24-hour unassociated-set expiry. Ordinary deletion may leave bytes in the owner's recycle bin. History pagination now makes records beyond the first 50 discoverable.
+The current release retains saved template versions, campaign snapshots, recipient addresses/rendered content, audits, delivery verification notes, delivery attempts, and attachment metadata. No automatic campaign-history purge is introduced. Archive is a visibility action, not erasure. Expired authentication/control records use the bounded existing cleanup; provider attachment bytes use terminal cleanup and 24-hour unassociated-set expiry. Ordinary OneDrive deletion may leave bytes in the owner's recycle bin. History pagination makes records beyond the first 50 discoverable.
 
 Before a wider cohort, assign a data-retention owner and approve durations for recipient content, audit/evidence, backups, and deletion requests. Keep active/unknown delivery evidence and all unexpired mailbox charges through any later retention implementation; deleting a short-lived test-send record must not release its charge. A future purge needs bounded transactions, ownership checks, and referential-integrity tests. Do not infer a purge policy from QA cleanup authorization.
 
@@ -175,7 +205,7 @@ A database restore can rewind an accepted recipient to pending. A restored datab
 
 Planning objectives are a recoverable database point within one hour and an isolated, paused application available for assessment within four hours. Neither objective is a promise of restored sending. The database backup/restore mechanism, retention window, measured RPO/RTO, and full isolated disaster-recovery drill still require operational validation on the actual Cloudflare account. The local recovery/rollback tests prove state transitions, not a hosted backup restore. Never reopen automatic sending merely to meet an RTO target.
 
-## Latest useful evidence
+## Latest production evidence
 
 Verified 2026-09-15 against application commit `e794337` (merged PR 11: HTML editor preview, authored source, and template action pinning). GitHub main also contains the follow-up production workflow commit `d0372f7`, which is not in the Worker bundle.
 

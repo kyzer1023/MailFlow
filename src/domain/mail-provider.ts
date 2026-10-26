@@ -76,5 +76,9 @@ export type MailSendResult = (MailSendAccepted | MailSendRetryable | MailSendFai
 export interface MailProvider {
   /** Only credential preparation; must never submit mail. Null means ready. */
   prepare?(): Promise<MailSendRetryable | MailSendReconnect | null>;
-  send(message: MailMessage, options?: { sendKey: string }): Promise<MailSendResult>;
+  send(message: MailMessage, options?: {
+    sendKey: string;
+    /** Gmail calls this synchronously after preparation, immediately before fetch. */
+    onSubmissionStart?: () => void;
+  }): Promise<MailSendResult>;
 }

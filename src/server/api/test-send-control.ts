@@ -1,7 +1,7 @@
 import type { AuditEventType } from "../../domain/types";
 import { diagnosticMetadata } from "../diagnostics";
 import { MAILBOX_BUDGET_WINDOW_MS, MAILBOX_LEASE_MS, mailboxWaitMessage } from "../../domain/mailbox-scheduler";
-import { DEFAULT_PACE_PER_MINUTE, paceDelaySeconds, parseRetryAfterSeconds } from "../../domain/pacing";
+import { DEFAULT_PACE_PER_MINUTE, paceDelaySeconds, nextMailSubmissionAt, parseRetryAfterSeconds } from "../../domain/pacing";
 import { sha256Base64Url } from "../auth/crypto";
 import type {
   PublicControlStore,
@@ -100,10 +100,11 @@ export async function executeControlledTestSend(options: {
   readonly mailboxDelivery: MailboxDeliveryRepository;
   readonly input: ControlledTestSendInput;
   readonly prepare?: () => Promise<void>;
-  readonly send: (sendKey: string) => Promise<StoredTestSendResult>;
+  readonly send: (sendKey: string, onSubmissionStart: () => void) => Promise<StoredTestSendResult>;
   readonly audit: TestSendAudit;
   readonly classifyFailure: TestSendFailureClassifier;
   readonly pacePerMinute?: number;
+  readonly provider?: "google" | "microsoft";
   readonly now?: () => number;
   readonly createId?: () => string;
 }): Promise<{ result: StoredTestSendResult; replayed: boolean }> {
@@ -223,9 +224,10 @@ export async function executeControlledTestSend(options: {
     });
   }
 
+  let submissionStartedAt: number | undefined;
   let result: StoredTestSendResult;
   try {
-    result = await options.send(`test:${testSendId}`);
+    result = await options.send(`test:${testSendId}`, () => { submissionStartedAt = options.now?.() ?? Date.now(); });
   } catch (error) {
     const classified = options.classifyFailure(error);
     const completedAt = options.now?.() ?? Date.now();
@@ -266,14 +268,14 @@ export async function executeControlledTestSend(options: {
     ownerUserId: options.input.ownerUserId,
     testSendId,
     now: new Date(completedAt).toISOString(),
-    nextSendAt: new Date(completedAt + paceDelaySeconds(pacePerMinute) * 1_000).toISOString(),
+    nextSendAt: new Date(nextMailSubmissionAt(options.provider, pacePerMinute, submissionStartedAt ?? completedAt, completedAt)).toISOString(),
     acceptedResult: result,
   });
   if (!completed) {
     throw new ControlledTestSendError({
       status: 503,
       code: "test_send_state_unavailable",
-      message: "Microsoft may have accepted this test, but Mail Flow could not store the result. Do not resend it blindly.",
+      message: "The mail provider may have accepted this test, but Mail Flow could not store the result. Do not resend it blindly.",
     });
   }
   await safeAudit(options.audit, {

@@ -8,9 +8,9 @@ Mail Flow is a modular Cloudflare Worker application with a React client. This i
 Browser: React, CSV/XLSX parsing, mapping, editing, validation, preview
   -> same-origin Worker API: OAuth, sessions, CSRF, commands, server validation
      -> D1: identity, encrypted grants, templates, campaigns, jobs, audit, coordination
-     -> OneDrive App Folder: temporary owner-scoped attachment bytes
+     -> OneDrive App Folder or Google Drive appDataFolder: temporary owner-scoped attachment bytes
      -> Cloudflare Queue: paced campaign ticks
-        -> selected Microsoft mail adapter: delegated OAuth SMTP or Graph rollback
+        -> immutable campaign provider: Gmail API, or Microsoft SMTP/Graph deployment selection
 Hourly Worker handler: delivery recovery, missing wakes, expiry, attachment cleanup
 ```
 
@@ -22,18 +22,32 @@ Hourly Worker handler: delivery recovery, missing wakes, expiry, attachment clea
 | `src/domain` | Pure contracts, validation primitives, attachment limits, pacing and send keys |
 | `src/server/api` | HTTP routes, validation, ownership, command orchestration |
 | `src/server/database` | Repository interfaces, D1 queries, and conditional transitions |
-| `src/server/attachments` | File policy, OneDrive coordination, integrity and cleanup |
+| `src/server/attachments` | File policy, provider storage coordination, integrity and cleanup |
 | `src/server/queue` | Queue adapter and campaign-tick consumer |
-| `src/server/microsoft`, `src/server/auth` | OAuth, sessions, encrypted tokens, SMTP/MIME, Graph rollback and error mapping |
+| `src/server/microsoft`, `src/server/google`, `src/server/auth` | OAuth, sessions, encrypted tokens, SMTP/MIME, Graph rollback and error mapping |
 | `worker/index.ts` | HTTP, Queue, and scheduled entrypoint composition |
 
-Domain code does not import Cloudflare runtime types. Database, Queue, and Microsoft operations stay behind their adapters. Parsing workbooks in the browser avoids putting that CPU/memory work inside a Worker request. One deployable Worker is sufficient for the current scope; splitting services requires measured need.
+Domain code does not import Cloudflare runtime types. Database, Queue, and provider operations stay behind their adapters. Parsing workbooks in the browser avoids putting that CPU/memory work inside a Worker request. One deployable Worker is sufficient for the current scope; splitting services requires measured need.
 
 The public `/presentation/` page is independent of the authenticated React application. It makes no API requests, needs no Microsoft session, and contains only synthetic screenshot data and a labeled workspace concept. Its HTML, CSS, JavaScript, and images are copied by the existing Vite build. Hash links identify individual slides; all content remains readable without JavaScript.
 
 Product routes and their shared `ProductLayout` load after the session gate. That layout owns one `DraftProvider`; an inner route boundary preserves it across screen-loading failures. Draft coordination separates editable state and immutable request lifecycle from derived validation and serialized attachment uploads. CSV parsing stays synchronous; XLSX parsing imports ExcelJS only after size/package checks. `npm run check:client-bundle` enforces the static import boundaries and a 110 kB gzip initial JavaScript budget as part of `npm test`.
 
 ## Identity and authorization
+
+### Approved Google provider extension
+
+Personal Gmail is a second, independent account provider. Google authorization uses code flow with PKCE, nonce, browser-bound one-time state, signature/issuer/audience/expiry validation and a verified Gmail mailbox. Identity is Google's immutable `sub`, namespaced separately from existing Microsoft tenant/object IDs. There is no account linking, record transfer, application allowlist, mailbox reading or Sheets access. Reconnection must match the signed-in account. Partial consent preserves login but cannot authorize unavailable capabilities.
+
+Google grants request only OpenID profile/email, `gmail.send` and `drive.appdata`, with offline refresh credentials encrypted using the existing server-side key. Gmail sends through `users.messages.send`; temporary attachments use the same owner's Drive appDataFolder. Existing Microsoft IDs, sessions, grants and ownership remain unchanged. Campaign provider and sender are immutable snapshots. HTTP, Queue and scheduled cleanup select adapters using the persisted account/campaign provider; SMTP/Graph selection remains Microsoft-only.
+
+Gmail MIME includes BCC recipients for envelope extraction; SMTP continues to exclude BCC from MIME. Stream the Gmail media upload with an encoded-size ceiling, preserving five files/20 MiB raw limits without message-sized duplicate buffers. Tests override To and remove CC/BCC/Reply-to at the provider boundary. Provider acceptance never proves receipt. Lost submission responses remain Unknown, with no automatic retry or fallback.
+
+Gmail uses configurable pacing (default and ceiling 12 messages/minute) and a rolling 24-hour recipient-entry budget (default and ceiling 475), counting To, CC, BCC and tests. The budget is 95% of Google's documented 500-email personal-account daily limit, with more conservative recipient-entry accounting; it is not a measurement of remaining Google quota. Accepted/Unknown charges persist. Existing leases, FIFO, reservations, backoff and recovery apply across all account sends. Application limits cannot observe ordinary Gmail activity or guarantee Google's quota availability. Previously prepared campaigns retain their immutable pace; new campaigns use the configured default.
+
+OAuth publishing is separate from verification and application deployment. External production audience removes the development test-user list, not unverified warnings or Google's user/quota limits. Public privacy guidance must truthfully describe stored content, attachments, encrypted credentials and retention limitations. Application promotion still requires staging/integration gates.
+
+Migration `0014_google_pace_limit.sql` raises the database insert guard from 6 to 12 messages/minute without rewriting existing campaigns, recipients or budget reservations. Apply it before deploying the increased default.
 
 Microsoft Entra is single-tenant. Authorization-code flows use PKCE, nonce, short-lived one-time browser-bound state, and validated local return paths. Tenant/object identity is verified; a visible email suffix is insufficient. SMTP mode takes mailbox identity from the validated ID token; Graph rollback also cross-checks `/me`.
 
@@ -77,14 +91,14 @@ Browser/domain/SMTP share an ASCII dot-atom mailbox rule; display names, delimit
 
 ## Attachments
 
-Attachment bytes live in the owning student's OneDrive `Apps/MailFlow` folder, using their quota. The browser uploads through the authenticated same-origin API. D1 records sanitized names, approved media types, byte counts, SHA-256, ordering, private locators and lifecycle. Queue messages and campaign-create JSON carry opaque set identifiers, never bytes or locators.
+Microsoft attachment bytes live in the owner's OneDrive `Apps/MailFlow` folder. Google attachment bytes live in the owner's private Drive appDataFolder. Both use that owner's quota. The browser uploads through the authenticated same-origin API. D1 records sanitized names, approved media types, byte counts, SHA-256, ordering, private locators and lifecycle. Queue messages and campaign-create JSON carry opaque set identifiers, never bytes or locators.
 
-The product and SMTP layer share five-file/20-MiB raw-byte bounds. Open sets may be edited; test-send locks them and campaign creation atomically associates an owner-matching set. Before loading bytes, verify file count/total metadata. Stream downloads only up to each stored byte size and verify hashes. Users can change/delete OneDrive objects, so storage location alone is not immutability.
+The product, SMTP and Gmail layers share five-file/20-MiB raw-byte bounds. Open sets may be edited; test-send locks them and campaign creation atomically associates an owner-matching set. Before loading bytes, verify file count/total metadata. Stream downloads only up to each stored byte size and verify hashes. Users can change/delete OneDrive objects, so storage location alone is not immutability.
 
 Attachment loading finishes before claiming the next recipient. Outcomes are:
 
 - Network failures, Graph 429/5xx and interrupted downloads preserve pending work, increment a durable retry ordinal, and reserve one delayed wake. Backoff grows from 30 seconds to 15 minutes; a longer Retry-After takes precedence within the Queue's 86,400-second limit.
-- OneDrive authorization failures pause for same-account reconnection and retain the immutable set. Resume revalidates before a conditional paused-to-queued transition and appends a new mailbox turn.
+- Storage authorization failures pause for same-account reconnection and retain the immutable set. Resume revalidates before a conditional paused-to-queued transition and appends a new mailbox turn.
 - Missing objects, invalid metadata, size/hash mismatch, or terminal storage failure stop the campaign before claim. Pending rows become Not sent in terminal presentation.
 
 Successful loading clears the attachment recovery state. Resume never rewrites terminal recipient outcomes. Unassociated sets expire after 24 hours. Terminal cleanup handles at most five objects per set; scheduled cleanup processes at most two eligible sets per run. Partial failures and truncated listings remain eligible for idempotent continuation. Ordinary delete uses the OneDrive recycle bin; scoped permanent deletion and immediate quota recovery are unproven.
@@ -92,6 +106,8 @@ Successful loading clears the attachment recovery state. Resume never rewrites t
 ## Delivery coordination
 
 One campaign tick advances one eligible recipient and reserves the next wake. A mailbox has one durable expiring provider lease plus next-send and provider-backoff times, shared by campaigns and self-tests. Conditional D1 batches acquire a lease and reserve a delivery attempt before a provider call. Process-local locks are not a correctness mechanism.
+
+Gmail normal pacing measures the interval from the start of the previous HTTP submission, after the provider-bound transaction and MIME preparation succeed. The mail adapter invokes the optional synchronous `onSubmissionStart` callback immediately before fetch; orchestration records its own clock at that boundary. Its processing time counts toward that interval: the next eligible time is the later of submission start plus the saved interval and submission completion. Missing boundary notification conservatively retains completion-plus-interval pacing. Campaigns and successful self-tests use the same rule. The lease remains held until the outcome is persisted, so submissions never overlap or catch up in bursts. Retry/backoff delays still begin at the failure response and are never shortened by processing time. Microsoft retains its completion-plus-interval pacing. Queue and database latency can still reduce throughput; 12/minute is an application ceiling, not a Google-approved safe rate or delivery promise.
 
 The rolling 24-hour application budget reserves 8,000 envelope-recipient entries per authenticated mailbox. To, CC, BCC, tests, and repeated address occurrences all count. Accepted and unknown attempts retain their budget charge. Only outcomes proving no submission, or stale pre-boundary attempts, release it. Budget exhaustion leaves work pending until the earliest reservation expiry. The bound leaves headroom below [Microsoft's documented mailbox limit](https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits#sending-limits), but Mail Flow cannot observe ordinary Outlook use.
 
@@ -105,7 +121,7 @@ The hourly watchdog reconciles bounded batches. A stale claim or reserved attemp
 
 SMTP uses port 587 with STARTTLS and delegated XOAUTH2. MIME preserves HTML, importance, visible headers and BCC envelope privacy; byte output is chunked to at most 80 KiB. Stable hashed Message-ID/MIME identity supports safe pre-submission retries but is not provider idempotency. Graph is selected only at deployment and rejects attachment sends.
 
-Acceptance requires Graph 202 or the final SMTP 250 after the DATA terminator. A loss after submission may mean acceptance, so record Unknown without automatic retry. Explicit provider rejection and proven pre-submission failures follow their retry/recovery category. Neither transport supplies a safe application idempotency key or proves inbox delivery.
+Acceptance requires a successful Gmail response with a message ID, Graph 202, or the final SMTP 250 after the DATA terminator. A loss after submission may mean acceptance, so record Unknown without automatic retry. Explicit provider rejection and proven pre-submission failures follow their retry/recovery category. Neither transport supplies a safe application idempotency key or proves inbox delivery.
 
 Mail token preparation completes before recipient claim or test lease acquisition. A reconnect disposition pauses unsent work; a proven authorization rejection after claim returns the row to pending and releases its reservation in the same transaction as the pause. `mail_issue_code` is separate from attachment recovery. Resume verifies the same owner's mail grant before rejoining FIFO. HTTP and background handlers construct services from bindings/origin directly; background work does not fabricate HTTP contexts.
 
@@ -117,12 +133,12 @@ SMTP/API/background diagnostics use generated correlation IDs, fixed stages and 
 
 The Worker forces test To to the authenticated mailbox and removes CC/BCC/Reply-to at the final provider boundary. It retains the reviewed subject/body, importance and attachment set. Tests have separate records, effective-content fingerprints, stable keys and audit events; they never create recipient campaign jobs.
 
-Exact terminal replays do not call Microsoft again or consume another rate-limit unit. Changed-content keys conflict. Proven pre-submission failure may release a claim for deliberate retry; ambiguous outcomes remain terminal. Limits are five new tests per user per 10 minutes, and anonymous OAuth starts are limited to 20 per secret-derived client hash and 200 globally per 10 minutes. Store no raw client IP. Chained authenticated OneDrive consent is not a second anonymous start.
+Exact terminal replays do not call the provider again or consume another rate-limit unit. Changed-content keys conflict. Proven pre-submission failure may release a claim for deliberate retry; ambiguous outcomes remain terminal. Limits are five new tests per user per 10 minutes, and anonymous OAuth starts are limited to 20 per secret-derived client hash and 200 globally per 10 minutes. Store no raw client IP. Chained authenticated OneDrive consent is not a second anonymous start.
 
 ## API and deployment contract
 
 Routes cover `/auth/microsoft/start`, the shared `/auth/microsoft/callback`, manual `/auth/microsoft/onedrive/start`, `/auth/logout`, `/api/me`, flows/versions, attachment sets/files, campaign create/list/detail/jobs, test-send, start/pause/resume/cancel, manual delivery verification, and result CSV export. Campaign listing includes live counts and owner-scoped `(created_at, id)` cursor pagination; no duplicated count store is required. Public campaign fields use an explicit allowlist.
 
-Cloudflare bindings are `DB`, `CAMPAIGN_QUEUE`, and `ASSETS`. Secrets are `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`. Non-secret configuration includes tenant/client IDs, public origin, transport, pace, and campaign limit. The hourly schedule is minute 15.
+Cloudflare bindings are `DB`, `CAMPAIGN_QUEUE`, and `ASSETS`. Secrets are `ENTRA_CLIENT_SECRET`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY_B64`, and `SESSION_SECRET`. Google client ID is supplied through protected local/Worker configuration in this rollout. Non-secret configuration includes tenant/client IDs, public origin, transport, pace, and campaign limit. The hourly schedule is minute 15.
 
 Staging has a separate Worker, D1, campaign Queue/DLQ, vars and secrets. Both environments use the same Entra application and the member's App Folder, so staging embeds `ATTACHMENT_OBJECT_NAMESPACE=staging` in new private filenames. Production omits it. No R2 binding exists. [Operations](OPERATIONS.md) governs migration compatibility, target validation, and rollback.

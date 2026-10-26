@@ -1,6 +1,7 @@
 /** Framework-neutral contracts shared by HTTP routes and persistence adapters. */
 
 export interface AuthenticatedUser {
+  provider?: "microsoft" | "google";
   id: string;
   tenantId: string;
   objectId: string;
@@ -10,6 +11,7 @@ export interface AuthenticatedUser {
 }
 
 export interface UserUpsert {
+  provider?: "microsoft" | "google";
   tenantId: string;
   objectId: string;
   displayName?: string | null;
@@ -32,7 +34,7 @@ export interface OAuthTokenRecord {
   updatedAt: number;
 }
 
-export type OAuthTokenResource = "graph_mail" | "smtp" | "onedrive";
+export type OAuthTokenResource = "graph_mail" | "smtp" | "onedrive" | "google";
 
 export interface OAuthTokenStore {
   save(record: OAuthTokenRecord): Promise<void>;

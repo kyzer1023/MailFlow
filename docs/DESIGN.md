@@ -18,14 +18,14 @@ Use semantic tokens for actual CSS values, including spacing, radii, and z-index
 
 ## Durable interaction rules
 
-- The sender is always visible and locked to the authenticated mailbox.
+- The sender is always visible and locked to the authenticated mailbox. Sign-in and reconnect actions identify Google or Microsoft; never send a Google account to Microsoft recovery.
 - Normal interface text uses readable dynamic-field names, without merge braces. Green tokens are for inserting/selecting values and displaying them inside the editor.
 - The Data sidebar labels the recipient email column and each message value plainly. Detected columns are plain reference labels, not insertion tokens.
 - Fixed CC, BCC, and Reply-to values are removable chips. Each field has one explicit control for spreadsheet-sourced values.
 - CC, BCC, Reply-to, and Importance each occupy their own full-width row. Normal importance is the default.
 - Validation explains the problem and correction path beside the affected field or row. Disabled controls explain their prerequisite.
 - Review and the message HTML preview show the exact cleaned message without adding Mail Flow fonts, image resizing, or table styles inside the recipient's email. Explain the self-only test substitutions and require final acknowledgement.
-- Accepted means accepted by Microsoft, never delivered. Preserve explicit Unknown, Failed, Skipped, Not sent, and paused states. Finished processing is not universal success.
+- Accepted means accepted by the selected provider, Microsoft or Gmail, never delivered. Preserve explicit Unknown, Failed, Skipped, Not sent, and paused states. Finished processing is not universal success.
 - Do not hard-code real society identities, private addresses, or private message content. Do not use em or en dashes in user-visible copy.
 
 ## Layout and accessibility

@@ -13,6 +13,7 @@ import type { MailFlowAppEnv } from "../context";
 import { campaignCreateFingerprint, campaignReplayFingerprint } from "../campaign-create-control";
 import {
   attachmentServiceFor,
+  accountPace,
   integerEnv,
   oneDriveAuthorizedFor,
   repositories,
@@ -65,7 +66,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
     });
     if (input instanceof Response) return input;
     const maxRecipients = integerEnv(context.env.MAX_CAMPAIGN_RECIPIENTS, 300, 1, 300);
-    const pacePerMinute = input.pacePerMinute ?? integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600);
+    const pacePerMinute = accountPace(context.env, authenticated.user.provider, input.pacePerMinute);
     if (input.totalRecipients > maxRecipients || input.rows.length > maxRecipients) return responseError(context, 413, "campaign_too_large", `Campaigns are limited to ${maxRecipients} rows.`);
     if (input.totalRecipients !== input.validRecipients + input.skippedRecipients || input.validRecipients !== input.rows.length || input.validRecipients < 1) {
       return responseError(context, 422, "invalid_recipient_totals", "The recipient totals no longer match the validated rows. Validate the workbook again.");
@@ -95,6 +96,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
     }
     const sourceRows = new Set<number>();
     for (const row of input.rows) {
+      if (authenticated.user.provider === "google" && 1 + row.cc.length + row.bcc.length > integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 475, 1, 475)) return responseError(context, 422, "gmail_envelope_budget", "A message has more To, CC and BCC entries than the Gmail daily allowance. Reduce its recipients.");
       if (sourceRows.has(row.sourceRow)) return responseError(context, 422, "duplicate_source_row", "Each spreadsheet row may appear only once.");
       sourceRows.add(row.sourceRow);
       const renderedSubject = validateTemplateSubject(row.renderedSubject);
@@ -134,14 +136,14 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
     if (!flow) return responseError(context, 404, "flow_not_found", "Save the flow before creating a campaign.");
     if (flow.state !== "active") return responseError(context, 409, "flow_archived", "This flow was removed and cannot start a new campaign.");
     if (input.attachmentSetId) {
-      if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
+      if (authenticated.user.provider !== "google" && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
         return responseError(context, 409, "attachments_require_smtp", "This campaign uses attachments and must be sent with SMTP delivery.");
       }
       if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
-        return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before creating an attachment campaign.");
+        return responseError(context, 409, "smtp_reauthorization_required", authenticated.user.provider === "google" ? "Reconnect Google before creating an attachment campaign." : "Reconnect Microsoft before creating an attachment campaign.");
       }
       if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-        return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before creating an attachment campaign.");
+        return responseError(context, 409, "onedrive_authorization_required", authenticated.user.provider === "google" ? "Connect Google Drive before creating an attachment campaign." : "Connect OneDrive before creating an attachment campaign.");
       }
       const service = attachmentServiceFor(context, repo);
       if (!service) return responseError(context, 503, "attachment_storage_unavailable", "Campaign attachments are not available yet.");
@@ -228,6 +230,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
       updatedAt: createdAt,
     }));
     const campaign: CampaignRecord = {
+      provider: authenticated.user.provider ?? "microsoft",
       id: campaignId,
       flowId: flow.id,
       templateVersionId: templateVersion.id,

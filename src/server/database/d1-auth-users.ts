@@ -7,6 +7,7 @@ import type { D1Database } from "./contracts";
 import { prepareAndBind as bind } from "./d1-helpers";
 
 interface AuthUserRow {
+  provider: "microsoft" | "google";
   id: string;
   tenant_id: string;
   object_id: string;
@@ -17,6 +18,7 @@ interface AuthUserRow {
 
 function authUser(row: AuthUserRow): AuthenticatedUser {
   return {
+    provider: row.provider,
     id: row.id,
     tenantId: row.tenant_id,
     objectId: row.object_id,
@@ -42,21 +44,21 @@ export class D1AuthUserStore implements UserStore {
     await bind(
       this.db,
       `INSERT INTO users
-       (id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at, last_login_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'member', ?7, ?7)
+       (id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at, last_login_at, provider)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'member', ?7, ?7, ?8)
        ON CONFLICT(tenant_id, object_id) DO UPDATE SET
          principal_name = excluded.principal_name,
          mailbox_address = excluded.mailbox_address,
          display_name = excluded.display_name,
          last_login_at = excluded.last_login_at`,
-      [id, input.tenantId, input.objectId, principalName, mailboxAddress, displayName, input.lastLoginAt],
+      [id, input.tenantId, input.objectId, principalName, mailboxAddress, displayName, input.lastLoginAt, input.provider ?? "microsoft"],
     ).run();
     const row = await bind(
       this.db,
-      "SELECT id, tenant_id, object_id, principal_name, mailbox_address, display_name FROM users WHERE tenant_id = ?1 AND object_id = ?2",
+      "SELECT id, tenant_id, object_id, principal_name, mailbox_address, display_name, provider FROM users WHERE tenant_id = ?1 AND object_id = ?2",
       [input.tenantId, input.objectId],
     ).first<AuthUserRow>();
-    if (!row) throw new Error("Unable to persist the signed-in Microsoft user");
+    if (!row) throw new Error("Unable to persist the signed-in user");
     return authUser(row);
   }
 }

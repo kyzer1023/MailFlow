@@ -229,6 +229,67 @@ function dependencies(provider: MailProvider): CampaignTickDependencies & {
 }
 
 describe("campaign tick", () => {
+  it.each([
+    { provider: "google" as const, duration: 3_000, pace: 12, wait: 2 },
+    { provider: "google" as const, duration: 6_000, pace: 12, wait: 0 },
+    { provider: "google" as const, duration: 3_000, pace: 6, wait: 7 },
+    { provider: "microsoft" as const, duration: 3_000, pace: 12, wait: 5 },
+    { provider: undefined, duration: 6_000, pace: 12, wait: 5 },
+  ])("paces $provider after a $duration ms submission at $pace/minute", async ({ provider, duration, pace, wait }) => {
+    let now = Date.parse("2026-08-31T00:01:00.000Z");
+    let startedAt = 0;
+    const deps = dependencies({ send: async (_message, options) => {
+      now += 1_000; // MIME preparation is outside the submission interval.
+      options?.onSubmissionStart?.();
+      startedAt = now;
+      now += duration;
+      return { kind: "accepted" };
+    } });
+    deps.now = () => new Date(now);
+    deps.state.campaign = { ...deps.state.campaign, provider, pacePerMinute: pace };
+    const markBound = deps.mailboxDelivery.markCampaignProviderBound;
+    deps.mailboxDelivery.markCampaignProviderBound = async (...args) => {
+      now += 2_000; // Database work before submission must not consume the interval.
+      return markBound(...args);
+    };
+    const tick = await processCampaignTick(TICK, deps);
+    expect(tick).toMatchObject({ kind: "scheduled", outcome: "accepted", delaySeconds: wait });
+    expect(Date.parse(deps.state.campaign.wakeDueAt!)).toBe(startedAt + duration + wait * 1_000);
+    await processCampaignTick(TICK, deps);
+    expect(deps.state.sends).toBe(1);
+  });
+
+  it("counts Gmail result persistence toward the remaining normal wait", async () => {
+    let now = Date.parse("2026-08-31T00:01:00.000Z");
+    const deps = dependencies({ send: async (_message, options) => { options?.onSubmissionStart?.(); now += 1_000; return { kind: "accepted" }; } });
+    deps.now = () => new Date(now);
+    deps.state.campaign = { ...deps.state.campaign, provider: "google" };
+    const complete = deps.mailboxDelivery.completeCampaignAttempt;
+    deps.mailboxDelivery.completeCampaignAttempt = async input => { now += 3_000; return complete(input); };
+    expect(await processCampaignTick(TICK, deps)).toMatchObject({ kind: "scheduled", delaySeconds: 1 });
+  });
+
+  it.each([undefined, 120])("preserves Gmail retry delays after a slow rejection: Retry-After=%s", async retryAfter => {
+    let now = Date.parse("2026-08-31T00:01:00.000Z");
+    const deps = dependencies({ send: async (_message, options) => {
+      options?.onSubmissionStart?.();
+      now += 6_000;
+      return { kind: "retryable", safeToRetry: true, category: "throttle", message: "Pause", retryAfter };
+    } });
+    deps.now = () => new Date(now);
+    deps.state.campaign = { ...deps.state.campaign, provider: "google" };
+    expect(await processCampaignTick(TICK, deps)).toMatchObject({ kind: "scheduled", outcome: "retry_scheduled", delaySeconds: retryAfter ?? 5 });
+    expect(Date.parse(deps.state.job.nextAttemptAt!)).toBe(now + (retryAfter ?? 5) * 1_000);
+  });
+
+  it("retains a full Gmail interval if an adapter omits the submission boundary", async () => {
+    let now = Date.parse("2026-08-31T00:01:00.000Z");
+    const deps = dependencies({ send: async () => { now += 6_000; return { kind: "accepted" }; } });
+    deps.now = () => new Date(now);
+    deps.state.campaign = { ...deps.state.campaign, provider: "google" };
+    expect(await processCampaignTick(TICK, deps)).toMatchObject({ kind: "scheduled", delaySeconds: 5 });
+  });
+
   it("waits for lease release without scheduling a five-minute wake", async () => {
     const deps = dependencies({ send: async () => ({ kind: "accepted" }) });
     deps.mailboxDecision = { kind: "unavailable", reason: "lease", nextAvailableAt: "2026-08-31T00:06:00.000Z" };
@@ -298,7 +359,7 @@ describe("campaign tick", () => {
     expect(result).toMatchObject({ kind: "scheduled", outcome: "retry_scheduled", delaySeconds: 120 });
     expect(deps.state.job.status).toBe("pending");
     expect(deps.state.job.nextAttemptAt).toBe("2026-08-31T00:03:00.000Z");
-    expect(deps.state.campaign.schedulerMessage).toContain("Microsoft requested a temporary pause");
+    expect(deps.state.campaign.schedulerMessage).toContain("Your mail provider requested a temporary pause");
   });
 
   it("loads immutable attachments before claiming and forwards them", async () => {

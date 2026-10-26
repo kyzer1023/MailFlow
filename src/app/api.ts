@@ -15,6 +15,7 @@ import type {
 } from "../client/types";
 
 export interface ApiUser {
+  readonly provider?: "microsoft" | "google";
   readonly id: string;
   readonly displayName: string;
   readonly principalName: string;
@@ -22,9 +23,12 @@ export interface ApiUser {
 }
 
 export interface ApiConfig {
+  readonly provider?: "microsoft" | "google";
+  readonly reconnectUrl?: string;
+  readonly storageProvider?: string;
   readonly defaultPacePerMinute: number;
   readonly maxCampaignRecipients: number;
-  readonly mailTransport?: "graph" | "smtp";
+  readonly mailTransport?: "graph" | "smtp" | "gmail";
   readonly attachmentsEnabled?: boolean;
   readonly attachmentsReauthorizationRequired?: boolean;
   readonly attachmentsSmtpAuthorizationRequired?: boolean;
@@ -61,7 +65,7 @@ export interface TestSendResponse {
   readonly replayed?: boolean;
   readonly result: {
     readonly status: "accepted";
-    readonly userMessage: "Accepted by Microsoft";
+    readonly userMessage: "Accepted by Microsoft" | "Accepted by Gmail";
     readonly senderAddress: string;
     readonly recipientAddress: string;
     readonly graphStatus?: number;

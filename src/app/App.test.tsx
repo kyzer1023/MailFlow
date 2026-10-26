@@ -117,7 +117,8 @@ describe("landing actions", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/#sign-in");
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeEnabled();
     expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Import, review, send, and Microsoft acceptance workflow" })).not.toBeInTheDocument();

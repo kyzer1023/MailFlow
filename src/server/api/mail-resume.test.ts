@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({ refresh: vi.fn(), resume: vi.fn(), enqueue: vi
   campaign: { id: "campaign", ownerUserId: "owner", state: "paused", mailIssueCode: "mail_authorization_required" },
 }));
 vi.mock("./dependencies", async original => ({ ...(await original<typeof import("./dependencies")>()),
-  configFor: () => ({ auth: { refreshUserAccessToken: mocks.refresh } }),
+  accountMailAuthorization: () => ({ refreshUserAccessToken: mocks.refresh }),
+  applicationOrigin: () => "https://mailflow.test",
   repositories: () => ({ campaigns: { getByIdForOwner: async () => mocks.campaign, getById: async () => mocks.campaign,
     resume: mocks.resume }, attachments: { getSetByCampaignId: async () => null } }),
 }));

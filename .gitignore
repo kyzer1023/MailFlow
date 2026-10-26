@@ -14,6 +14,7 @@ coverage/
 playwright-report/
 test-results/
 .playwright-cli/
+.playwright-mcp/
 output/
 *.tsbuildinfo
 

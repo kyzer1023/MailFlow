@@ -48,6 +48,12 @@ export function CampaignPage() {
   const { csrfToken, user, refreshDashboard } = useApi();
   const [campaignState, setCampaignState] = useState<CampaignResponse["campaign"] | null>(null);
   const [counts, setCounts] = useState<CampaignCounts | null>(null);
+  const google = campaignState?.provider === "google";
+  const providerLabel = google ? "Gmail" : "Microsoft";
+  const connectionLabel = google ? "Google" : "Microsoft";
+  const storageLabel = google ? "Google" : "OneDrive";
+  const reconnectPath = google ? "/auth/google/start" : "/auth/microsoft/start";
+  const storagePath = google ? "/auth/google/start" : "/auth/microsoft/onedrive/start";
   const [jobs, setJobs] = useState<readonly RecipientJobRecord[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [actionState, setActionState] = useState<CampaignAction>("idle");
@@ -153,7 +159,7 @@ export function CampaignPage() {
   const verifiedCount = displayJobs.filter(job => job.status === "unknown" && job.deliveryVerifiedAt).length;
   const unverifiedCount = Math.max(0, activeCounts.unknown - verifiedCount);
   const result = completedResult(activeCounts.unknown, activeCounts.failed, activeCounts.skipped, verifiedCount);
-  const resultSummary = `${activeCounts.accepted} accepted by Microsoft, ${activeCounts.failed} failed, ${activeCounts.unknown} unknown, ${activeCounts.skipped} skipped`;
+  const resultSummary = `${activeCounts.accepted} accepted by ${providerLabel}, ${activeCounts.failed} failed, ${activeCounts.unknown} unknown, ${activeCounts.skipped} skipped`;
   const timing = campaignState ? campaignTiming(campaignState, displayJobs) : null;
   const jobPageCount = Math.max(1, Math.ceil(displayJobs.length / RECIPIENT_JOBS_PER_PAGE));
   const firstJobIndex = (jobPage - 1) * RECIPIENT_JOBS_PER_PAGE;
@@ -228,8 +234,8 @@ export function CampaignPage() {
         <header className="page-header campaign-header">
           <div>
             <span className="section-kicker">CAMPAIGN</span>
-            <h1>{cancellation ? cancelling ? "Stopping this campaign." : "This campaign was cancelled." : failedCampaign ? "This campaign stopped safely." : mailAuthorizationPaused ? "Reconnect Microsoft to continue." : attachmentAuthorizationPaused ? "Reconnect OneDrive to continue." : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
-            <p>{cancellation ? "Remaining rows will not be submitted. Mail Flow cannot withdraw mail already submitted to Microsoft." : failedCampaign ? "No additional recipient will be sent from this campaign." : (attachmentAuthorizationPaused || mailAuthorizationPaused) ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? "Processing is finished. Acceptance by Microsoft does not confirm inbox delivery." : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
+            <h1>{cancellation ? cancelling ? "Stopping this campaign." : "This campaign was cancelled." : failedCampaign ? "This campaign stopped safely." : mailAuthorizationPaused ? `Reconnect ${connectionLabel} to continue.` : attachmentAuthorizationPaused ? `Reconnect ${storageLabel} to continue.` : completedCampaign ? "Every row has a recorded outcome." : "The campaign can leave without you."}</h1>
+            <p>{cancellation ? `Remaining rows will not be submitted. Mail Flow cannot withdraw mail already submitted to ${providerLabel}.` : failedCampaign ? "No additional recipient will be sent from this campaign." : (attachmentAuthorizationPaused || mailAuthorizationPaused) ? "Pending rows remain protected until you reconnect and resume." : completedCampaign ? `Processing is finished. Acceptance by ${providerLabel} does not confirm inbox delivery.` : "Mail Flow keeps pacing and recording each row even after this page closes."}</p>
           </div>
           <div className="header-actions">
             {!failedCampaign && !completedCampaign && !cancellation && <button
@@ -264,10 +270,10 @@ export function CampaignPage() {
           </form>
         </Modal>}
         {loadError && <div className="notice notice--warn" role="alert"><WarningCircle weight="fill" /> {loadError}</div>}
-        {activeCounts.unknown > 0 && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /><span><strong>{unverifiedCount > 0 ? `${unverifiedCount} unknown ${unverifiedCount === 1 ? "outcome needs" : "outcomes need"} receipt verification.` : "Receipt has been manually verified for every unknown outcome."}</strong>{unverifiedCount > 0 && "Check receipt before considering any resend. Microsoft may already have submitted these messages. "}{verifiedCount > 0 && `${verifiedCount} manually verified; original provider outcomes remain Unknown.`}</span></div>}
+        {activeCounts.unknown > 0 && <div className="notice notice--warn" role="status"><WarningCircle weight="fill" /><span><strong>{unverifiedCount > 0 ? `${unverifiedCount} unknown ${unverifiedCount === 1 ? "outcome needs" : "outcomes need"} receipt verification.` : "Receipt has been manually verified for every unknown outcome."}</strong>{unverifiedCount > 0 && `Check receipt before considering any resend. ${providerLabel} may already have submitted these messages. `}{verifiedCount > 0 && `${verifiedCount} manually verified; original provider outcomes remain Unknown.`}</span></div>}
         {failedCampaign && <div className="notice notice--danger" role="alert"><WarningCircle weight="fill" /><span><strong>Campaign-level failure</strong>{campaignState?.pauseReason || "The campaign stopped before every pending row was sent."}</span></div>}
-        {mailAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>Microsoft needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect Microsoft</a></div>}
-        {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>OneDrive needs to be reconnected</strong>Reconnect the same Microsoft account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a></div>}
+        {mailAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>{connectionLabel} needs to be reconnected</strong>Reconnect the same {connectionLabel} account, then resume from pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`${reconnectPath}?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect {connectionLabel}</a></div>}
+        {attachmentAuthorizationPaused && <div className="notice notice--warn campaign-reconnect" role="status"><WarningCircle weight="fill" /><span><strong>{storageLabel} needs to be reconnected</strong>Reconnect the same {connectionLabel} account, then resume from the pending rows. Accepted and unknown rows will not be sent again.</span><a className="button button--outline button--small" href={`${storagePath}?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect {storageLabel}</a></div>}
         {(campaignState?.state === "queued" || cancellation) && <div className="notice" role="status"><Clock /><span>{activity?.detail}</span></div>}
         {finishedAfterCancel && <div className="notice" role="status"><Clock /><span>{ineffectiveCancellationNote}</span></div>}
         {waiting && <div className="notice notice--warn" role="status" aria-live="polite"><Clock weight="fill" /><span>{waitingMessage}</span></div>}
@@ -298,7 +304,7 @@ export function CampaignPage() {
                 : failedCampaign
                 ? `${notSent} ${notSent === 1 ? "row was" : "rows were"} not sent after the campaign stopped`
                 : completedCampaign
-                  ? allSubmitted ? `All ${total} emails were submitted successfully to Microsoft.` : `Processing finished: ${resultSummary}`
+                  ? allSubmitted ? `All ${total} emails were submitted successfully to ${providerLabel}.` : `Processing finished: ${resultSummary}`
                   : paused
                     ? "Paused, accepted and unknown rows remain protected"
                     : waiting ? "Waiting safely; remaining time is not estimated"
@@ -345,13 +351,13 @@ export function CampaignPage() {
                         const statusText = stoppedBeforeSend
                           ? "Not sent"
                           : status === "accepted"
-                            ? "Accepted by Microsoft"
+                            ? `Accepted by ${providerLabel}`
                             : status[0].toUpperCase() + status.slice(1);
                         const note = stoppedBeforeSend
                           ? cancellation ? "Not sent because this campaign was cancelled" : "Campaign stopped before this row"
                           : pausedBeforeSend
                             ? "Paused before send"
-                            : (job.lastErrorMessage ? formatSchedulerNotice(job.lastErrorMessage) : "") || (status === "unknown" ? "Outcome unknown. Check receipt before any resend." : status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : "Waiting for Microsoft");
+                            : (job.lastErrorMessage ? formatSchedulerNotice(job.lastErrorMessage) : "") || (status === "unknown" ? "Outcome unknown. Check receipt before any resend." : status === "accepted" ? "Request accepted" : status === "pending" ? "Queued" : `Waiting for ${providerLabel}`);
                         return (
                           <tr key={`${job.recipient}-${job.sourceRow}`}>
                             <td><strong>{job.recipient}</strong></td>
@@ -406,7 +412,7 @@ export function CampaignPage() {
               <h2>{finishedAfterCancel ? "Cancellation request recorded" : cancellation ? "Cancellation is permanent" : failedCampaign ? "Campaign stopped" : attachmentAuthorizationPaused ? "Reconnect, then resume" : "If something interrupts"}</h2>
               <p>{finishedAfterCancel ? "Every row has a recorded outcome. The cancellation request remains in the audit history." : cancellation ? "Pending rows will not be submitted, and this campaign cannot be resumed." : failedCampaign ? "This is a campaign-level failure. Pending rows were not attempted." : attachmentAuthorizationPaused ? "The immutable attachment set and pending rows are still safe." : "Mail Flow recovers unsent work safely."}</p>
               <strong>{failedCampaign ? `${activeCounts.failed} recipient-level ${activeCounts.failed === 1 ? "failure" : "failures"}, ${activeCounts.unknown} unknown, and ${notSent} not sent.` : "Accepted and unknown outcomes are never sent again automatically."}</strong>
-              {attachmentAuthorizationPaused && <a className="button button--outline button--small" href={`/auth/microsoft/onedrive/start?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect OneDrive</a>}
+              {attachmentAuthorizationPaused && <a className="button button--outline button--small" href={`${storagePath}?returnTo=${encodeURIComponent(`/campaigns/${campaignId}`)}`}>Reconnect {storageLabel}</a>}
             </section>
             <section className="panel campaign-details">
               <div className="section-heading">
