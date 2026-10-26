@@ -13,6 +13,10 @@ export interface MailFlowBindings {
     fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   };
   ENTRA_TENANT_ID?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GMAIL_PACE_PER_MINUTE?: string;
+  GMAIL_RECIPIENT_BUDGET?: string;
   ENTRA_CLIENT_ID?: string;
   ENTRA_CLIENT_SECRET?: string;
   TOKEN_ENCRYPTION_KEY_B64?: string;

@@ -2,47 +2,29 @@ import { createD1Repositories } from "../database/d1";
 import { createD1AuthStores } from "../database/d1-auth";
 import { createD1PublicControlStore } from "../database/d1-public-controls";
 import {
-  delegatedGraphMailProvider,
-  delegatedSmtpMailProvider,
-  resolveMailTransport,
-} from "../microsoft";
-import {
   AttachmentError,
   ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN,
-  createAttachmentService,
-  OneDriveAppFolderAttachmentStore,
-  type AttachmentService,
 } from "../attachments";
 import { handleCampaignQueueMessage, cloudflareQueueAdapter, reserveCampaignWake } from "../queue";
 import { MAILBOX_RECOVERY_STALE_MS, laterIso } from "../../domain/mailbox-scheduler";
 import type { MailFlowBindings, QueueBatch } from "./contracts";
 import { isCampaignTickMessage } from "./contracts";
 import { safeErrorKind } from "../diagnostics";
-import { createMailFlowServices } from "./dependencies";
+import { accountMailProvider, accountAttachmentService, integerEnv } from "./dependencies";
 import {
   cleanupCampaignAttachments,
   loadCampaignAttachments,
 } from "./attachments";
 
 export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: MailFlowBindings): Promise<void> {
-  const repo = createD1Repositories(bindings.DB);
-  let authServices: ReturnType<typeof createMailFlowServices> | null = null;
-  let attachmentService: AttachmentService | null = null;
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  const attachmentService = accountAttachmentService(bindings, repo);
   for (const message of batch.messages) {
     if (!isCampaignTickMessage(message.body)) {
       message.ack();
       continue;
     }
     try {
-      if (!authServices) {
-        authServices = createMailFlowServices(bindings);
-        attachmentService = authServices.mailTransport === "smtp"
-          ? createAttachmentService(
-              repo.attachments,
-              new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await authServices!.storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
-            )
-          : null;
-      }
       const result = await handleCampaignQueueMessage(message.body, {
         campaigns: repo.campaigns,
         recipientJobs: repo.recipientJobs,
@@ -65,9 +47,7 @@ export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: Ma
           await cleanupCampaignAttachments(repo, attachmentService, campaignId);
         },
         mailProvider: async (campaign) => {
-          return authServices!.mailTransport === "smtp"
-            ? delegatedSmtpMailProvider(authServices!.smtp, async () => (await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId)).accessToken, campaign.senderAddress)
-            : delegatedGraphMailProvider(authServices!.graph, async () => (await authServices!.auth.refreshUserAccessToken(campaign.ownerUserId)).accessToken);
+          return accountMailProvider(bindings, campaign);
         },
       });
       if (result.kind === "persistence_error") message.retry({ delaySeconds: 60 });
@@ -109,13 +89,8 @@ export async function processScheduledCleanup(bindings: MailFlowBindings): Promi
     if (result.counters < RETENTION_CLEANUP_BATCH_SIZE && result.staleTestSends < RETENTION_CLEANUP_BATCH_SIZE) break;
   }
 
-  if (resolveMailTransport(bindings.MAIL_TRANSPORT) !== "smtp") return;
-  const repo = createD1Repositories(bindings.DB);
-  const { storageAuth } = createMailFlowServices(bindings);
-  const service = createAttachmentService(
-    repo.attachments,
-    new OneDriveAppFolderAttachmentStore(async (ownerUserId) => (await storageAuth.refreshUserAccessToken(ownerUserId)).accessToken),
-  );
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  const service = accountAttachmentService(bindings, repo);
   let attachmentCleanupBudget = ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN;
   for (const campaignId of watchdog.completedCampaignIds.slice(0, attachmentCleanupBudget)) {
     try {
@@ -139,7 +114,7 @@ const WATCHDOG_BATCH_SIZE = 100;
 export async function processSchedulerWatchdog(bindings: MailFlowBindings, nowDate = new Date()): Promise<{
   completedCampaignIds: string[];
 }> {
-  const repo = createD1Repositories(bindings.DB);
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
   const now = nowDate.toISOString();
   const staleBefore = new Date(nowDate.getTime() - MAILBOX_RECOVERY_STALE_MS).toISOString();
   const recoveries = await repo.mailboxDelivery.recoverStale(now, staleBefore, WATCHDOG_BATCH_SIZE);

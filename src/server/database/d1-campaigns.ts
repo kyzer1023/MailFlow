@@ -10,6 +10,7 @@ import { buildAuditEventInsert } from "./d1-audit";
 import { buildRecipientJobInserts } from "./d1-recipient-jobs";
 
 interface CampaignRow {
+  provider: "microsoft" | "google";
   cancel_requested_at: string | null;
   cancelled_at: string | null;
   delivery_verified_count?: number;
@@ -43,6 +44,7 @@ interface CampaignRow {
 
 function toCampaign(row: CampaignRow): CampaignRecord {
   return {
+    provider: row.provider,
     ...(row.delivery_verified_count !== undefined ? { deliveryVerifiedCount: row.delivery_verified_count } : {}),
     id: row.id,
     flowId: row.flow_id,
@@ -149,8 +151,8 @@ export class D1CampaignRepository implements CampaignRepository {
           `INSERT INTO campaigns
            (id, flow_id, template_version_id, owner_user_id, sender_address, source_filename,
             total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state,
-            pause_reason, idempotency_key, request_fingerprint, created_at, queued_at, started_at, completed_at, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)`,
+            pause_reason, idempotency_key, request_fingerprint, created_at, queued_at, started_at, completed_at, updated_at, provider)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)`,
         ),
         [
           campaign.id,
@@ -172,6 +174,7 @@ export class D1CampaignRepository implements CampaignRepository {
           campaign.startedAt,
           campaign.completedAt,
           campaign.updatedAt,
+          campaign.provider ?? "microsoft",
         ],
       ),
     ];

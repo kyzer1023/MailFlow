@@ -5,6 +5,7 @@ import type { MailFlowBindings, MailFlowExecutionContext } from "./contracts";
 import type { MailFlowAppEnv } from "./context";
 import { responseError } from "./helpers";
 import { registerAuthRoutes } from "./routes/auth";
+import { registerGoogleAuthRoutes } from "./routes/google-auth";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { registerFlowRoutes } from "./routes/flows";
 import { registerCampaignDetailRoutes, registerCampaignListRoute } from "./routes/campaign-reads";
@@ -34,6 +35,7 @@ app.use("/api/*", async (context, next) => {
 });
 
 registerAuthRoutes(app);
+registerGoogleAuthRoutes(app);
 registerAttachmentRoutes(app);
 registerFlowRoutes(app);
 registerCampaignListRoute(app);

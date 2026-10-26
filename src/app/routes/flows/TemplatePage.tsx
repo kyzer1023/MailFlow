@@ -252,20 +252,20 @@ export function TemplatePage({
                       <Info />
                       <span>
                         {config.attachmentsSmtpAuthorizationRequired
-                          ? "Reconnect Microsoft to authorize attachments."
+                          ? (config.provider === "google" ? "Reconnect Google to authorize attachments." : "Reconnect Microsoft to authorize attachments.")
                           : config.attachmentsOneDriveAuthorizationRequired
-                            ? "Connect OneDrive to add attachment files."
+                            ? (config.provider === "google" ? "Connect Google Drive app data to add attachment files." : "Connect OneDrive to add attachment files.")
                             : "Attachments are available when this deployment uses SMTP."}
                         {(config.attachmentsSmtpAuthorizationRequired ||
                           config.attachmentsOneDriveAuthorizationRequired) && (
                           <a
                             href={
-                              config.attachmentsSmtpAuthorizationRequired
+                              config.provider === "google" ? "/auth/google/start?returnTo=%2Fflows%2Fnew%2Ftemplate" : config.attachmentsSmtpAuthorizationRequired
                                 ? "/auth/microsoft/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
                                 : "/auth/microsoft/onedrive/start?returnTo=%2Fflows%2Fnew%2Ftemplate"
                             }
                           >
-                            {config.attachmentsOneDriveAuthorizationRequired
+                            {config.provider === "google" ? "Reconnect Google" : config.attachmentsOneDriveAuthorizationRequired
                               ? "Connect OneDrive"
                               : "Reconnect Microsoft"}
                           </a>

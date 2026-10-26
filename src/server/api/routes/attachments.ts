@@ -30,10 +30,10 @@ export function registerAttachmentRoutes(app: Hono<MailFlowAppEnv>): void {
       return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery.");
     }
     if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
-      return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+      return responseError(context, 409, "smtp_reauthorization_required", authenticated.user.provider === "google" ? "Reconnect Google before adding attachments." : "Reconnect Microsoft before adding attachments.");
     }
     if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-      return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before adding attachments.");
+      return responseError(context, 409, "onedrive_authorization_required", authenticated.user.provider === "google" ? "Connect Google Drive before adding attachments." : "Connect OneDrive before adding attachments.");
     }
     const input = await parseOrError(context, attachmentSetCreateSchema);
     if (input instanceof Response) return input;
@@ -55,10 +55,10 @@ export function registerAttachmentRoutes(app: Hono<MailFlowAppEnv>): void {
       return responseError(context, 409, "attachments_unavailable", "Attachments require SMTP delivery.");
     }
     if (!(await smtpAuthorizedFor(context, authenticated.user.id))) {
-      return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before adding attachments.");
+      return responseError(context, 409, "smtp_reauthorization_required", authenticated.user.provider === "google" ? "Reconnect Google before adding attachments." : "Reconnect Microsoft before adding attachments.");
     }
     if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-      return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before adding attachments.");
+      return responseError(context, 409, "onedrive_authorization_required", authenticated.user.provider === "google" ? "Connect Google Drive before adding attachments." : "Connect OneDrive before adding attachments.");
     }
     const contentLengthHeader = context.req.header("Content-Length");
     if (contentLengthHeader) {
@@ -112,7 +112,7 @@ export function registerAttachmentRoutes(app: Hono<MailFlowAppEnv>): void {
     const authenticated = await requireMutationSession(context);
     if (authenticated instanceof Response) return authenticated;
     if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-      return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before changing attachments.");
+      return responseError(context, 409, "onedrive_authorization_required", authenticated.user.provider === "google" ? "Connect Google Drive before changing attachments." : "Connect OneDrive before changing attachments.");
     }
     const repo = repositories(context);
     const service = attachmentServiceFor(context, repo);

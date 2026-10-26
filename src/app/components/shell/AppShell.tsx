@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
 import { Link, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
+import { useApi } from "../../state/api-context";
 import { SupportFooter } from "./SupportFooter";
 
 export interface AppShellProps {
@@ -10,6 +11,9 @@ export interface AppShellProps {
 
 function OneDriveAuthorizationNotice() {
   const location = useLocation();
+  const { user, config } = useApi();
+  const googleStatus = new URLSearchParams(location.search).get("google");
+  if (user?.provider === "google" && (config.attachmentsReauthorizationRequired || googleStatus)) return <div className="notice notice--warn auth-journey-notice" role="status"><WarningCircle /><span>{googleStatus ? "Google connection did not complete. Your existing account is still signed in. " : "Google permissions are incomplete. "}Allow Gmail sending and temporary Drive app-data storage to enable all features. <a href={`/auth/google/start?returnTo=${encodeURIComponent(location.pathname)}`}>Reconnect Google</a></span></div>;
   const status = new URLSearchParams(location.search).get("onedrive");
   if (!status) return null;
   if (status === "connected") {

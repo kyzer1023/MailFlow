@@ -43,6 +43,8 @@
     "ENTRA_CLIENT_ID": "20936b15-0b73-47f5-912f-737eab3de293",
     "MAIL_TRANSPORT": "smtp",
     "DEFAULT_CAMPAIGN_PACE": "12",
+    "GMAIL_PACE_PER_MINUTE": "3",
+    "GMAIL_RECIPIENT_BUDGET": "100",
     "MAX_CAMPAIGN_RECIPIENTS": "300"
   },
   "env": {
@@ -82,6 +84,8 @@
         "ENTRA_CLIENT_ID": "20936b15-0b73-47f5-912f-737eab3de293",
         "MAIL_TRANSPORT": "smtp",
         "DEFAULT_CAMPAIGN_PACE": "12",
+        "GMAIL_PACE_PER_MINUTE": "3",
+        "GMAIL_RECIPIENT_BUDGET": "100",
         "MAX_CAMPAIGN_RECIPIENTS": "300",
         "ATTACHMENT_OBJECT_NAMESPACE": "staging"
       }

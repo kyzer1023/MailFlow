@@ -2,11 +2,9 @@ import { mailPreparationFailure } from "../../microsoft/mail-authorization";
 import type { Hono } from "hono";
 import { AuthFlowError } from "../../auth/service";
 import {
-  delegatedSmtpMailProvider,
   GraphApiError,
   resolveMailTransport,
   sendProviderTestToSelf,
-  sendTestToSelf,
   TestSendError,
 } from "../../microsoft";
 import {
@@ -22,8 +20,10 @@ import { createD1PublicControlStore } from "../../database/d1-public-controls";
 import type { MailFlowAppEnv, MailFlowContext } from "../context";
 import {
   attachmentServiceFor,
-  configFor,
-  integerEnv,
+  accountMailProvider,
+  accountMailAuthorization,
+  accountPace,
+  applicationOrigin,
   oneDriveAuthorizedFor,
   repositories,
   smtpAuthorizedFor,
@@ -76,7 +76,7 @@ function testSendFailure(errorValue: unknown): ClassifiedTestSendFailure {
   }
   const message = errorValue instanceof GraphApiError || errorValue instanceof AuthFlowError || errorValue instanceof OAuthProviderError || errorValue instanceof TestSendError
     ? errorValue.message
-    : "The test message could not be accepted by Microsoft.";
+    : "The test message could not be accepted by the mail provider.";
   const status = errorValue instanceof GraphApiError && errorValue.category === "unauthorized"
     ? 401
     : errorValue instanceof GraphApiError && errorValue.category === "forbidden"
@@ -173,9 +173,8 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     }
     const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
     try {
-      const { auth, graph, smtp, mailTransport } = configFor(context);
+      const provider = await accountMailProvider(context.env, campaign, applicationOrigin(context));
       let attachments: readonly MailAttachment[] = [];
-      let accessToken = "";
       const controlled = await executeControlledTestSend({
         store: createD1PublicControlStore(context.env.DB),
         mailboxDelivery: repo.mailboxDelivery,
@@ -194,7 +193,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
           metadata: { ...metadata },
         }),
         classifyFailure: testSendFailure,
-        pacePerMinute: integerEnv(context.env.DEFAULT_CAMPAIGN_PACE, 12, 1, 600),
+        pacePerMinute: accountPace(context.env, campaign.provider),
         prepare: async () => {
           if (attachmentSet) {
             const service = attachmentServiceFor(context, repo);
@@ -207,7 +206,8 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
             }
             attachments = await loadCampaignAttachments(repo, service, campaign);
           }
-          accessToken = (await auth.refreshUserAccessToken(authenticated.user.id)).accessToken;
+          const failure = await provider.prepare?.();
+          if (failure) throw new TestSendError(failure.message, true, failure.kind === "retryable" ? failure.retryAfter : null, failure.kind);
         },
         send: async (sendKey) => {
           const inputValue = {
@@ -216,14 +216,8 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
             importance: recipientJob.importance ?? "normal",
             attachments,
           };
-          return mailTransport === "smtp"
-            ? sendProviderTestToSelf(
-                delegatedSmtpMailProvider(smtp, accessToken, authenticated.user.mailboxAddress),
-                authenticated.user.mailboxAddress,
-                inputValue,
-                sendKey,
-              )
-            : sendTestToSelf(graph, accessToken, inputValue);
+          return sendProviderTestToSelf(provider, authenticated.user.mailboxAddress, inputValue, sendKey, campaign.provider,
+            campaign.provider === "google" ? "gmail" : resolveMailTransport(context.env.MAIL_TRANSPORT));
         },
       });
       return context.json(controlled);
@@ -288,7 +282,7 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     if (campaign.state !== "paused") return responseError(context, 409, "campaign_changed", "Only a paused campaign can be resumed.");
     if (campaign.mailIssueCode === "mail_authorization_required") {
       try {
-        await configFor(context).auth.refreshUserAccessToken(authenticated.user.id);
+        await accountMailAuthorization(context.env, campaign.provider, applicationOrigin(context)).refreshUserAccessToken(authenticated.user.id);
       } catch (error) {
         const failure = mailPreparationFailure(error);
         return responseError(context, failure.kind === "reconnect_required" ? 409 : 503,
@@ -297,18 +291,18 @@ export function registerCampaignMutationRoutes(app: Hono<MailFlowAppEnv>): void 
     }
     const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
     if (attachmentSet) {
-      if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp" || !(await smtpAuthorizedFor(context, authenticated.user.id))) {
-        return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before resuming this attachment campaign.");
+      if ((campaign.provider !== "google" && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") || !(await smtpAuthorizedFor(context, authenticated.user.id))) {
+        return responseError(context, 409, "smtp_reauthorization_required", authenticated.user.provider === "google" ? "Reconnect Google before resuming this attachment campaign." : "Reconnect Microsoft before resuming this attachment campaign.");
       }
       if (!(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-        return responseError(context, 409, "onedrive_reconnect_required", "Reconnect OneDrive, then resume from the pending rows.");
+        return responseError(context, 409, "onedrive_reconnect_required", authenticated.user.provider === "google" ? "Reconnect Google Drive, then resume from the pending rows." : "Reconnect OneDrive, then resume from the pending rows.");
       }
       const service = attachmentServiceFor(context, repo);
       if (!service) return responseError(context, 503, "attachment_temporarily_unavailable", "Campaign attachments are temporarily unavailable. Try again shortly.");
       try {
         await loadCampaignAttachments(repo, service, campaign);
       } catch (errorValue) {
-        const failure = classifyAttachmentLoadFailure(errorValue);
+        const failure = classifyAttachmentLoadFailure(errorValue, campaign.provider);
         if (failure.disposition === "fail") await failCampaignForAttachment(repo, campaign, failure, service);
         return attachmentActionError(context, failure);
       }
@@ -355,14 +349,14 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
   }
   if (campaign.state !== "validated") return responseError(context, 409, "campaign_not_ready", "Review and validate the campaign before starting it.");
   const attachmentSet = await repo.attachments.getSetByCampaignId(campaign.id);
-  if (attachmentSet && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
+  if (attachmentSet && campaign.provider !== "google" && resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") {
     return responseError(context, 409, "attachments_require_smtp", "Switch this deployment back to SMTP delivery before starting an attachment campaign.");
   }
   if (attachmentSet && !(await smtpAuthorizedFor(context, authenticated.user.id))) {
-    return responseError(context, 409, "smtp_reauthorization_required", "Reconnect Microsoft before starting this attachment campaign.");
+    return responseError(context, 409, "smtp_reauthorization_required", authenticated.user.provider === "google" ? "Reconnect Google before starting this attachment campaign." : "Reconnect Microsoft before starting this attachment campaign.");
   }
   if (attachmentSet && !(await oneDriveAuthorizedFor(context, authenticated.user.id))) {
-    return responseError(context, 409, "onedrive_authorization_required", "Connect OneDrive before starting this attachment campaign.");
+    return responseError(context, 409, "onedrive_authorization_required", authenticated.user.provider === "google" ? "Connect Google Drive before starting this attachment campaign." : "Connect OneDrive before starting this attachment campaign.");
   }
   const attachmentService = attachmentServiceFor(context, repo);
   if (attachmentSet && !attachmentService) {
@@ -378,7 +372,7 @@ async function startCampaign(context: MailFlowContext): Promise<Response> {
     try {
       await loadCampaignAttachments(repo, attachmentService, campaign);
     } catch (errorValue) {
-      const failure = classifyAttachmentLoadFailure(errorValue);
+      const failure = classifyAttachmentLoadFailure(errorValue, campaign.provider);
       if (failure.disposition === "fail") await failCampaignForAttachment(repo, campaign, failure, attachmentService);
       return attachmentActionError(context, failure);
     }

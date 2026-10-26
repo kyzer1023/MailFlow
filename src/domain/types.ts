@@ -43,6 +43,7 @@ export type UserRole = "member" | "administrator";
 export type FlowState = "active" | "archived";
 
 export interface UserRecord {
+  provider?: "microsoft" | "google";
   id: string;
   tenantId: string;
   objectId: string;
@@ -101,6 +102,7 @@ export interface TemplateVersionRecord {
 }
 
 export interface CampaignRecord {
+  provider?: "microsoft" | "google";
   deliveryVerifiedCount?: number;
   id: string;
   flowId: string;

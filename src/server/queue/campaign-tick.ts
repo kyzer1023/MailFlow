@@ -179,7 +179,7 @@ async function advanceCampaignTick(
       await dependencies.campaigns.clearAttachmentIssue(campaign.id, now);
     }
   } catch (errorValue) {
-    const failure = classifyAttachmentLoadFailure(errorValue);
+    const failure = classifyAttachmentLoadFailure(errorValue, campaign.provider);
     if (failure.disposition === "retry") {
       const retryOrdinal = (campaign.attachmentRetryCount ?? 0) + 1;
       const delaySeconds = attachmentRetryDelaySeconds(retryOrdinal, failure.retryAfterSeconds);

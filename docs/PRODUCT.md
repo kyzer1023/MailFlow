@@ -1,27 +1,27 @@
 # Product
 
-Mail Flow is a focused mail-merge application for USM student society members. It supports committee members who want to prepare and monitor personalized email without maintaining an automation workflow. It sends through the signed-in member's Outlook mailbox.
+Mail Flow is a focused mail-merge application for USM student society members. It supports committee members who want to prepare and monitor personalized email without maintaining an automation workflow. It sends through the signed-in member's USM Outlook or personal Gmail mailbox. Google and Microsoft sign-ins create separate accounts; there is no account linking or automatic record transfer.
 
 The proposal grew from the team's experience with its earlier Power Automate workflow: preparation was tedious, and understanding the sending status or the next useful action was difficult. Mail Flow addresses that need with a focused preparation journey, campaign progress, recipient outcomes, pause/resume, and exportable results. This is the team's motivation, not a general claim about Power Automate's capabilities.
 
-This document describes the integrated source based on GitHub main at `bbdcaf9`, checked on 13 September 2026. [Operations](OPERATIONS.md) records release evidence; [Roadmap](ROADMAP.md) separates operational validation and proposed features from available behavior.
+This document describes the source including the approved Gmail provider extension. Deployment and OAuth publishing are separate rollout decisions. [Operations](OPERATIONS.md) records release evidence; [Roadmap](ROADMAP.md) separates operational validation and proposed features from available behavior.
 
 ## Terminology and ownership
 
 | Term | Meaning today |
 | --- | --- |
-| Member | A person authenticated through the configured USM Microsoft tenant |
+| Member | A person authenticated through the configured USM Microsoft tenant or a verified personal Gmail account |
 | Flow | A named reusable message setup with a current template version |
 | Template version | A stored version of the subject, sanitized HTML, fields, and sending options |
 | Campaign | One prepared send using a flow version, recipient snapshots, and optional attachments |
 | Recipient job | The processing record for one spreadsheet row |
-| Accepted | Microsoft accepted the submission; final inbox delivery is not established |
+| Accepted | The selected mail provider accepted the submission; final inbox delivery is not established |
 
 Flows and campaigns belong to individual users. The schema's society-name label and basic administrator role do not provide shared society access. Society Workspaces is proposed, not available.
 
 ## Current member journey
 
-1. **Sign in.** Microsoft OAuth verifies the configured tenant and establishes an application session. In SMTP mode, members without the storage grant continue through separate OneDrive App Folder consent. Declining that step preserves login and exposes a recovery action.
+1. **Sign in.** Choose Google for a personal Gmail account or Microsoft for the configured USM tenant. Google requests basic identity, Gmail send-only access, and private Drive app-data storage. Partial consent preserves login and exposes reconnect controls for unavailable capabilities. There is no MailFlow Gmail allowlist, but Google may impose test-user or unverified-app limits. Microsoft OAuth verifies the configured tenant and establishes an application session. In SMTP mode, members without the storage grant continue through separate OneDrive App Folder consent. Declining that step preserves login and exposes a recovery action.
 2. **Recipients.** Import CSV or XLSX, select a worksheet/header row, inspect rows, and confirm the recipient email column. Workbook parsing happens in the browser. Headers supply readable labels and normalized dynamic-field keys.
 3. **Message.** Choose a reusable template or compose the subject and body. Insert spreadsheet values, resolve missing fields, check sender and sending options, and add campaign attachments. Choosing a template preserves imported recipients and current attachments.
 4. **Review & send.** Inspect representative personalized messages and validation issues. Optionally test to the signed-in mailbox. Acknowledge the review before starting. The configured pace is automatic; members see an estimated duration.
@@ -48,15 +48,15 @@ Campaign preparation creates an unpublished immutable snapshot. Only explicit te
 
 ### Attachments
 
-Up to five PDF, DOCX, XLSX, PPTX, CSV, TXT, PNG, JPG, or JPEG files may total at most 20 MiB of raw bytes. Legacy DOC, XLS, and PPT are unsupported. Every valid recipient receives the same reviewed set. Uploads require SMTP mode and the member's separate `SMTP.Send` and `Files.ReadWrite.AppFolder` grants.
+Up to five PDF, DOCX, XLSX, PPTX, CSV, TXT, PNG, JPG, or JPEG files may total at most 20 MiB of raw bytes. Legacy DOC, XLS, and PPT are unsupported. Every valid recipient receives the same reviewed set. Microsoft uploads require SMTP mode and the member's separate `SMTP.Send` and `Files.ReadWrite.AppFolder` grants. Google uploads require both `gmail.send` and `drive.appdata` consent on the same account.
 
-The same-origin API receives the files. D1 stores ownership/integrity metadata; the member's OneDrive App Folder stores temporary bytes. Empty/unsupported files, executable signatures, mismatched types, duplicate content, and exceeded limits are rejected. Locked or campaign-associated sets are immutable. Missing/changed bytes stop sending before another recipient is claimed.
+The same-origin API receives the files. D1 stores ownership/integrity metadata; the member's OneDrive App Folder or Google Drive appDataFolder stores temporary bytes. Empty/unsupported files, executable signatures, mismatched types, duplicate content, and exceeded limits are rejected. Locked or campaign-associated sets are immutable. Missing/changed bytes stop sending before another recipient is claimed.
 
 Unassociated uploads expire after 24 hours. Terminal campaigns trigger deletion with scheduled cleanup retries. Ordinary OneDrive deletion uses the recycle bin; immediate quota reclamation is not guaranteed. This is not a permanent society document archive.
 
 ### Test and start
 
-Test sends use only the authenticated mailbox as To and suppress CC, BCC, and Reply-to at the provider boundary. The reviewed subject, sanitized body, importance, and attachment set remain the test content. Test outcomes say Accepted by Microsoft, not Delivered.
+Test sends use only the authenticated mailbox as To and suppress CC, BCC, and Reply-to at the provider boundary. The reviewed subject, sanitized body, importance, and attachment set remain the test content. Test outcomes say Accepted by Microsoft or Accepted by Gmail, not Delivered.
 
 Test and campaign-create requests have stable keys. Exact completed replays avoid another submission; changed-content reuse conflicts. The browser retains the exact prepared request across lost-response retries. Start replays for queued, running, or completed campaigns return the same campaign without resubmitting recipients. An ambiguous provider result is not automatically retried.
 
@@ -64,9 +64,9 @@ Test and campaign-create requests have stable keys. Exact completed replays avoi
 
 Campaigns use paced Queue ticks, conditional recipient claims, and a first-in-first-out queue per mailbox. Only its head campaign may submit work; followers stay Queued without polling. Resume joins the back of the queue. Campaigns and tests share mailbox coordination, pace, provider backoff, and a rolling recipient budget. Known transient failures can retry only where no submission occurred. Unknown outcomes remain terminal.
 
-OneDrive throttling/outages retain pending rows and schedule a retry. Mail or storage authorization failures pause for same-account reconnection; resume validates authorization before rejoining the queue. Missing or integrity-invalid attachments stop the campaign. Recovery preserves accepted, failed, skipped, and unknown results.
+Provider storage throttling/outages retain pending rows and schedule a retry. Mail or storage authorization failures pause for same-account reconnection; resume validates authorization before rejoining the queue. Missing or integrity-invalid attachments stop the campaign. Recovery preserves accepted, failed, skipped, and unknown results.
 
-Recipient results distinguish pending, claimed/sending, accepted, failed, skipped, and Unknown. An owner may confirm receipt for an Unknown row with an optional private note. Actor and time are audited, the original provider result remains Unknown, and no resend or budget release occurs. Timestamps use the viewer's timezone with UTC offset. Microsoft acceptance remains separate from receipt evidence.
+Recipient results distinguish pending, claimed/sending, accepted, failed, skipped, and Unknown. An owner may confirm receipt for an Unknown row with an optional private note. Actor and time are audited, the original provider result remains Unknown, and no resend or budget release occurs. Timestamps use the viewer's timezone with UTC offset. Provider acceptance remains separate from receipt evidence.
 
 Cancellation is permanent and requires confirmation. It prevents new submissions; an attempt already crossing the provider boundary settles with its real outcome before Cancelling becomes Cancelled. Pending rows display Not sent. A cancellation that stopped no rows uses the actual completed-result presentation while retaining the cancellation audit. It never recalls submitted mail or permits resume.
 
@@ -77,13 +77,13 @@ Result CSV preserves raw outcomes, row/recipient details, attempts, timestamps, 
 | Concern | Current configured/application bound |
 | --- | --- |
 | Campaign size | 300 source recipients |
-| Default pace | 12 messages per minute; actual progress may be slower |
-| Mailbox budget | 8,000 envelope-recipient entries in a rolling 24 hours, including CC, BCC, and tests |
+| Default pace | Microsoft: 12 messages/minute. Gmail: 3/minute, configurable up to 6. Actual progress may be slower |
+| Mailbox budget | Microsoft: 8,000 entries. Gmail: default 100, configurable up to 200. Both count To, CC, BCC and tests in a rolling 24 hours |
 | Test rate | Five new attempts per user per 10 minutes |
 | Attachments | Five files, 20 MiB combined raw bytes |
 | Spreadsheet import | 20 MiB, 10,000 source rows, 100 columns, 20,000 characters per cell; at most 300 rows per campaign |
 | Storage expiry | Unassociated attachment sets after 24 hours |
 
-These are application limits, not tenant-wide capacity or delivery promises. Ordinary Outlook activity is not visible to Mail Flow. A committee pilot needs a compatible USM account, tenant permission availability, a technical custodian, and an authorized recipient list. Address the readiness gaps in [Roadmap](ROADMAP.md) before broader adoption.
+These are application limits, not tenant-wide capacity or delivery promises. Ordinary Outlook or Gmail activity is not visible to Mail Flow. A committee pilot needs a compatible USM account, tenant permission availability, a technical custodian, and an authorized recipient list. Address the readiness gaps in [Roadmap](ROADMAP.md) before broader adoption.
 
 Shared mailboxes, arbitrary From addresses, application-level Microsoft permissions, direct Google Sheets authorization/write-back, and automatic delivery/NDR ingestion are outside the current prototype. Cloudflare remains the application host.

@@ -19,6 +19,66 @@ import {
 import type { MailFlowContext } from "./context";
 import type { MailFlowBindings } from "./contracts";
 import { safeErrorKind } from "../diagnostics";
+import { GoogleAuthService, DRIVE_SCOPE, GMAIL_SCOPE } from "../google/auth";
+import { gmailMailProvider } from "../google/gmail";
+import { GoogleAppDataAttachmentStore } from "../google/drive";
+import { delegatedGraphMailProvider, delegatedSmtpMailProvider } from "../microsoft";
+import type { CampaignRecord } from "../../domain/types";
+import type { AttachmentObjectStore } from "../attachments/contracts";
+
+export function googleAuthFor(bindings: MailFlowBindings, origin = textEnv(bindings.PUBLIC_ORIGIN)) {
+  const clientId = textEnv(bindings.GOOGLE_CLIENT_ID);
+  const clientSecret = textEnv(bindings.GOOGLE_CLIENT_SECRET);
+  const stateSecret = textEnv(bindings.SESSION_SECRET);
+  const tokenEncryptionSecret = textEnv(bindings.TOKEN_ENCRYPTION_KEY_B64);
+  if (!clientId || !clientSecret || !stateSecret || !tokenEncryptionSecret) throw new Error("Google sign-in is not configured");
+  const secure = new URL(origin).protocol === "https:";
+  return new GoogleAuthService({ clientId, clientSecret, redirectUri: new URL("/auth/google/callback", origin).toString() }, {
+    ...createD1AuthStores(bindings.DB), stateSecret, tokenEncryptionSecret, secureCookies: secure,
+    sessionCookie: { secure, sameSite: "Lax", path: "/" }, sessionTtlSeconds: DEFAULT_SESSION_TTL_SECONDS,
+  });
+}
+
+export function accountPace(bindings: MailFlowBindings, provider?: string, requested?: number) {
+  return provider === "google" ? integerEnv(String(requested ?? bindings.GMAIL_PACE_PER_MINUTE ?? 3), 3, 1, 6)
+    : requested ?? integerEnv(bindings.DEFAULT_CAMPAIGN_PACE, 12, 1, 600);
+}
+
+export function accountMailAuthorization(bindings: MailFlowBindings, provider?: string, origin?: string) {
+  return provider === "google" ? googleAuthFor(bindings, origin) : createMailFlowServices(bindings, origin).auth;
+}
+
+export async function accountMailProvider(bindings: MailFlowBindings, campaign: Pick<CampaignRecord, "ownerUserId" | "senderAddress" | "provider">, origin?: string) {
+  const owner = await createD1Repositories(bindings.DB).users.getById(campaign.ownerUserId);
+  if (!owner || (owner.provider ?? "microsoft") !== (campaign.provider ?? "microsoft") || owner.mailboxAddress !== campaign.senderAddress) throw new Error("Sending account does not match campaign snapshot");
+  if (campaign.provider === "google") {
+    const auth = googleAuthFor(bindings, origin);
+    return gmailMailProvider(async () => (await auth.refreshUserAccessToken(owner.id)).accessToken, campaign.senderAddress);
+  }
+  const services = createMailFlowServices(bindings, origin);
+  const token = async () => (await services.auth.refreshUserAccessToken(owner.id)).accessToken;
+  return services.mailTransport === "smtp" ? delegatedSmtpMailProvider(services.smtp, token, campaign.senderAddress)
+    : delegatedGraphMailProvider(services.graph, token);
+}
+
+export function accountAttachmentService(bindings: MailFlowBindings, repo = createD1Repositories(bindings.DB), origin?: string) {
+  const storeFor = async (ownerId: string): Promise<AttachmentObjectStore> => {
+    const owner = await repo.users.getById(ownerId);
+    if (!owner) throw new Error("Attachment owner is unavailable");
+    if (owner.provider === "google") {
+      const auth = googleAuthFor(bindings, origin);
+      return new GoogleAppDataAttachmentStore(async id => (await auth.refreshUserAccessToken(id, DRIVE_SCOPE)).accessToken);
+    }
+    const services = createMailFlowServices(bindings, origin);
+    return new OneDriveAppFolderAttachmentStore(async id => (await services.storageAuth.refreshUserAccessToken(id)).accessToken);
+  };
+  return createAttachmentService(repo.attachments, {
+    put: async (owner, key, value, options) => (await storeFor(owner)).put(owner, key, value, options),
+    get: async (owner, key) => (await storeFor(owner)).get(owner, key),
+    delete: async (owner, key) => (await storeFor(owner)).delete(owner, key),
+    list: async (owner, options) => (await storeFor(owner)).list(owner, options),
+  }, { objectKey: (setId, fileId) => attachmentObjectKey(attachmentObjectNamespace(bindings.ATTACHMENT_OBJECT_NAMESPACE), setId, fileId) });
+}
 
 export function textEnv(value: string | undefined, fallback = ""): string {
   return value?.trim() || fallback;
@@ -44,7 +104,7 @@ export function attachmentObjectKey(namespace: string, attachmentSetId: string, 
 }
 
 export function repositories(context: MailFlowContext): Repositories {
-  return createD1Repositories(context.env.DB);
+  return createD1Repositories(context.env.DB, integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
 }
 
 export function applicationOrigin(context: MailFlowContext): string {
@@ -128,6 +188,7 @@ export function createMailFlowServices(bindings: MailFlowBindings, origin = text
 }
 
 export function attachmentServiceFor(context: MailFlowContext, repo = repositories(context)): AttachmentService | null {
+  if (context.get("user")?.provider === "google") return accountAttachmentService(context.env, repo, applicationOrigin(context));
   if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return null;
   const { storageAuth } = configFor(context);
   const objectNamespace = attachmentObjectNamespace(context.env.ATTACHMENT_OBJECT_NAMESPACE);
@@ -150,7 +211,13 @@ export function attachmentServiceFor(context: MailFlowContext, repo = repositori
 }
 
 export function attachmentInfrastructureAvailable(context: MailFlowContext): boolean {
+  if (context.get("user")?.provider === "google") return Boolean(context.env.GOOGLE_CLIENT_ID && context.env.GOOGLE_CLIENT_SECRET);
   return resolveMailTransport(context.env.MAIL_TRANSPORT) === "smtp";
+}
+
+async function googleScopeFor(context: MailFlowContext, userId: string, scope: string) {
+  const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "google");
+  return Boolean(token?.grantedScopes.includes(scope));
 }
 
 export function hasSmtpSendScope(scopes: readonly string[]): boolean {
@@ -161,6 +228,7 @@ export function hasSmtpSendScope(scopes: readonly string[]): boolean {
 }
 
 export async function smtpAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
+  if (context.get("user")?.provider === "google") return googleScopeFor(context, userId, GMAIL_SCOPE);
   if (resolveMailTransport(context.env.MAIL_TRANSPORT) !== "smtp") return false;
   const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "smtp");
   return Boolean(token && hasSmtpSendScope(token.grantedScopes));
@@ -174,6 +242,7 @@ export function hasOneDriveAppFolderScope(scopes: readonly string[]): boolean {
 }
 
 export async function oneDriveAuthorizedFor(context: MailFlowContext, userId: string): Promise<boolean> {
+  if (context.get("user")?.provider === "google") return googleScopeFor(context, userId, DRIVE_SCOPE);
   const token = await createD1AuthStores(context.env.DB).tokenStore.findByUserId(userId, "onedrive");
   return Boolean(token && hasOneDriveAppFolderScope(token.grantedScopes));
 }

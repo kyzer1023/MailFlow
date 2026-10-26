@@ -273,7 +273,7 @@ export async function executeControlledTestSend(options: {
     throw new ControlledTestSendError({
       status: 503,
       code: "test_send_state_unavailable",
-      message: "Microsoft may have accepted this test, but Mail Flow could not store the result. Do not resend it blindly.",
+      message: "The mail provider may have accepted this test, but Mail Flow could not store the result. Do not resend it blindly.",
     });
   }
   await safeAudit(options.audit, {

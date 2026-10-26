@@ -237,11 +237,11 @@ export class AttachmentService {
   }
 
   async readFile(ownerUserId: string, file: AttachmentFileRecord): Promise<AttachmentPayload> {
-    if (file.deletedAt) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from OneDrive");
+    if (file.deletedAt) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from provider storage");
     const object = await this.objectStore.get(ownerUserId, file.objectKey);
-    if (!object) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from OneDrive");
+    if (!object) throw new AttachmentError("storage_missing", "A campaign attachment was deleted from provider storage");
     if (object.size !== undefined && object.size !== file.byteSize) {
-      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in provider storage and no longer matches the reviewed file");
     }
     let bytes: Uint8Array;
     try {
@@ -250,15 +250,15 @@ export class AttachmentService {
       if (error instanceof AttachmentError) throw error;
       throw new AttachmentError(
         "network_error",
-        "OneDrive could not finish reading the campaign attachment",
+        "Provider storage could not finish reading the campaign attachment",
         { transient: true },
       );
     }
     if (bytes.byteLength !== file.byteSize) {
-      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in provider storage and no longer matches the reviewed file");
     }
     if ((await sha256Hex(bytes)) !== file.sha256) {
-      throw new AttachmentError("integrity_error", "A campaign attachment changed in OneDrive and no longer matches the reviewed file");
+      throw new AttachmentError("integrity_error", "A campaign attachment changed in provider storage and no longer matches the reviewed file");
     }
     return { file, bytes };
   }

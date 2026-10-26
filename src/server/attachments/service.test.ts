@@ -271,14 +271,14 @@ describe("attachment service", () => {
     objectStore.values.delete(result.file.objectKey);
     await expect(service.readSet("user-1", first.set.id)).rejects.toMatchObject({
       code: "storage_missing",
-      message: expect.stringContaining("deleted from OneDrive"),
+      message: expect.stringContaining("deleted from provider storage"),
       transient: false,
     });
 
     objectStore.values.set(result.file.objectKey, new TextEncoder().encode("longer than reviewed"));
     await expect(service.readSet("user-1", first.set.id)).rejects.toMatchObject({
       code: "integrity_error",
-      message: expect.stringContaining("changed in OneDrive"),
+      message: expect.stringContaining("changed in provider storage"),
       transient: false,
     });
   });

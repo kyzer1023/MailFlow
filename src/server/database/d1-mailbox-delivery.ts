@@ -82,7 +82,12 @@ function maxIso(values: readonly { reason: MailboxUnavailableReason; value: stri
 }
 
 export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(private readonly db: D1Database, private readonly gmailBudget = 100) {}
+
+  private async budget(owner: string): Promise<number> {
+    const provider = await bind(this.db.prepare("SELECT provider FROM users WHERE id = ?1"), [owner]).first<string>("provider");
+    return provider === "google" ? Math.max(1, Math.min(200, Number.isInteger(this.gmailBudget) ? this.gmailBudget : 100)) : MAILBOX_RECIPIENT_BUDGET;
+  }
 
   private async ensureMailbox(ownerUserId: string, now: string): Promise<void> {
     await bind(
@@ -132,7 +137,7 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
     ).first<number>("used") ?? 0);
 
     let budgetRelease: string | null = null;
-    const needed = used + request.envelopeRecipientCount - MAILBOX_RECIPIENT_BUDGET;
+    const needed = used + request.envelopeRecipientCount - await this.budget(request.ownerUserId);
     if (needed > 0) {
       const release = await bind(
         this.db.prepare(
@@ -213,7 +218,7 @@ export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
         request.ownerUserId,
         request.campaignNotBefore ?? null,
         request.envelopeRecipientCount,
-        MAILBOX_RECIPIENT_BUDGET,
+        await this.budget(request.ownerUserId),
         request.recipientJobId,
         request.campaignId,
       ],

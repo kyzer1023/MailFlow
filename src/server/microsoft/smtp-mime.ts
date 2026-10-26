@@ -96,6 +96,7 @@ function* encodedBodyChunks(content: Uint8Array): Generator<string> {
 }
 
 export interface MimeBuildOptions {
+  includeBcc?: boolean;
   senderAddress: string;
   boundary?: string;
   messageId?: string;
@@ -150,6 +151,7 @@ function prepareMimeMessage(message: MailMessage, options: MimeBuildOptions): Pr
     `From: ${sender}`,
     `To: ${to}`,
     ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
+    ...(options.includeBcc && bcc.length ? [`Bcc: ${bcc.join(", ")}`] : []),
     ...(replyTo.length ? [`Reply-To: ${replyTo.join(", ")}`] : []),
     `Subject: ${encodedHeader(subject)}`,
     `Date: ${(options.now ?? new Date()).toUTCString()}`,

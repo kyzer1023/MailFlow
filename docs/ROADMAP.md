@@ -1,6 +1,10 @@
 # Roadmap
 
-This roadmap is aligned with GitHub main at `bbdcaf9` and its integrated presentation on 13 September 2026. Priorities are recommendations, not delivery dates or implementation authorization. [Product](PRODUCT.md) describes available behavior.
+This roadmap distinguishes the current source, deployment gates, and unapproved future features. Priorities are recommendations, not delivery dates or implementation authorization. [Product](PRODUCT.md) describes available behavior.
+
+## Gmail provider rollout
+
+The approved provider extension implements separate Google identity/grants, Gmail sending, Drive app-data attachments, provider-bound campaigns, conservative mailbox budgets and the existing preparation/recovery journey. Local Google sign-in and app-data upload work; automated identity, migration, MIME, quota and Queue checks pass. Hosted rollout, Google audience publishing, bounded live acceptance and independently observed receipt are tracked in Operations, not inferred from implementation. Full Google verification is not a prerequisite to the initial feature, but unverified warnings/user caps remain. No account linking, Sheets access, mailbox reading or workspace sharing is included.
 
 ## 1. Validate wider rollout
 

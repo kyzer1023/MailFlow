@@ -8,12 +8,12 @@ Authority order: the user's latest instruction; security and privacy constraints
 
 ## Product and architecture boundaries
 
-- Cloudflare is the only application host. Microsoft Entra ID is the only user identity provider, restricted to the configured USM tenant.
-- Delegated OAuth SMTP with `SMTP.Send` is the configured transport. Graph delegated `Mail.Send` remains a deployment-selected rollback path, never an automatic per-message fallback.
+- Cloudflare is the only application host. Microsoft Entra ID remains restricted to the configured USM tenant; Google SSO also supports verified personal Gmail accounts as separate, unlinked owners.
+- Delegated OAuth SMTP with `SMTP.Send` is the configured Microsoft transport. Google accounts use Gmail API `gmail.send`, selected by immutable campaign provider. Graph delegated `Mail.Send` remains a deployment-selected rollback path, never an automatic per-message fallback.
 - The sender is the authenticated member's mailbox. Shared mailboxes, arbitrary From addresses, application-level Microsoft permissions, and direct Google Sheets access are outside the current prototype.
 - Parse CSV and XLSX in the browser. Each source row becomes one recipient job; each eligible row receives a separate message.
-- Attachments use each member's OneDrive App Folder through delegated `Files.ReadWrite.AppFolder`. Require SMTP and both resource grants; preserve the five-file and 20-MiB combined limits.
-- Domain modules have no Cloudflare runtime imports. Database access uses repositories, Queue publishing uses its adapter, and Microsoft calls use mail/storage adapters.
+- Microsoft attachments use each member's OneDrive App Folder through delegated `Files.ReadWrite.AppFolder`, requiring SMTP and both resource grants. Google attachments use only Drive appDataFolder with `drive.appdata`; preserve the five-file and 20-MiB combined limits.
+- Domain modules have no Cloudflare runtime imports. Database access uses repositories, Queue publishing uses its adapter, and provider calls use mail/storage adapters.
 - Preserve conditional recipient transitions, immutable campaign snapshots, mailbox coordination, and request idempotency. Queue delivery is at least once. An ambiguous provider submission becomes `unknown` and is never automatically resent.
 - Unknown API routes and write requests must never fall through to the app shell.
 - Organization membership, shared records, and durable society file storage are roadmap proposals. A society label is not an authorization boundary.

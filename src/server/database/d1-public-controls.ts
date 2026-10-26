@@ -5,7 +5,7 @@ export type StoredTestSendStatus = "pending" | "accepted" | "failed";
 
 export interface StoredTestSendResult {
   readonly status: "accepted";
-  readonly userMessage: "Accepted by Microsoft";
+  readonly userMessage: "Accepted by Microsoft" | "Accepted by Gmail";
   readonly senderAddress: string;
   readonly recipientAddress: string;
   readonly graphStatus?: number;

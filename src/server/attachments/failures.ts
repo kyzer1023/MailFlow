@@ -36,7 +36,12 @@ export type AttachmentLoadFailure =
 const TEMPORARY_MESSAGE = "Campaign attachments are temporarily unavailable. Sending will retry automatically.";
 
 /** Convert provider and storage errors into a bounded, user-safe recovery decision. */
-export function classifyAttachmentLoadFailure(error: unknown): AttachmentLoadFailure {
+export function classifyAttachmentLoadFailure(error: unknown, provider?: "microsoft" | "google"): AttachmentLoadFailure {
+  const failure = attachmentLoadFailure(error);
+  return provider === "google" ? { ...failure, userMessage: failure.userMessage.replaceAll("OneDrive", "Google Drive") } : failure;
+}
+
+function attachmentLoadFailure(error: unknown): AttachmentLoadFailure {
   if (error instanceof AttachmentError) {
     if (
       error.transient

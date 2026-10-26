@@ -3,6 +3,7 @@ import type { D1Database, UserRepository } from "./contracts";
 import { bind, changes } from "./d1-helpers";
 
 interface UserRow {
+  provider: "microsoft" | "google";
   id: string;
   tenant_id: string;
   object_id: string;
@@ -16,6 +17,7 @@ interface UserRow {
 
 function toUser(row: UserRow): UserRecord {
   return {
+    provider: row.provider,
     id: row.id,
     tenantId: row.tenant_id,
     objectId: row.object_id,
@@ -47,8 +49,8 @@ export class D1UserRepository implements UserRepository {
   async upsert(user: UserRecord): Promise<void> {
     await bind(
       this.db.prepare(
-        `INSERT INTO users (id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at, last_login_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        `INSERT INTO users (id, tenant_id, object_id, principal_name, mailbox_address, display_name, role, created_at, last_login_at, provider)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
            tenant_id = excluded.tenant_id,
            object_id = excluded.object_id,
@@ -58,7 +60,7 @@ export class D1UserRepository implements UserRepository {
            role = excluded.role,
            last_login_at = excluded.last_login_at`,
       ),
-      [user.id, user.tenantId, user.objectId, user.principalName.toLowerCase(), user.mailboxAddress, user.displayName, user.role, user.createdAt, user.lastLoginAt],
+      [user.id, user.tenantId, user.objectId, user.principalName.toLowerCase(), user.mailboxAddress, user.displayName, user.role, user.createdAt, user.lastLoginAt, user.provider ?? "microsoft"],
     ).run();
   }
 
