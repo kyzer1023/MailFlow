@@ -77,8 +77,8 @@ Result CSV preserves raw outcomes, row/recipient details, attempts, timestamps, 
 | Concern | Current configured/application bound |
 | --- | --- |
 | Campaign size | 300 source recipients |
-| Default pace | Microsoft: 12 messages/minute. Gmail: 3/minute, configurable up to 6. Actual progress may be slower |
-| Mailbox budget | Microsoft: 8,000 entries. Gmail: default 100, configurable up to 200. Both count To, CC, BCC and tests in a rolling 24 hours |
+| Default pace | Microsoft: 12 messages/minute. Gmail: 12/minute, configurable up to 12. Actual progress may be slower |
+| Mailbox budget | Microsoft: 8,000 entries. Gmail: default 475, configurable up to 475. Both count To, CC, BCC and tests in a rolling 24 hours |
 | Test rate | Five new attempts per user per 10 minutes |
 | Attachments | Five files, 20 MiB combined raw bytes |
 | Spreadsheet import | 20 MiB, 10,000 source rows, 100 columns, 20,000 characters per cell; at most 300 rows per campaign |

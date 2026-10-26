@@ -21,7 +21,7 @@ export { D1UserRepository } from "./d1-users";
 export { D1RecipientJobRepository } from "./d1-recipient-jobs";
 export { D1MailboxDeliveryRepository } from "./d1-mailbox-delivery";
 
-export function createD1Repositories(db: D1Database, gmailBudget = 100): Repositories {
+export function createD1Repositories(db: D1Database, gmailBudget = 475): Repositories {
   return {
     users: new D1UserRepository(db),
     flows: new D1FlowRepository(db),

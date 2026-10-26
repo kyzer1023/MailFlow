@@ -96,7 +96,7 @@ export function registerCampaignCreateRoute(app: Hono<MailFlowAppEnv>): void {
     }
     const sourceRows = new Set<number>();
     for (const row of input.rows) {
-      if (authenticated.user.provider === "google" && 1 + row.cc.length + row.bcc.length > integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 100, 1, 200)) return responseError(context, 422, "gmail_envelope_budget", "A message has more To, CC and BCC entries than the Gmail daily allowance. Reduce its recipients.");
+      if (authenticated.user.provider === "google" && 1 + row.cc.length + row.bcc.length > integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 475, 1, 475)) return responseError(context, 422, "gmail_envelope_budget", "A message has more To, CC and BCC entries than the Gmail daily allowance. Reduce its recipients.");
       if (sourceRows.has(row.sourceRow)) return responseError(context, 422, "duplicate_source_row", "Each spreadsheet row may appear only once.");
       sourceRows.add(row.sourceRow);
       const renderedSubject = validateTemplateSubject(row.renderedSubject);

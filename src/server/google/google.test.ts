@@ -187,7 +187,12 @@ describe("Gmail submission boundary", () => {
   });
   it("enforces Gmail pacing independently of Microsoft configuration", () => {
     const bindings = { GMAIL_PACE_PER_MINUTE: "9999", DEFAULT_CAMPAIGN_PACE: "12" } as MailFlowBindings;
-    expect(accountPace(bindings, "google")).toBe(6); expect(accountPace(bindings, "google", 600)).toBe(6); expect(accountPace(bindings, "microsoft")).toBe(12);
+    expect(accountPace(bindings, "google")).toBe(12);
+    expect(accountPace(bindings, "google", 600)).toBe(12);
+    expect(accountPace(bindings, "microsoft")).toBe(12);
+    expect(accountPace({} as MailFlowBindings, "google")).toBe(12);
+    expect(accountPace({ GMAIL_PACE_PER_MINUTE: "invalid" } as MailFlowBindings, "google")).toBe(12);
+    expect(accountPace({ GMAIL_PACE_PER_MINUTE: "3" } as MailFlowBindings, "google")).toBe(3);
   });
 });
 

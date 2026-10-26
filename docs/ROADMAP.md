@@ -4,7 +4,7 @@ This roadmap distinguishes the current source, deployment gates, and unapproved 
 
 ## Gmail provider rollout
 
-The approved provider extension implements separate Google identity/grants, Gmail sending, Drive app-data attachments, provider-bound campaigns, conservative mailbox budgets and the existing preparation/recovery journey. Local controlled sending and independent five-inbox receipt checks passed. Staging migration/deployment and Google SSO are verified; Google audience is External / In production. Exact evidence and limits are in Operations. Production application promotion remains gated on review and integration. Full Google verification is not an initial-feature prerequisite, but unverified warnings and the 100-user lifetime cap remain. No account linking, Sheets access, mailbox reading or workspace sharing is included.
+The approved provider extension implements separate Google identity/grants, Gmail sending, Drive app-data attachments, provider-bound campaigns, configurable mailbox budgets and the existing preparation/recovery journey. Local controlled sending and independent five-inbox receipt checks passed. Staging migration/deployment and Google SSO are verified; Google audience is External / In production. Exact evidence and limits are in Operations. Production application promotion remains gated on review and integration. Full Google verification is not an initial-feature prerequisite, but unverified warnings and the 100-user lifetime cap remain. No account linking, Sheets access, mailbox reading or workspace sharing is included.
 
 ## 1. Validate wider rollout
 

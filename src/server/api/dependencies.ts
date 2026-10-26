@@ -41,7 +41,7 @@ export function googleAuthFor(bindings: MailFlowBindings, origin = textEnv(bindi
 }
 
 export function accountPace(bindings: MailFlowBindings, provider?: string, requested?: number) {
-  return provider === "google" ? integerEnv(String(requested ?? bindings.GMAIL_PACE_PER_MINUTE ?? 3), 3, 1, 6)
+  return provider === "google" ? integerEnv(String(requested ?? bindings.GMAIL_PACE_PER_MINUTE ?? 12), 12, 1, 12)
     : requested ?? integerEnv(bindings.DEFAULT_CAMPAIGN_PACE, 12, 1, 600);
 }
 
@@ -108,7 +108,7 @@ export function attachmentObjectKey(namespace: string, attachmentSetId: string, 
 }
 
 export function repositories(context: MailFlowContext): Repositories {
-  return createD1Repositories(context.env.DB, integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  return createD1Repositories(context.env.DB, integerEnv(context.env.GMAIL_RECIPIENT_BUDGET, 475, 1, 475));
 }
 
 export function applicationOrigin(context: MailFlowContext): string {

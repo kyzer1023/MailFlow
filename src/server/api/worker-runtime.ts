@@ -17,7 +17,7 @@ import {
 } from "./attachments";
 
 export async function processQueueBatch(batch: QueueBatch<unknown>, bindings: MailFlowBindings): Promise<void> {
-  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 475, 1, 475));
   const attachmentService = accountAttachmentService(bindings, repo);
   for (const message of batch.messages) {
     if (!isCampaignTickMessage(message.body)) {
@@ -89,7 +89,7 @@ export async function processScheduledCleanup(bindings: MailFlowBindings): Promi
     if (result.counters < RETENTION_CLEANUP_BATCH_SIZE && result.staleTestSends < RETENTION_CLEANUP_BATCH_SIZE) break;
   }
 
-  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 475, 1, 475));
   const service = accountAttachmentService(bindings, repo);
   let attachmentCleanupBudget = ATTACHMENT_CLEANUP_MAX_SETS_PER_RUN;
   for (const campaignId of watchdog.completedCampaignIds.slice(0, attachmentCleanupBudget)) {
@@ -114,7 +114,7 @@ const WATCHDOG_BATCH_SIZE = 100;
 export async function processSchedulerWatchdog(bindings: MailFlowBindings, nowDate = new Date()): Promise<{
   completedCampaignIds: string[];
 }> {
-  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 100, 1, 200));
+  const repo = createD1Repositories(bindings.DB, integerEnv(bindings.GMAIL_RECIPIENT_BUDGET, 475, 1, 475));
   const now = nowDate.toISOString();
   const staleBefore = new Date(nowDate.getTime() - MAILBOX_RECOVERY_STALE_MS).toISOString();
   const recoveries = await repo.mailboxDelivery.recoverStale(now, staleBefore, WATCHDOG_BATCH_SIZE);

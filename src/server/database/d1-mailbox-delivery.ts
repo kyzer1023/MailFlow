@@ -82,11 +82,11 @@ function maxIso(values: readonly { reason: MailboxUnavailableReason; value: stri
 }
 
 export class D1MailboxDeliveryRepository implements MailboxDeliveryRepository {
-  constructor(private readonly db: D1Database, private readonly gmailBudget = 100) {}
+  constructor(private readonly db: D1Database, private readonly gmailBudget = 475) {}
 
   private async budget(owner: string): Promise<number> {
     const provider = await bind(this.db.prepare("SELECT provider FROM users WHERE id = ?1"), [owner]).first<string>("provider");
-    return provider === "google" ? Math.max(1, Math.min(200, Number.isInteger(this.gmailBudget) ? this.gmailBudget : 100)) : MAILBOX_RECIPIENT_BUDGET;
+    return provider === "google" ? Math.max(1, Math.min(475, Number.isInteger(this.gmailBudget) ? this.gmailBudget : 475)) : MAILBOX_RECIPIENT_BUDGET;
   }
 
   private async ensureMailbox(ownerUserId: string, now: string): Promise<void> {

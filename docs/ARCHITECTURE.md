@@ -43,9 +43,11 @@ Google grants request only OpenID profile/email, `gmail.send` and `drive.appdata
 
 Gmail MIME includes BCC recipients for envelope extraction; SMTP continues to exclude BCC from MIME. Stream the Gmail media upload with an encoded-size ceiling, preserving five files/20 MiB raw limits without message-sized duplicate buffers. Tests override To and remove CC/BCC/Reply-to at the provider boundary. Provider acceptance never proves receipt. Lost submission responses remain Unknown, with no automatic retry or fallback.
 
-Gmail uses configurable conservative pacing (default 3, ceiling 6 messages/minute) and a rolling 24-hour recipient-entry budget (default 100, ceiling 200), counting To, CC, BCC and tests. Accepted/Unknown charges persist. Existing leases, FIFO, reservations, backoff and recovery apply across all account sends. Application limits cannot observe ordinary Gmail activity or guarantee Google's quota availability.
+Gmail uses configurable pacing (default and ceiling 12 messages/minute) and a rolling 24-hour recipient-entry budget (default and ceiling 475), counting To, CC, BCC and tests. The budget is 95% of Google's documented 500-email personal-account daily limit, with more conservative recipient-entry accounting; it is not a measurement of remaining Google quota. Accepted/Unknown charges persist. Existing leases, FIFO, reservations, backoff and recovery apply across all account sends. Application limits cannot observe ordinary Gmail activity or guarantee Google's quota availability. Previously prepared campaigns retain their immutable pace; new campaigns use the configured default.
 
 OAuth publishing is separate from verification and application deployment. External production audience removes the development test-user list, not unverified warnings or Google's user/quota limits. Public privacy guidance must truthfully describe stored content, attachments, encrypted credentials and retention limitations. Application promotion still requires staging/integration gates.
+
+Migration `0014_google_pace_limit.sql` raises the database insert guard from 6 to 12 messages/minute without rewriting existing campaigns, recipients or budget reservations. Apply it before deploying the increased default.
 
 Microsoft Entra is single-tenant. Authorization-code flows use PKCE, nonce, short-lived one-time browser-bound state, and validated local return paths. Tenant/object identity is verified; a visible email suffix is insufficient. SMTP mode takes mailbox identity from the validated ID token; Graph rollback also cross-checks `/me`.
 

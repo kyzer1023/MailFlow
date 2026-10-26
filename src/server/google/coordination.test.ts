@@ -21,6 +21,7 @@ function seedCampaign(
   existingOwner?: { userId: string; mailboxAddress: string },
   recipientCount = 1,
   provider: "google" | "microsoft" = "google",
+  pacePerMinute = 12,
 ): { userId: string; campaignId: string; jobId: string } {
   const userId = existingOwner?.userId ?? `user-${suffix}`;
   const mailboxAddress = existingOwner?.mailboxAddress ?? `member-${suffix}@example.test`;
@@ -40,8 +41,8 @@ function seedCampaign(
   run(db, `INSERT INTO campaigns(id, flow_id, template_version_id, owner_user_id, sender_address,
     total_recipients, valid_recipients, skipped_recipients, pace_per_minute, state, idempotency_key,
     request_fingerprint, created_at, updated_at, provider)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'draft', ?, ?, ?, ?, ?)`,
-    campaignId, flowId, templateId, userId, mailboxAddress, recipientCount, recipientCount, `key-${suffix}`, suffix.padEnd(43, "a").slice(0, 43), now, now, provider);
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'draft', ?, ?, ?, ?, ?)`,
+    campaignId, flowId, templateId, userId, mailboxAddress, recipientCount, recipientCount, pacePerMinute, `key-${suffix}`, suffix.padEnd(43, "a").slice(0, 43), now, now, provider);
   for (let row = 1; row <= recipientCount; row += 1) {
     const rowJobId = row === 1 ? jobId : `${jobId}-${row}`;
     run(db, `INSERT INTO recipient_jobs(id, campaign_id, source_row, recipient, cc_json, bcc_json,
@@ -73,6 +74,15 @@ function leaseRequest(ids: { userId: string; campaignId: string; jobId: string }
 
 
 describe("Google migration and mailbox coordination", () => {
+  it("raises the database pace ceiling without changing existing campaign snapshots", () => {
+    const db = new SqliteD1(); db.migrate(1, 13);
+    const previous = seedCampaign(db, "previous", undefined, 1, "google", 3);
+    db.migrate(14);
+    expect(db.database.prepare("SELECT pace_per_minute FROM campaigns WHERE id=?").get(previous.campaignId)?.pace_per_minute).toBe(3);
+    expect(() => seedCampaign(db, "current", undefined, 1, "google", 12)).not.toThrow();
+    expect(() => seedCampaign(db, "over-limit", undefined, 1, "google", 13)).toThrow("Gmail pace exceeds safety ceiling");
+    db.close();
+  });
   it("holds Microsoft attachment campaigns during Graph rollback without failing or submitting rows", async () => {
     const db = new SqliteD1(); db.migrate();
     const ids = seedCampaign(db, "rollback", undefined, 1, "microsoft");
@@ -104,9 +114,15 @@ describe("Google migration and mailbox coordination", () => {
     expect(() => run(db,"UPDATE users SET provider='google' WHERE id='tenant:object'")).toThrow();
     db.close();
   });
-  it.each([100, 200])("never grants a Gmail reservation above the configured ceiling %i", async budget => {
+  it.each([
+    { configured: undefined, budget: 475 },
+    { configured: 100, budget: 100 },
+    { configured: 475, budget: 475 },
+    { configured: 8000, budget: 475 },
+    { configured: Number.NaN, budget: 475 },
+  ])("never grants a Gmail reservation above the ceiling: $configured -> $budget", async ({ configured, budget }) => {
     const db = new SqliteD1(); db.migrate(); const ids = seedCampaign(db);
-    const repository = new D1MailboxDeliveryRepository(db, budget === 200 ? 8000 : budget);
+    const repository = new D1MailboxDeliveryRepository(db, configured);
     expect(await repository.acquire(leaseRequest(ids,"over",budget+1))).toMatchObject({ kind: "unavailable", reason: "budget" });
     expect(await repository.acquire(leaseRequest(ids,"within",budget))).toMatchObject({ kind: "acquired" });
     expect(Number(db.database.prepare("SELECT SUM(envelope_recipient_count) AS count FROM delivery_attempts").get()?.count)).toBe(budget);
@@ -116,11 +132,14 @@ describe("Google migration and mailbox coordination", () => {
   it("retains accepted and Unknown charges across campaigns and self-tests", async () => {
     const db = new SqliteD1(); db.migrate(); const ids = seedCampaign(db);
     for (const state of ["accepted", "unknown"]) run(db, `INSERT INTO delivery_attempts(id,owner_user_id,campaign_id,recipient_job_id,attempt_token,envelope_recipient_count,state,reserved_at,budget_expires_at)
-      VALUES (?,?,?,?,?,50,?,'2026-09-05T00:00:00.000Z','2026-09-06T00:00:00.000Z')`, state,ids.userId,ids.campaignId,ids.jobId,state,state);
+      VALUES (?,?,?,?,?,?,?,'2026-09-05T00:00:00.000Z','2026-09-06T00:00:00.000Z')`, state,ids.userId,ids.campaignId,ids.jobId,state,state === "accepted" ? 250 : 225,state);
     const repository = new D1MailboxDeliveryRepository(db);
     expect(await repository.acquire(leaseRequest(ids,"campaign"))).toMatchObject({kind:"unavailable",reason:"budget"});
     run(db,`INSERT INTO test_sends(id,owner_user_id,campaign_id,idempotency_key,request_fingerprint,status,created_at,updated_at) VALUES ('test',?,?,'test-key','fingerprint','pending',1,1)`,ids.userId,ids.campaignId);
     expect(await repository.acquire({...leaseRequest(ids,"test"),recipientJobId:null,testSendId:"test"})).toMatchObject({kind:"unavailable",reason:"budget"});
+    const expiresAt = "2026-09-06T00:00:00.000Z";
+    expect(await repository.acquire({ ...leaseRequest(ids,"before-expiry"), now: "2026-09-05T23:59:59.999Z" })).toMatchObject({ kind: "unavailable", reason: "budget" });
+    expect(await repository.acquire({ ...leaseRequest(ids,"after-expiry"), now: expiresAt, leaseExpiresAt: "2026-09-06T00:05:00.000Z", budgetExpiresAt: "2026-09-07T00:00:00.000Z" })).toMatchObject({ kind: "acquired" });
     db.close();
   });
   it.each([false,true])("routes Queue Gmail sends without Microsoft configuration and never replays outcomes: ambiguous=%s", async ambiguous => {
@@ -139,6 +158,9 @@ describe("Google migration and mailbox coordination", () => {
       expect(send).toHaveBeenCalledOnce();
       expect(db.database.prepare("SELECT status FROM recipient_jobs WHERE id=?").get(ids.jobId)?.status).toBe(ambiguous?"unknown":"accepted");
       expect(db.database.prepare("SELECT state FROM delivery_attempts").get()?.state).toBe(ambiguous?"unknown":"accepted");
+      const attempt = db.database.prepare("SELECT completed_at FROM delivery_attempts").get();
+      const mailbox = db.database.prepare("SELECT next_send_at FROM mailbox_send_state WHERE owner_user_id=?").get(ids.userId);
+      expect(Date.parse(String(mailbox?.next_send_at)) - Date.parse(String(attempt?.completed_at))).toBe(5000);
       expect(queueMessage.retry).not.toHaveBeenCalled();
       await expect(accountMailProvider(bindings,{provider:"microsoft",ownerUserId:ids.userId,senderAddress:"member-1@example.test"})).rejects.toThrow("snapshot");
     } finally {vi.unstubAllGlobals();db.close();}
